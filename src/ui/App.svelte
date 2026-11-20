@@ -9,6 +9,15 @@
     type WireMember,
   } from '../shared/protocol.ts'
   import { parseJoinLink, UNREADABLE_LINK, UNREACHABLE_ROOM } from './join.ts'
+  import { readClockSkew } from './dev-clock.ts'
+  import {
+    PING_INTERVAL_MS,
+    authorityNow,
+    emptyEstimate,
+    estimateOffset,
+    sampleFrom,
+    type OffsetEstimate,
+  } from '../shared/timing.ts'
 
   interface DiscoveryResult {
     kind: 'ok' | 'cgnat' | 'upnp_unavailable' | 'timeout'
@@ -65,9 +74,60 @@
   /** True once this page has decided which room it dials; the poll never overrides it. */
   let enteredRoom = false
 
+  // T5: the dev-only clock skew and overlay. A shipped page is `vite build`
+  // (mode `production`), where this folds to `false` — both the flag and the
+  // overlay are dropped from `dist/`, so a shipped member's page can never be
+  // bent by a URL. `npm run build:dev` is the build that keeps them.
+  const dev = import.meta.env.DEV || import.meta.env.MODE === 'development'
+  const clockSkew = dev ? readClockSkew(location.search) : 0
+  /**
+   * This window's clock as §6.1 measures against it. The skew is applied here,
+   * at the one place a `Date.now()` is read for the offset, so nothing else in
+   * the page has to know the flag exists.
+   */
+  const localNow = (): number => Date.now() - clockSkew
+
+  // §6.1's clock. The estimator is the page's own (§4.3 invariant 4), starts at
+  // `emptyEstimate()` — "I do not know yet", not 0 ms believed — and is reset by
+  // `connect()` on every reconnect. All its arithmetic is `shared/timing.ts`.
+  let estimate = $state<OffsetEstimate>(emptyEstimate())
+  /** The instants the last `pong` produced, so the overlay can show which way the sign points. */
+  let clockSeen = $state<{ local: number; authority: number } | null>(null)
+  /** `performance.now()` anchor for the next beat: a wall-clock step must not stretch 5 s. */
+  let pingAt = 0
+  let pingTimer: ReturnType<typeof setTimeout> | undefined
+
   // The window's own room keeps the whole start screen; a room someone else
   // started does not have this window's invite link to show.
   const inOwnRoom = $derived(roomCode === null || payload === null || roomCode === payload.roomCode)
+
+  function stopPing(): void {
+    if (pingTimer !== undefined) clearTimeout(pingTimer)
+    pingTimer = undefined
+  }
+
+  /**
+   * §6.1: one loop, two jobs — the liveness beat and the clock sample. T5 sends
+   * `ping{t0}` every 5 s from the moment the room answers `welcome`, and turns
+   * each `pong` into one sample. The cadence is measured on `performance.now()`
+   * so that the same clock step the sample is watching for cannot also stretch
+   * the interval between samples.
+   */
+  function pingTick(): void {
+    pingTimer = undefined
+    if (socket === null || selfId === null) return
+    socket.send(JSON.stringify({ type: 'ping', t0: localNow() }))
+    pingAt += PING_INTERVAL_MS
+    // A window that was asleep catches up with one beat, never a burst of them.
+    if (performance.now() - pingAt > PING_INTERVAL_MS) pingAt = performance.now() + PING_INTERVAL_MS
+    pingTimer = setTimeout(pingTick, Math.max(0, pingAt - performance.now()))
+  }
+
+  function startPing(): void {
+    stopPing()
+    pingAt = performance.now()
+    pingTick()
+  }
 
   function connect(host: string, port: number, code: string): void {
     const previous = socket
@@ -79,6 +139,11 @@
     members = []
     chat = []
     chatNotices = []
+    // §6.1: a reconnect resets the filter rather than feeding it an offset that
+    // belonged to the previous connection's clock.
+    stopPing()
+    estimate = emptyEstimate()
+    clockSeen = null
 
     let opened: WebSocket
     try {
@@ -107,6 +172,7 @@
     opened.onclose = () => {
       if (opened !== socket) return
       socket = null
+      stopPing()
       if (selfId === null) sentence = UNREACHABLE_ROOM
     }
   }
@@ -157,12 +223,22 @@
       chat = [...frame.chatTail]
       sentence = null
       followNewest(true)
+      // The one loop starts once this connection has a member identity to beat for.
+      startPing()
     } else if (frame.type === 'members') {
       members = frame.members
     } else if (frame.type === 'chat') {
       const stick = atBottom()
       chat = [...chat, frame]
       followNewest(stick)
+    } else if (frame.type === 'pong') {
+      // §6.1: t0 is ours (echoed untouched), t1/t2 the authority's, t3 this
+      // instant. The estimate, the jump reset and the sign all live in timing.ts.
+      const t3 = localNow()
+      const sample = sampleFrom(frame.t0, frame.t1, frame.t2, t3)
+      if (sample === null) return
+      estimate = estimateOffset(sample, estimate)
+      clockSeen = { local: t3, authority: authorityNow(t3, estimate) }
     } else if (frame.type === 'warning') {
       notice('warning', frame.message)
     } else if (frame.type === 'error') {
@@ -201,6 +277,13 @@
     // comes back (T4). The page never appends its own copy first.
     socket.send(JSON.stringify({ type: 'chat', text }))
     chatDraft = ''
+  }
+
+  /** `hh:mm:ss.mmm`, for the overlay's two clocks: the sign of an offset is easier to read than argue. */
+  function clock(ms: number): string {
+    const date = new Date(ms)
+    const pad = (value: number, width = 2): string => String(value).padStart(width, '0')
+    return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}`
   }
 
   async function refresh(): Promise<void> {
@@ -260,7 +343,10 @@
     }
 
     void refresh()
-    return () => clearTimeout(timer)
+    return () => {
+      clearTimeout(timer)
+      stopPing()
+    }
   })
 </script>
 
@@ -378,6 +464,24 @@
         {/if}
       </div>
     {/if}
+  {/if}
+
+  {#if dev}
+    <!-- T5: every later timing ticket is diagnosed with these numbers. Dev only:
+         the whole block, inline styles included, is dropped from `vite build`. -->
+    <aside
+      aria-label="Clock sync (dev)"
+      style="position:fixed;right:0.75rem;bottom:0.75rem;z-index:10;padding:0.5rem 0.75rem;border:1px solid #3a3b46;border-radius:6px;background:rgba(20,21,26,0.92);font-family:Consolas,monospace;font-size:0.78rem;line-height:1.55;color:#9a9aab;text-align:left"
+    >
+      <div>offset <strong>{estimate.offset.toFixed(1)} ms</strong></div>
+      <div>rtt <strong>{estimate.rtt.toFixed(1)} ms</strong> · <strong>{estimate.samples}</strong> samples</div>
+      {#if clockSeen !== null}
+        <div>local {clock(clockSeen.local)} · authority {clock(clockSeen.authority)}</div>
+      {/if}
+      {#if clockSkew !== 0}
+        <div>dev skew <strong>{clockSkew} ms</strong> (this clock slow)</div>
+      {/if}
+    </aside>
   {/if}
 </main>
 

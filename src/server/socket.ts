@@ -191,6 +191,18 @@ export function attachRoomSocket(
           }
           return
         }
+        case 'ping': {
+          // §6.1: one loop, two jobs. The beat keeps this member's `lastSeen`
+          // honest (the 10 s / 20 s presence ladder is a later ticket), and the
+          // same frame is the clock sample. `t1` is the receive instant and `t2`
+          // the send one; the member works out its own offset from all four and
+          // the authority never learns it (§4.3 invariant 4).
+          if (typeof frame.t0 !== 'number' || !Number.isFinite(frame.t0)) return
+          member.lastSeen = now()
+          const t1 = now()
+          send(socket, { type: 'pong', t0: frame.t0, t1, t2: now() })
+          return
+        }
         case 'chat': {
           // Not text is not a frame we know how to refuse: §5 ignores what it cannot read.
           if (typeof frame.text !== 'string' || frame.text.length === 0) return

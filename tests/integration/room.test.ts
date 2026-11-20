@@ -7,6 +7,7 @@ import { WebSocket } from 'ws'
 import { createRoom } from '../../src/server/room.ts'
 import { attachRoomSocket } from '../../src/server/socket.ts'
 import { findLanIp } from '../../src/server/discovery.ts'
+import { sampleFrom } from '../../src/shared/timing.ts'
 
 // T3's checks, against a real socket: one short-lived server on port 0 per test
 // and plain `node --test` cases (no shared two-client harness — a later ticket
@@ -228,6 +229,37 @@ test('a pause from a non-owner is refused and moves nothing; the owner\'s is acc
     assert.equal(state.by, ownerWelcome.selfId)
     assert.equal(state.playback.playing, false)
     assert.equal(state.playback.position, 12.5)
+  } finally {
+    await fixture.close()
+  }
+})
+
+test('a ping is answered with its own t0 and the authority\'s two instants (§6.1)', async () => {
+  const fixture = await openRoom()
+  const client = connect('127.0.0.1', fixture.port)
+  try {
+    await client.ready
+    await client.hello(CODE, 'pat')
+
+    const sentAt = Date.now()
+    client.send({ type: 'ping', t0: sentAt })
+    const pong = await client.next((frame) => frame.type === 'pong')
+    assert.equal(pong.t0, sentAt, 'the member\'s instant comes back untouched')
+    assert.ok(pong.t1 >= sentAt, 't1 is the authority\'s receive instant, not one of ours')
+    assert.ok(pong.t2 >= pong.t1, 't2 is its send instant')
+
+    // §6.1's arithmetic on a real loopback socket: the sample the page would take.
+    const sample = sampleFrom(pong.t0, pong.t1, pong.t2, Date.now())
+    assert.ok(sample)
+    assert.ok(sample.rtt >= 0 && sample.rtt < 100, `loopback rtt ${sample.rtt} ms`)
+    assert.ok(Math.abs(sample.offset) < 100, `offset ${sample.offset} ms on one clock`)
+
+    // The same socket keeps beating, and a t0 that is not a number is not a frame
+    // this server can answer — §5's "ignore what it cannot read", no error frame.
+    client.send({ type: 'ping', t0: Date.now() })
+    await client.next((frame) => frame.type === 'pong')
+    client.send({ type: 'ping', t0: 'soon' })
+    await assert.rejects(client.next((frame) => frame.type === 'pong', 150), /no matching frame/)
   } finally {
     await fixture.close()
   }

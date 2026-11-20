@@ -169,7 +169,28 @@ export interface ChatSendFrame {
   text: string
 }
 
-export type ClientFrame = HelloFrame | RenameFrame | CommandFrame | ChatSendFrame
+/**
+ * m→a: §6.1's one loop with two jobs — the liveness beat and the clock sample.
+ * The authority echoes `t0` untouched; the member alone computes the offset
+ * (§4.3 invariant 4: the authority never holds a member's offset).
+ */
+export interface PingFrame {
+  type: 'ping'
+  /** The member's `Date.now()` when the ping left. */
+  t0: number
+}
+
+/** a→m: §6.1's four instants, two of them the authority's own. */
+export interface PongFrame {
+  type: 'pong'
+  t0: number
+  /** The authority's clock when the ping arrived. */
+  t1: number
+  /** The authority's clock when the pong left. */
+  t2: number
+}
+
+export type ClientFrame = HelloFrame | RenameFrame | CommandFrame | ChatSendFrame | PingFrame
 
 export interface WelcomeFrame {
   type: 'welcome'
@@ -203,3 +224,4 @@ export type ServerFrame =
   | ErrorFrame
   | WarningFrame
   | ChatFrame
+  | PongFrame
