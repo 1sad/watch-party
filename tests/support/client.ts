@@ -63,6 +63,8 @@ export class ScriptedClient {
   #waiters: Waiter[] = []
   #timeoutMs: number
   #closed: Promise<void>
+  /** §5's 3 s report beat, only while the last `playback` is playing. */
+  #reportTimer: ReturnType<typeof setInterval> | null = null
 
   private constructor(socket: WebSocket, welcome: WelcomeFrame, options: ClientOptions) {
     this.socket = socket
@@ -241,6 +243,36 @@ export class ScriptedClient {
     return this.estimate
   }
 
+  /**
+   * §5: one `report` now. It carries the player's own four numbers, the
+   * duration/origin it knows, and this client's T5 `rtt` — the value the
+   * authority's scheduled start needs (§6.4). A paused player sends nothing.
+   */
+  reportNow(): void {
+    const playback = this.lastPlayback()
+    if (playback === null || !playback.playing) return
+    this.send({
+      type: 'report',
+      ...this.player.report(),
+      origin: 'harness',
+      rtt: Math.max(0, this.estimate.rtt),
+    })
+  }
+
+  /** §5: every 3 s while playing, from every member. */
+  startReporting(intervalMs = 3000): void {
+    this.stopReporting()
+    const timer = setInterval(() => this.reportNow(), intervalMs)
+    timer.unref?.()
+    this.#reportTimer = timer
+  }
+
+  stopReporting(): void {
+    if (this.#reportTimer === null) return
+    clearInterval(this.#reportTimer)
+    this.#reportTimer = null
+  }
+
   /** The last `playback` the authority has told this client about. */
   lastPlayback(): Playback | null {
     for (let index = this.frames.length - 1; index >= 0; index -= 1) {
@@ -251,6 +283,7 @@ export class ScriptedClient {
   }
 
   close(): Promise<void> {
+    this.stopReporting()
     this.socket.close()
     return this.#closed
   }
@@ -265,6 +298,10 @@ export class ScriptedClient {
       if (this.clock.delayMs > 0) setTimeout(apply, this.clock.delayMs).unref?.()
       else apply()
     }
+    // T7b1 stops at "the frame arrived": the page that *applies* a nudge is
+    // T7b2. The player's `playbackRate` is recorded so a later report tells the
+    // truth about what this member holds.
+    if (frame.type === 'nudge') this.player.playbackRate = frame.rate
 
     const index = this.#waiters.findIndex((waiter) => waiter.match(frame))
     if (index !== -1) this.#waiters.splice(index, 1)[0]!.resolve(record)

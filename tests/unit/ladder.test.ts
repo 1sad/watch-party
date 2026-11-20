@@ -1,0 +1,209 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+
+import {
+  CORRECTION_DEADBAND_SECONDS,
+  CORRECTION_SPACING_MS,
+  MIN_SCHEDULED_START_MS,
+  SEEK_AHEAD_SECONDS,
+  SEEK_BEHIND_SECONDS,
+  SLOW_DOWN_RATE,
+  SPEED_UP_RATE,
+  STRIKES_BEFORE_CORRECTION,
+  clampToMedia,
+  decideCorrection,
+  reportFrom,
+  scheduledStartAt,
+  targetFor,
+  type CorrectionInput,
+} from '../../src/shared/timing.ts'
+import type { Playback } from '../../src/shared/protocol.ts'
+
+// T7b1 check 1: §6.3's table and the three guards, table-driven. Instants are
+// literals and the clock is an argument, so every number below is exact.
+//
+// The sign of `drift`: positive is **ahead** of the room (slow down, 0.95),
+// negative is behind (speed up, 1.05). §6.3 states magnitude bands, except the
+// asymmetric "> 1.75 s behind", which is the row this sign makes expressible.
+
+const NOW = 1_000_000
+
+function input(overrides: Partial<CorrectionInput> = {}): CorrectionInput {
+  return {
+    drift: 0,
+    playing: true,
+    readyState: 4,
+    driftStrikes: STRIKES_BEFORE_CORRECTION,
+    lastCorrectionAt: null,
+    nowMs: NOW,
+    target: 200,
+    ...overrides,
+  }
+}
+
+test('§6.3 table: the six bands pick none, nudge, seek or snap', () => {
+  const rows: Array<{
+    name: string
+    overrides: Partial<CorrectionInput>
+    action: 'none' | 'nudge' | 'seek' | 'snap'
+    rate: number
+  }> = [
+    { name: '0.05 s drift is inside the deadband', overrides: { drift: 0.05 }, action: 'none', rate: 1 },
+    { name: '0.1 s ahead nudges 0.95', overrides: { drift: 0.1 }, action: 'nudge', rate: 0.95 },
+    { name: '1.4 s ahead nudges 0.95', overrides: { drift: 1.4 }, action: 'nudge', rate: 0.95 },
+    { name: '2.0 s ahead nudges 0.95', overrides: { drift: 2.0 }, action: 'nudge', rate: 0.95 },
+    { name: '4.1 s ahead seeks', overrides: { drift: 4.1 }, action: 'seek', rate: 1 },
+    { name: '1.8 s behind seeks', overrides: { drift: -1.8 }, action: 'seek', rate: 1 },
+    { name: '1.0 s behind nudges 1.05', overrides: { drift: -1.0 }, action: 'nudge', rate: 1.05 },
+    { name: 'paused snaps', overrides: { drift: 2.0, playing: false }, action: 'snap', rate: 1 },
+    {
+      name: 'buffering never nudges',
+      overrides: { drift: 2.0, readyState: 2 },
+      action: 'none',
+      rate: 1,
+    },
+  ]
+
+  for (const row of rows) {
+    const decision = decideCorrection(input(row.overrides))
+    assert.equal(decision.action, row.action, row.name)
+    assert.equal(decision.rate, row.rate, `${row.name}: rate`)
+  }
+})
+
+test('§6.3 bands are inclusive at 0.1 and exclusive at 4 / 1.75-behind', () => {
+  assert.equal(CORRECTION_DEADBAND_SECONDS, 0.1)
+  assert.equal(SEEK_AHEAD_SECONDS, 4)
+  assert.equal(SEEK_BEHIND_SECONDS, 1.75)
+  assert.equal(SLOW_DOWN_RATE, 0.95)
+  assert.equal(SPEED_UP_RATE, 1.05)
+
+  assert.equal(decideCorrection(input({ drift: 0.0999 })).action, 'none', 'strictly under 0.1')
+  assert.equal(decideCorrection(input({ drift: 0.1 })).action, 'nudge', 'exactly 0.1 nudges')
+  assert.equal(decideCorrection(input({ drift: 4 })).action, 'nudge', 'exactly 4 still nudges')
+  assert.equal(decideCorrection(input({ drift: 4.0001 })).action, 'seek', 'past 4 seeks')
+  assert.equal(decideCorrection(input({ drift: -1.75 })).action, 'nudge', 'exactly 1.75 behind nudges')
+  assert.equal(decideCorrection(input({ drift: -1.7501 })).action, 'seek', 'past 1.75 behind seeks')
+})
+
+test('guard 1: one bad report is not enough; the second one corrects', () => {
+  const first = decideCorrection(input({ drift: 1.0, driftStrikes: 1 }))
+  assert.equal(first.action, 'none', 'one report cannot move a window')
+  assert.equal(first.rate, 1)
+
+  const second = decideCorrection(input({ drift: 1.0, driftStrikes: 2 }))
+  assert.equal(second.action, 'nudge')
+  assert.equal(second.rate, 0.95)
+})
+
+test('guard 2: a second correction inside 5 s is withheld, and allowed again after it', () => {
+  assert.equal(CORRECTION_SPACING_MS, 5000)
+  const tooSoon = decideCorrection(
+    input({ drift: 1.0, lastCorrectionAt: NOW - CORRECTION_SPACING_MS + 1 }),
+  )
+  assert.equal(tooSoon.action, 'none', 'one correction per client per 5 s')
+
+  const exactlyFive = decideCorrection(input({ drift: 1.0, lastCorrectionAt: NOW - CORRECTION_SPACING_MS }))
+  assert.equal(exactlyFive.action, 'nudge', '5 s later is allowed')
+
+  const overdue = decideCorrection(input({ drift: 1.0, lastCorrectionAt: NOW - 60_000 }))
+  assert.equal(overdue.action, 'nudge')
+})
+
+test('guard 3: never nudge while readyState < 3, and a paused snap waits for its strikes too', () => {
+  for (const readyState of [0, 1, 2]) {
+    const decision = decideCorrection(input({ drift: 2.0, readyState }))
+    assert.equal(decision.action, 'none', `readyState ${readyState} is buffering (§6.7)`)
+  }
+  assert.equal(decideCorrection(input({ drift: 2.0, readyState: 3 })).action, 'nudge')
+
+  // The existing "a raw report moves nothing" check sends one report while the
+  // room is paused; an unguarded snap would move that window. The guards hold.
+  assert.equal(
+    decideCorrection(input({ drift: 999.5, playing: false, driftStrikes: 1 })).action,
+    'none',
+    'one stale paused report is not a correction',
+  )
+  assert.equal(
+    decideCorrection(input({ drift: 999.5, playing: false, driftStrikes: 2 })).action,
+    'snap',
+  )
+})
+
+test('a nudge says where it ends and by when, and a good report restores rate 1', () => {
+  const nudge = decideCorrection(input({ drift: 1.0 }))
+  assert.equal(nudge.action, 'nudge')
+  assert.equal(nudge.target, 200, 'the nudge carries the target, not just a rate')
+  // 1 s of gap at the extra 0.05 × real time takes 20 s to close.
+  assert.equal(nudge.untilAuthorityMs, NOW + 20_000)
+
+  const behind = decideCorrection(input({ drift: -0.5 }))
+  assert.equal(behind.action, 'nudge')
+  assert.equal(behind.rate, 1.05)
+  assert.equal(behind.untilAuthorityMs, NOW + 10_000)
+
+  // §6.3: "always restore playbackRate = 1 afterwards". The decision that sees
+  // a good report says so in the one shape the caller reads.
+  const good = decideCorrection(input({ drift: 0.02, lastCorrectionAt: NOW - 1000 }))
+  assert.equal(good.action, 'none')
+  assert.equal(good.rate, 1)
+})
+
+test('§6.3: a seek and a paused snap carry the target; the authority does not guess', () => {
+  const seek = decideCorrection(input({ drift: 4.2, target: 123.5 }))
+  assert.equal(seek.action, 'seek')
+  assert.equal(seek.target, 123.5)
+
+  const snap = decideCorrection(input({ drift: -2.0, playing: false, target: 55 }))
+  assert.equal(snap.action, 'snap')
+  assert.equal(snap.target, 55)
+})
+
+// §4.5's worked example, as the phase slice §7 A asks: the dub has a 5 s logo,
+// so target = room + 5 and a report in dub time comes back to room time.
+
+test('targetFor and reportFrom are the two halves of one sign (§4.5)', () => {
+  const room: Playback = { playing: false, position: 100, updatedAt: 0, rate: 1 }
+  const dubLogo = { timelineOffset: 5 }
+  const sub = { timelineOffset: -5 }
+  const sameEdit = { timelineOffset: 0 }
+
+  assert.equal(targetFor(room, dubLogo, 0), 105, 'the dub copy is 5 s further in')
+  assert.equal(reportFrom(105, dubLogo), 100, 'its report comes back to room time')
+
+  assert.equal(targetFor(room, sub, 0), 95)
+  assert.equal(reportFrom(95, sub), 100)
+
+  assert.equal(targetFor(room, sameEdit, 0), 100)
+  assert.equal(reportFrom(100, sameEdit), 100)
+
+  // The round trip is the identity: a member already at its own target must
+  // report exactly the room's position, whatever its offset.
+  for (const member of [dubLogo, sub, sameEdit]) {
+    assert.equal(reportFrom(targetFor(room, member, 0), member), 100)
+  }
+})
+
+// §6.4, corrected 2026-11-20: the 1.5 s floor dominates until 2 × rtt passes it.
+
+test('scheduledStartAt is now + max(2 × maxRtt, 1.5 s)', () => {
+  assert.equal(MIN_SCHEDULED_START_MS, 1500)
+  assert.equal(scheduledStartAt(NOW, 0), NOW + 1500)
+  assert.equal(scheduledStartAt(NOW, 1), NOW + 1500, '1 ms rtt is still floored')
+  assert.equal(scheduledStartAt(NOW, 749), NOW + 1500, 'just under the floor')
+  assert.equal(scheduledStartAt(NOW, 750), NOW + 1500, 'exactly the floor')
+  assert.equal(scheduledStartAt(NOW, 1000), NOW + 2000, '2 s of rtt beats the floor')
+  assert.equal(scheduledStartAt(NOW, -10), NOW + 1500, 'a bad rtt cannot go backwards')
+})
+
+// §4.5: every seek lands in [0, duration − 0.25].
+
+test('clampToMedia bounds every seek to [0, duration − 0.25]', () => {
+  assert.equal(clampToMedia(-5, 100), 0)
+  assert.equal(clampToMedia(0, 100), 0)
+  assert.equal(clampToMedia(50, 100), 50)
+  assert.equal(clampToMedia(99.75, 100), 99.75)
+  assert.equal(clampToMedia(99.8, 100), 99.75)
+  assert.equal(clampToMedia(500, 100), 99.75)
+  assert.equal(clampToMedia(5, 0), 0, 'an unknown/zero duration cannot produce a negative bound')
+})

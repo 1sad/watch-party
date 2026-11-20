@@ -9,7 +9,7 @@
  * second time is a copy, and one of the two is wrong).
  */
 
-import type { Playback } from './protocol.ts'
+import type { Member, Playback } from './protocol.ts'
 
 /** §6.1: the `ping` every 5 s is both the liveness beat and the clock sample. */
 export const PING_INTERVAL_MS = 5000
@@ -158,4 +158,140 @@ export function expected(playback: Playback, nowMs: number): number {
  */
 export function seekIsDuplicate(playback: Playback, nowMs: number, target: number): boolean {
   return Math.abs(target - expected(playback, nowMs)) <= SEEK_SKIP_SECONDS
+}
+
+/**
+ * §4.5: the two halves of the one offset sign. `targetFor` is where *this*
+ * member's copy should be; `reportFrom` turns the member's own playhead back
+ * into room time before it is compared. The offset is always 0 in M1 (file
+ * mode), but the pair ships now because implementing the sign twice is the
+ * silent, permanent desync §4.5 warns about.
+ */
+export function targetFor(
+  playback: Playback,
+  member: Pick<Member, 'timelineOffset'>,
+  nowMs: number,
+): number {
+  return expected(playback, nowMs) + member.timelineOffset
+}
+
+export function reportFrom(position: number, member: Pick<Member, 'timelineOffset'>): number {
+  return position - member.timelineOffset
+}
+
+/**
+ * §6.4, corrected 2026-11-20: `now + max(2 × maxRtt, 1.5 s)`. The 1.5 s floor
+ * dominates any group whose worst round trip is under 750 ms — which, on a
+ * home LAN, is all of them. `maxRtt` is the largest `rtt` from §5's reports.
+ */
+export const MIN_SCHEDULED_START_MS = 1500
+
+export function scheduledStartAt(nowMs: number, maxRttMs: number): number {
+  return nowMs + Math.max(2 * Math.max(0, maxRttMs), MIN_SCHEDULED_START_MS)
+}
+
+/**
+ * §4.5: every seek lands in `[0, duration − 0.25]`. The quarter second keeps a
+ * player from seeking exactly to the end, where some browsers fire `ended`
+ * before the room says to.
+ */
+export function clampToMedia(position: number, duration: number): number {
+  const upper = Math.max(0, duration - 0.25)
+  return Math.min(Math.max(0, position), upper)
+}
+
+/**
+ * §6.3's numbers, in the one place they exist (AGENTS.md: a number from this
+ * module that appears a second time is a copy). The bands are the spec's:
+ *
+ * | drift                    | action |
+ * | < 0.1 s                  | none   |
+ * | 0.1 – 4 s                | nudge  |
+ * | > 4 s, or > 1.75 behind  | seek   |
+ * | paused                   | snap   |
+ */
+export const CORRECTION_DEADBAND_SECONDS = 0.1
+export const SEEK_AHEAD_SECONDS = 4
+export const SEEK_BEHIND_SECONDS = 1.75
+/** §6.3: two consecutive bad reports before any correction. */
+export const STRIKES_BEFORE_CORRECTION = 2
+/** §6.3: at most one correction per client per 5 s. */
+export const CORRECTION_SPACING_MS = 5000
+export const SLOW_DOWN_RATE = 0.95
+export const SPEED_UP_RATE = 1.05
+
+export type CorrectionAction = 'none' | 'nudge' | 'seek' | 'snap'
+
+/**
+ * One report's inputs to the ladder. `drift` is **signed seconds the member is
+ * ahead of the room**: positive means its playhead is past `target`, so it must
+ * slow down; negative means it is behind, so it must speed up. Keeping the sign
+ * here, once, is what stops §4.5's two halves from disagreeing.
+ */
+export interface CorrectionInput {
+  drift: number
+  /** §6.3's paused row: a paused room snaps rather than nudges. */
+  playing: boolean
+  /** §6.7: `< 3` is buffering, and a rate change makes a starved client worse. */
+  readyState: number
+  /** Consecutive bad reports **including** the one being decided. */
+  driftStrikes: number
+  /** The authority instant of the last correction for this member, or `null`. */
+  lastCorrectionAt: number | null
+  nowMs: number
+  /** Where the member's playhead should be now (`targetFor`). */
+  target: number
+}
+
+export interface Correction {
+  action: CorrectionAction
+  /** The rate the member should hold: 0.95/1.05 for a nudge, 1 otherwise. */
+  rate: number
+  /** For a nudge, a seek or a snap: where the playhead belongs. */
+  target?: number
+  /** For a nudge: the authority instant by which it must be over (§6.3). */
+  untilAuthorityMs?: number
+}
+
+/**
+ * §6.3's table plus the three guards from the phase slice's §6:
+ *
+ * 1. two consecutive bad reports before correcting;
+ * 2. at most one correction per client per 5 s;
+ * 3. never nudge a client whose `readyState < 3` (§6.7).
+ *
+ * A paused member snaps only after those same guards: an unguarded snap on a
+ * single stale report would let a report the room is about to overwrite move
+ * one window (the existing "a raw report moves nothing" check). The buffering
+ * branch returns `none` for a seek too: §6.7 says "correct only by hard seek at
+ * an idle moment, or wait", and the authority cannot see idle, so it waits.
+ *
+ * The nudge's `untilAuthorityMs` is the time the member needs to close the gap
+ * at the extra 5 %: `|drift| / 0.05` seconds from now. It is a bound, not the
+ * primary stop — the page restores to 1.0 when the gap is under 0.1 s first.
+ */
+export function decideCorrection(input: CorrectionInput): Correction {
+  const drift = Number.isFinite(input.drift) ? input.drift : 0
+  if (Math.abs(drift) < CORRECTION_DEADBAND_SECONDS) return { action: 'none', rate: 1 }
+
+  if (input.driftStrikes < STRIKES_BEFORE_CORRECTION) return { action: 'none', rate: 1 }
+  if (
+    input.lastCorrectionAt !== null &&
+    input.nowMs - input.lastCorrectionAt < CORRECTION_SPACING_MS
+  ) {
+    return { action: 'none', rate: 1 }
+  }
+
+  if (!input.playing) return { action: 'snap', rate: 1, target: input.target }
+  if (input.readyState < 3) return { action: 'none', rate: 1 }
+
+  const behind = drift < 0
+  const beyondNudge =
+    Math.abs(drift) > SEEK_AHEAD_SECONDS || (behind && -drift > SEEK_BEHIND_SECONDS)
+  if (beyondNudge) return { action: 'seek', rate: 1, target: input.target }
+
+  const rate = behind ? SPEED_UP_RATE : SLOW_DOWN_RATE
+  const untilAuthorityMs =
+    input.nowMs + Math.ceil((Math.abs(drift) / Math.abs(rate - 1)) * 1000)
+  return { action: 'nudge', rate, target: input.target, untilAuthorityMs }
 }

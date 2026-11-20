@@ -1,11 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import type { ChatMessage, StateFrame } from '../../src/shared/protocol.ts'
+import type { ChatMessage, NudgeFrame, StateFrame } from '../../src/shared/protocol.ts'
+import { expected } from '../../src/shared/timing.ts'
 import { ScriptedClient } from '../support/client.ts'
 import {
   CODE,
   injectSkew,
+  injectStall,
   settle,
   startHarness,
   waitFor,
@@ -223,6 +225,145 @@ test('T5: a client whose clock is 137 ms slow estimates the offset within ±20 m
       Math.abs(control.offset) <= 20,
       `an unskewed clock estimated ${control.offset.toFixed(1)} ms (§6.1 allows ±20)`,
     )
+  } finally {
+    await harness.close()
+  }
+})
+
+// T7b1 item 5, R8 and R9 on the wire: one window is slowed (its frames land
+// 400 ms late, so it runs ahead of the room) and stalled for 5 s; the ladder
+// nudges it, then hard-seeks it, and the other two windows are never touched.
+// The page does not apply a nudge yet (T7b2) — the frame arriving is the
+// assertion this half of the split owns.
+
+test('R8/R9: a slowed, stalled client is nudged before a seek and converges under 250 ms; the healthy clients are untouched', async () => {
+  const decisions: string[] = []
+  const harness = await startHarness({ clients: 3, debug: (line) => decisions.push(line) })
+  try {
+    const [owner, lagging, healthy] = harness.clients as [
+      ScriptedClient,
+      ScriptedClient,
+      ScriptedClient,
+    ]
+
+    // §6.1's own measurement first, so the reports carry a real `rtt` (T8 reads
+    // it) rather than 0.
+    await Promise.all(harness.clients.map((client) => client.sampleOffset(1)))
+
+    // A clock this member reads 400 ms slow, injected **after** its T5 sample so
+    // it believes the offset is still 0: `authorityNow()` then puts its playhead
+    // 0.4 s behind the room on every report. That is the "slowed by 400 ms"
+    // member; `injectDelay` alone only delays one apply and `expected()`
+    // re-derives the right position, so it produces no steady drift.
+    injectSkew(lagging, 400)
+    owner.send({ type: 'play', position: 30 })
+    await waitFor(
+      () => harness.clients.every((client) => client.player.currentTime > 30.2),
+      2000,
+      'every player adopted the owner’s play',
+    )
+
+    // §5: one report each every 3 s, from every member.
+    for (const client of harness.clients) client.startReporting(3000)
+
+    // The guards make the first bad report silent and the second one act; the
+    // lagging member is behind, so §6.3 says speed up to 1.05.
+    const nudge = await waitFor(
+      () => lagging.frames.find((record) => record.frame.type === 'nudge') ?? null,
+      9000,
+      'the lagging member is nudged',
+    )
+    const nudgeFrame = nudge.frame as NudgeFrame
+    assert.equal(nudgeFrame.rate, 1.05, 'behind the room means speed up')
+    assert.ok(nudgeFrame.target > 30, 'the nudge carries where the room is going')
+    assert.ok(
+      Number.isFinite(nudgeFrame.untilAuthorityMs) && nudgeFrame.untilAuthorityMs > nudge.at,
+      'the nudge carries an authority-clock expiry, for T7b2 to enforce',
+    )
+    const nudgeLine = decisions.find(
+      (line) => line.includes(`member=${lagging.selfId}`) && line.includes('action=nudge'),
+    )
+    assert.ok(nudgeLine !== undefined, 'the log records the nudge decision')
+    const nudgeDrift = Number(/drift=(-?\d+(?:\.\d+)?)/.exec(nudgeLine ?? '')?.[1])
+    assert.ok(
+      nudgeDrift <= -0.1 && nudgeDrift > -1.5,
+      `the nudge was for a ${Math.abs(nudgeDrift)} s drift (0.1–1.5 is the nudge band behind)`,
+    )
+
+    // R8: the two healthy windows receive no correction at all.
+    await settle(100)
+    for (const client of [owner, healthy]) {
+      assert.equal(
+        client.frames.some((record) => record.frame.type === 'nudge'),
+        false,
+        `${client.name} received no nudge`,
+      )
+      assert.equal(stateCount(client), 1, `${client.name} saw only the owner’s one play state`)
+    }
+    // No seek reached the lagging member before the nudge: the ladder nudges
+    // first, as §6.3's table says.
+    const firstSeek = lagging.frames.find(
+      (record) => record.frame.type === 'state' && record.frame.reason === 'seek',
+    )
+    assert.equal(
+      firstSeek === undefined || firstSeek.at > nudge.at,
+      true,
+      'a nudge arrived before any hard seek',
+    )
+
+    // Now the 5 s stall. The clock error is removed first: the ladder is what is
+    // under test, not an estimate that would keep the member 400 ms out after a
+    // correct seek.
+    injectSkew(lagging, 0)
+    const stallStart = Date.now()
+    injectStall(lagging, 5)
+
+    const seek = await waitFor(
+      () =>
+        lagging.frames.find(
+          (record) =>
+            record.frame.type === 'state' && record.frame.reason === 'seek' && record.at >= stallStart,
+        ) ?? null,
+      12_000,
+      'the stalled member is hard-seeked',
+    )
+
+    await waitFor(
+      () =>
+        Math.abs(lagging.player.currentTime - expected(harness.room.playback, Date.now())) < 0.25,
+      3000,
+      'the stalled member converged under 250 ms',
+    )
+    const convergedAt = Date.now()
+
+    // R8 again, after both corrections: the healthy windows' playheads never
+    // moved outside the normal in-step band, and they heard no second state.
+    for (const client of [owner, healthy]) {
+      assert.equal(stateCount(client), 1, `${client.name} heard no correction state`)
+    }
+    const healthySpread = Math.abs(owner.player.currentTime - healthy.player.currentTime)
+    assert.ok(
+      healthySpread < 0.25,
+      `the healthy windows are ${(healthySpread * 1000).toFixed(1)} ms apart after the correction`,
+    )
+
+    // The decision log is the manual gate's evidence (§6.3 item 4): both
+    // actions, with the inputs that caused them.
+    const laggingLines = decisions.filter((line) => line.includes(`member=${lagging.selfId}`))
+    assert.ok(
+      laggingLines.some((line) => line.includes('action=nudge')),
+      'the log records the nudge decision',
+    )
+    const seekLine = laggingLines.find((line) => line.includes('action=seek'))
+    assert.ok(seekLine !== undefined, 'the log records the seek decision')
+    const drift = Number(/drift=(-?\d+(?:\.\d+)?)/.exec(seekLine ?? '')?.[1])
+    assert.ok(drift < -1.75, `the seek was chosen because the member was ${drift} s behind (1.75 is the threshold)`)
+
+    assert.ok(
+      convergedAt - stallStart < 12_000,
+      `convergence took ${convergedAt - stallStart} ms after the stall began`,
+    )
+    assert.ok((seek as { at: number }).at - stallStart < 12_000)
   } finally {
     await harness.close()
   }

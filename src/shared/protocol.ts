@@ -190,7 +190,46 @@ export interface PongFrame {
   t2: number
 }
 
-export type ClientFrame = HelloFrame | RenameFrame | CommandFrame | ChatSendFrame | PingFrame
+/**
+ * m→a: §5's `report`, every 3 s while playing. It is a measurement, never a
+ * command: it cannot move `playback` or `revision` (§4.3 invariant 1). `rtt` is
+ * the member's own T5 estimate; the authority keeps the largest one for the
+ * scheduled start's `max(2 × maxRtt, 1.5 s)` (§6.4, T8).
+ */
+export interface ReportFrame {
+  type: 'report'
+  /** Media seconds, in the member's own copy's time; `reportFrom` removes the offset. */
+  position: number
+  /** `< 3` means buffering, and §6.7 forbids a nudge then. */
+  readyState: number
+  buffered: number
+  rate: number
+  duration?: number
+  origin?: string
+  rtt: number
+}
+
+/**
+ * a→m: §6.3's one correction, to **that member only** (never a broadcast).
+ * A nudge carries 0.95 or 1.05; the page restores to 1 itself, and
+ * `untilAuthorityMs` is the authority-clock bound that survives a lost restore
+ * (T7b2). A seek or a paused snap is a targeted `state` instead, so it takes
+ * the page's existing path for moving the playhead.
+ */
+export interface NudgeFrame {
+  type: 'nudge'
+  target: number
+  rate: number
+  untilAuthorityMs: number
+}
+
+export type ClientFrame =
+  | HelloFrame
+  | RenameFrame
+  | CommandFrame
+  | ChatSendFrame
+  | PingFrame
+  | ReportFrame
 
 export interface WelcomeFrame {
   type: 'welcome'
@@ -248,3 +287,4 @@ export type ServerFrame =
   | WarningFrame
   | ChatFrame
   | PongFrame
+  | NudgeFrame

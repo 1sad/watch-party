@@ -12,9 +12,17 @@ import {
   type ClientFrame,
   type ErrorCode,
   type Member,
+  type Playback,
   type PlaybackReason,
   type ServerFrame,
 } from '../shared/protocol.ts'
+import {
+  CORRECTION_DEADBAND_SECONDS,
+  clampToMedia,
+  decideCorrection,
+  reportFrom,
+  targetFor,
+} from '../shared/timing.ts'
 import {
   applyCommand,
   displayNameOf,
@@ -81,6 +89,12 @@ export function attachRoomSocket(
   const sockets = new Map<PeerSocket, Member>()
   /** §4.6's limits are per member, kept beside the sockets rather than in the room. */
   const budgets = new Map<string, ChatBudget>()
+  /**
+   * §6.3's "at most one correction per client per 5 s". It is beside the
+   * sockets for the same reason the chat budget is: a fact about this member's
+   * session, not about the room.
+   */
+  const lastCorrectionAt = new Map<string, number>()
   const wss = new WebSocketServer({ server, path: '/' })
 
   const send = (socket: PeerSocket, frame: ServerFrame): void => {
@@ -225,6 +239,84 @@ export function attachRoomSocket(
           send(socket, { type: 'pong', t0: frame.t0, t1, t2: now() })
           return
         }
+        case 'report': {
+          // §5: a measurement, never a command. It may produce a correction to
+          // **this member only**; it can never move `playback` or `revision`
+          // (§4.3 invariant 1, T6a's Safety line).
+          if (
+            typeof frame.position !== 'number' ||
+            !Number.isFinite(frame.position) ||
+            typeof frame.readyState !== 'number' ||
+            !Number.isFinite(frame.readyState) ||
+            typeof frame.rtt !== 'number' ||
+            !Number.isFinite(frame.rtt)
+          ) {
+            return
+          }
+
+          const at = now()
+          // §6.4: the authority's `maxRtt` input arrives on every report (T8).
+          member.rtt = Math.max(0, frame.rtt)
+
+          // §4.5's sign, once: the member's playhead in room time versus where
+          // the room says this member's copy should be.
+          const target =
+            typeof frame.duration === 'number' && Number.isFinite(frame.duration)
+              ? clampToMedia(targetFor(room.playback, member, at), frame.duration)
+              : targetFor(room.playback, member, at)
+          const drift = reportFrom(frame.position, member) - target
+          const bad = Math.abs(drift) >= CORRECTION_DEADBAND_SECONDS
+          // §6.3's first guard: consecutive bad reports, cleared by a good one.
+          // A buffering report still counts — the drift is real even though the
+          // correction has to wait (§6.7).
+          member.driftStrikes = bad ? member.driftStrikes + 1 : 0
+
+          const decision = decideCorrection({
+            drift,
+            playing: room.playback.playing,
+            readyState: frame.readyState,
+            driftStrikes: member.driftStrikes,
+            lastCorrectionAt: lastCorrectionAt.get(member.id) ?? null,
+            nowMs: at,
+            target,
+          })
+
+          // The manual gate (T7b2) reads this rather than guessing: every input
+          // and the action chosen, one line per report, dev builds only.
+          debug(
+            `correction member=${member.id} drift=${drift.toFixed(3)} ` +
+              `readyState=${frame.readyState} strikes=${member.driftStrikes} ` +
+              `last=${lastCorrectionAt.get(member.id) ?? 'none'} action=${decision.action} ` +
+              `rate=${decision.rate}`,
+          )
+
+          if (decision.action === 'none') return
+          lastCorrectionAt.set(member.id, at)
+
+          if (decision.action === 'nudge') {
+            // §6.3, to that one client only: a rate, the place the gap is
+            // heading, and the authority-clock bound the page enforces (T7b2).
+            send(socket, {
+              type: 'nudge',
+              target: decision.target ?? target,
+              rate: decision.rate,
+              untilAuthorityMs: decision.untilAuthorityMs ?? at,
+            })
+            return
+          }
+
+          // A hard seek (§6.3) or a paused snap (§6.3) is a **targeted**
+          // `state`: the frame shape the page already applies, sent to this
+          // socket alone. `room.playback` is untouched, so no revision moves
+          // and no other member is disturbed (R8).
+          const correction: Playback = {
+            ...room.playback,
+            position: decision.target ?? target,
+            updatedAt: at,
+          }
+          send(socket, stateFrame(correction, room.revision, room.authority.memberId, 'seek'))
+          return
+        }
         case 'chat': {
           // Not text is not a frame we know how to refuse: §5 ignores what it cannot read.
           if (typeof frame.text !== 'string' || frame.text.length === 0) return
@@ -253,9 +345,6 @@ export function attachRoomSocket(
         }
         default:
           // §5: unknown message types are ignored, not fatal (forward compatibility).
-          // `report` lands here until the ticket that reads it: it is a member's
-          // own measurement, never a command, so it cannot move `playback` or
-          // `revision` (§4.3 invariant 1, T6a's Safety line).
           return
       }
     })
@@ -266,6 +355,7 @@ export function attachRoomSocket(
       const label = displayNameOf(room, member.id)
       sockets.delete(socket)
       budgets.delete(member.id)
+      lastCorrectionAt.delete(member.id)
       broadcastChat(postChat(room, { kind: 'system', name: label, text: `${label} left` }, now))
       markOffline(room, member.id, now)
       broadcastMembers()

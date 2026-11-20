@@ -97,6 +97,11 @@ export class FakePlayer {
   /**
    * Stalls the player for `seconds` of its own clock: `readyState` drops to 2
    * and `currentTime` stops where it was, the way a buffering `<video>` does.
+   *
+   * It resumes **from the frozen frame**, not by jumping back onto the room's
+   * timeline: a real stalled player starts playing again where it stopped and
+   * is now the stall's length behind. That lag is what §6.3's ladder exists to
+   * remove, so the fake player must keep it (T7b1).
    */
   injectStall(seconds: number): void {
     this.#frozenAt = this.currentTime
@@ -105,8 +110,18 @@ export class FakePlayer {
     const until = this.#stallUntil
     const timer = setTimeout(() => {
       if (this.#stallUntil !== until) return
+      const resumedAt = this.#frozenAt ?? this.currentTime
       this.#frozenAt = null
       this.readyState = 4
+      if (this.#playback !== null) {
+        // Re-anchor the room timeline at the instant playback resumes, so the
+        // player carries the frozen position forward instead of snapping.
+        this.#playback = {
+          ...this.#playback,
+          position: resumedAt,
+          updatedAt: authorityNow(this.clock.now(), this.#estimate()),
+        }
+      }
     }, seconds * 1000)
     timer.unref?.()
   }

@@ -29,6 +29,8 @@ export interface HarnessOptions {
   now?: () => number
   /** Media duration the fake players believe in. */
   duration?: number
+  /** The authority's dev log, so a test can read the ladder's decisions. */
+  debug?: (line: string) => void
 }
 
 export interface Harness {
@@ -50,7 +52,10 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const now = options.now
   const room = createRoom(CODE, now)
   const server = createServer()
-  const wss = attachRoomSocket(server, room, now === undefined ? {} : { now })
+  const wss = attachRoomSocket(server, room, {
+    ...(now === undefined ? {} : { now }),
+    ...(options.debug === undefined ? {} : { debug: options.debug }),
+  })
 
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
