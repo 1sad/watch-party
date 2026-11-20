@@ -65,21 +65,43 @@ export interface RoomSnapshot {
   revision: number
 }
 
+/** The refusals only chat can raise, so `ErrorCode` and the limiter share them. */
+export type ChatRefusalCode = 'chat_too_long' | 'chat_rate_limited' | 'chat_byte_limit'
+
+/**
+ * §4.6's message, exactly. `kind` is what makes a system line dimmable, and a
+ * system message never carries a `memberId`: the sentence names no one.
+ */
 export interface ChatMessage {
+  /** Server-assigned and sortable, so every replica shows the same order. */
   id: string
+  kind: 'user' | 'system'
+  memberId?: string
+  /** The display name at send time; for a system line, whoever caused it. */
   name: string
   text: string
   ts: number
 }
 
-export type ErrorCode = 'bad_room' | 'room_full' | 'not_controller'
+export type ErrorCode = 'bad_room' | 'room_full' | 'not_controller' | ChatRefusalCode
 
 /** One sentence per code, shown as written (§5: "a refusal is explicit"). */
 export const ERROR_SENTENCES: Record<ErrorCode, string> = {
   bad_room: 'That room code does not match this room.',
   room_full: 'This room is full — five people is the limit.',
   not_controller: 'Only the person who started the room can change this.',
+  chat_too_long: 'A chat message can be at most 2000 characters.',
+  chat_rate_limited: 'That is too many messages in a row — wait a few seconds.',
+  chat_byte_limit:
+    'You have sent a lot of text in the last minute — wait a moment before sending more.',
 }
+
+/**
+ * The soft half of §4.6's rate limit: sent once, to the member who was muted,
+ * and never to the room — a per-member fact does not go in chat.
+ */
+export const CHAT_MUTE_WARNING =
+  'You are sending messages too quickly, so chat is muted for 10 seconds.'
 
 export interface ErrorFrame {
   type: 'error'
@@ -93,6 +115,21 @@ export interface ErrorFrame {
  */
 export function errorFrame(code: ErrorCode): ErrorFrame {
   return { type: 'error', code, message: ERROR_SENTENCES[code] }
+}
+
+/**
+ * A notice that is not a refusal of this exact message but changes what the
+ * member may do next (§4.6: "a soft warning and a 10 s mute"). Same shape as
+ * `error`, one sentence, only ever sent to the member it concerns.
+ */
+export interface WarningFrame {
+  type: 'warning'
+  code: ErrorCode
+  message: string
+}
+
+export function warningFrame(code: ErrorCode): WarningFrame {
+  return { type: 'warning', code, message: CHAT_MUTE_WARNING }
 }
 
 export interface HelloFrame {
@@ -126,7 +163,13 @@ export interface SeekFrame {
 
 export type CommandFrame = PlayFrame | PauseFrame | SeekFrame
 
-export type ClientFrame = HelloFrame | RenameFrame | CommandFrame
+/** m→a: what the member typed. The authority supplies everything else (§5). */
+export interface ChatSendFrame {
+  type: 'chat'
+  text: string
+}
+
+export type ClientFrame = HelloFrame | RenameFrame | CommandFrame | ChatSendFrame
 
 export interface WelcomeFrame {
   type: 'welcome'
@@ -150,4 +193,13 @@ export interface StateFrame {
   reason?: string
 }
 
-export type ServerFrame = WelcomeFrame | MembersFrame | StateFrame | ErrorFrame
+/** a→m: one message, to every member including its sender (§5). */
+export type ChatFrame = ChatMessage & { type: 'chat' }
+
+export type ServerFrame =
+  | WelcomeFrame
+  | MembersFrame
+  | StateFrame
+  | ErrorFrame
+  | WarningFrame
+  | ChatFrame

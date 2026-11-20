@@ -7,7 +7,8 @@ import type {
   RoomSnapshot,
   WireMember,
 } from '../shared/protocol.ts'
-import { displayNames } from '../shared/names.ts'
+import { ANONYMOUS, displayNames } from '../shared/names.ts'
+import { pushChat } from '../shared/chat.ts'
 
 /** §12: five people is a constraint of the design, not a setting. */
 export const MAX_MEMBERS = 5
@@ -28,6 +29,8 @@ export interface RoomState {
   revision: number
   members: Map<string, Member>
   chat: ChatMessage[]
+  /** Monotonic across the room's chat, so ids sort the way arrival ordered them. */
+  chatSeq: number
 }
 
 export function createRoom(code: string, now: () => number = Date.now): RoomState {
@@ -43,6 +46,7 @@ export function createRoom(code: string, now: () => number = Date.now): RoomStat
     revision: 0,
     members: new Map(),
     chat: [],
+    chatSeq: 0,
   }
 }
 
@@ -157,4 +161,50 @@ export function wireMembers(room: RoomState): WireMember[] {
   )
   const labels = displayNames(members)
   return members.map((member) => ({ ...member, displayName: labels.get(member.id) ?? '' }))
+}
+
+/** The label this member's row shows, for a system sentence (§4.6, names.ts). */
+export function displayNameOf(room: RoomState, memberId: string): string {
+  if (!room.members.has(memberId)) return ANONYMOUS
+  return displayNames([...room.members.values()]).get(memberId) ?? ANONYMOUS
+}
+
+export interface ChatEntry {
+  kind: ChatMessage['kind']
+  memberId?: string
+  /** The display name at send time, already resolved by the caller. */
+  name: string
+  text: string
+}
+
+/**
+ * §4.6: the id and the timestamp are the authority's, so a client cannot
+ * backdate a message, and the buffer keeps only the last 100.
+ */
+export function postChat(
+  room: RoomState,
+  entry: ChatEntry,
+  now: () => number = Date.now,
+): ChatMessage {
+  room.chatSeq += 1
+  const message: ChatMessage = {
+    id: `m${String(room.chatSeq).padStart(6, '0')}`,
+    kind: entry.kind,
+    ...(entry.memberId === undefined ? {} : { memberId: entry.memberId }),
+    name: entry.name,
+    text: entry.text,
+    ts: now(),
+  }
+  return pushChat(room.chat, message)
+}
+
+/** The three sentences M1 has: joined, left, seeked (§4.6's list, no user input). */
+export function postSystemChat(
+  room: RoomState,
+  memberId: string,
+  sentence: (label: string) => string,
+  now: () => number = Date.now,
+): ChatMessage {
+  const label = displayNameOf(room, memberId)
+  return postChat(room, { kind: 'system', name: label, text: sentence(label) }, now)
 }

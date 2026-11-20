@@ -3,8 +3,11 @@ import type { IncomingMessage, Server } from 'node:http'
 import { WebSocketServer } from 'ws'
 
 import { normalizeName } from '../shared/names.ts'
+import { admitChat, formatClock, newChatBudget, type ChatBudget } from '../shared/chat.ts'
 import {
   errorFrame,
+  warningFrame,
+  type ChatMessage,
   type ClientFrame,
   type ErrorCode,
   type Member,
@@ -12,8 +15,11 @@ import {
 } from '../shared/protocol.ts'
 import {
   applyCommand,
+  displayNameOf,
   joinRoom,
   markOffline,
+  postChat,
+  postSystemChat,
   renameMember,
   snapshot,
   wireMembers,
@@ -64,6 +70,8 @@ export function attachRoomSocket(
   const isLocal = options.isLocal ?? isLoopback
 
   const sockets = new Map<PeerSocket, Member>()
+  /** §4.6's limits are per member, kept beside the sockets rather than in the room. */
+  const budgets = new Map<string, ChatBudget>()
   const wss = new WebSocketServer({ server, path: '/' })
 
   const send = (socket: PeerSocket, frame: ServerFrame): void => {
@@ -77,6 +85,13 @@ export function attachRoomSocket(
   // `members` goes to everyone, sender included (§5: a command echoes to its sender).
   const broadcastMembers = (): void => {
     const payload: ServerFrame = { type: 'members', members: wireMembers(room) }
+    const text = JSON.stringify(payload)
+    for (const socket of sockets.keys()) socket.send(text)
+  }
+
+  // Chat goes to everyone, sender included: that is why no page keeps chat state (§5).
+  const broadcastChat = (message: ChatMessage): void => {
+    const payload: ServerFrame = { type: 'chat', ...message }
     const text = JSON.stringify(payload)
     for (const socket of sockets.keys()) socket.send(text)
   }
@@ -117,10 +132,12 @@ export function attachRoomSocket(
       selfId: result.member.id,
       room: snapshot(room),
       members: wireMembers(room),
-      chatTail: room.chat.slice(-100),
+      // §4.6: the ring buffer itself, already trimmed to the last 100 by `postChat`.
+      chatTail: room.chat.slice(),
       epoch: room.authority.epoch,
     })
     broadcastMembers()
+    broadcastChat(postSystemChat(room, result.member.id, (label) => `${label} joined`, now))
   }
 
   wss.on('connection', (socket: PeerSocket, request: IncomingMessage) => {
@@ -161,6 +178,43 @@ export function attachRoomSocket(
           }
           const text = JSON.stringify(state)
           for (const peer of sockets.keys()) peer.send(text)
+          if (frame.type === 'seek') {
+            // §4.6's third sentence: the authority's position, never the client's text.
+            broadcastChat(
+              postSystemChat(
+                room,
+                member.id,
+                (label) => `${label} seeked to ${formatClock(room.playback.position)}`,
+                now,
+              ),
+            )
+          }
+          return
+        }
+        case 'chat': {
+          // Not text is not a frame we know how to refuse: §5 ignores what it cannot read.
+          if (typeof frame.text !== 'string' || frame.text.length === 0) return
+          const at = now()
+          const budget = budgets.get(member.id) ?? newChatBudget()
+          budgets.set(member.id, budget)
+          const verdict = admitChat(budget, frame.text, at)
+          if (!verdict.ok) {
+            // The warning names a member's own state, so it goes to that member only.
+            if (verdict.muted) send(socket, warningFrame(verdict.code))
+            fail(socket, verdict.code)
+            return
+          }
+          const message = postChat(
+            room,
+            {
+              kind: 'user',
+              memberId: member.id,
+              name: displayNameOf(room, member.id),
+              text: frame.text,
+            },
+            () => at,
+          )
+          broadcastChat(message)
           return
         }
         default:
@@ -172,7 +226,10 @@ export function attachRoomSocket(
     socket.on('close', () => {
       const member = sockets.get(socket)
       if (member === undefined) return
+      const label = displayNameOf(room, member.id)
       sockets.delete(socket)
+      budgets.delete(member.id)
+      broadcastChat(postChat(room, { kind: 'system', name: label, text: `${label} left` }, now))
       markOffline(room, member.id, now)
       broadcastMembers()
     })
