@@ -72,6 +72,16 @@ export class FakePlayer {
   /** Where a stall froze it, and until when (this clock's millis). */
   #frozenAt: number | null = null
   #stallUntil = 0
+  /** The pending §6.4 start this player is waiting for, in authority millis. */
+  #startAt: number | null = null
+  #startTimer: ReturnType<typeof setTimeout> | null = null
+  /**
+   * The authority instant at which this player made its `playing` move for the
+   * latest scheduled start, or `null` while it is still waiting. T8's harness
+   * assertion compares it with `playback.startAt` — the same one-timer rule the
+   * page follows, so the fake cannot pass by firing on packet arrival.
+   */
+  startFiredAt: number | null = null
 
   constructor(options: FakePlayerOptions = {}) {
     this.clock = options.clock ?? new FakeClock()
@@ -92,6 +102,40 @@ export class FakePlayer {
   apply(playback: Playback): void {
     this.#playback = { ...playback }
     this.playbackRate = playback.rate
+
+    // §6.4: a future `startAt` is one timer against `authorityNow()`, not the
+    // instant this frame arrived. A state that merely carries an old `startAt`
+    // is not a new beat and leaves the recorded fire alone.
+    const startAt = playback.startAt
+    const now = authorityNow(this.clock.now(), this.#estimate())
+    if (
+      playback.playing &&
+      typeof startAt === 'number' &&
+      Number.isFinite(startAt) &&
+      startAt > now
+    ) {
+      this.#clearStart()
+      this.startFiredAt = null
+      this.#startAt = startAt
+      const timer = setTimeout(() => {
+        if (this.#startAt !== startAt) return
+        this.#startAt = null
+        this.#startTimer = null
+        this.startFiredAt = authorityNow(this.clock.now(), this.#estimate())
+      }, startAt - now)
+      timer.unref?.()
+      this.#startTimer = timer
+    } else {
+      // A pause (or any state that is not a future beat) cancels the timer: a
+      // scheduled start that the room cancelled must not fire afterwards.
+      this.#clearStart()
+    }
+  }
+
+  #clearStart(): void {
+    if (this.#startTimer !== null) clearTimeout(this.#startTimer)
+    this.#startTimer = null
+    this.#startAt = null
   }
 
   /**

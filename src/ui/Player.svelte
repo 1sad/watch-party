@@ -63,12 +63,15 @@
   let appliedRevision = -1
   /** §6.4's scheduled start: a state may name an instant up to 1.5 s away. */
   let startTimer: ReturnType<typeof setTimeout> | undefined
+  /** The instant the pending timer is for, or null; also the dev log's subject. */
+  let startBeat: number | null = null
   /** For `seek{wasPlaying}`: whether the element was playing when a seek began. */
   let wasPlayingBeforeSeek = false
 
   function clearStart(): void {
     if (startTimer !== undefined) clearTimeout(startTimer)
     startTimer = undefined
+    startBeat = null
   }
 
   // §6.3's one correction the page can apply: a rate, held until the authority's
@@ -273,6 +276,12 @@
       return
     }
     if (scheduled) {
+      // Item 3: `play()` waits for the beat, so a resume after a seek does not
+      // start on packet arrival either. A window already playing holds the
+      // pressed frame until the timer, which is the one place §6.4 spends its
+      // 1.5 s. `pauseElement()` goes through §6.6's set, so it sends no command.
+      pauseElement()
+      startBeat = startAt
       startTimer = setTimeout(() => {
         startTimer = undefined
         playElement()
@@ -377,6 +386,17 @@
     send({ type: 'play', position: video.currentTime })
   }
 
+  function onPlaying(): void {
+    const beat = startBeat
+    if (beat === null) return
+    startBeat = null
+    // The gate's one line per window: the local instant of this `playing`
+    // event against §6.4's instant. Dev builds only, so `dist/` has no log.
+    if (!(import.meta.env.DEV || import.meta.env.MODE === 'development')) return
+    const localNow = Date.now()
+    console.info(`scheduled-start startAt=${beat} playingAt=${localNow} deltaMs=${localNow - beat}`)
+  }
+
   function onPause(): void {
     if (echoes.consume('pause', performance.now())) return
     if (video === null) return
@@ -441,6 +461,7 @@
       onloadedmetadata={onLoadedMetadata}
       ontimeupdate={onTimeUpdate}
       onplay={onPlay}
+      onplaying={onPlaying}
       onpause={onPause}
       onseeking={onSeeking}
       onseeked={onSeeked}

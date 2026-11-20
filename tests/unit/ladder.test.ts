@@ -194,6 +194,7 @@ test('scheduledStartAt is now + max(2 × maxRtt, 1.5 s)', () => {
   assert.equal(scheduledStartAt(NOW, 749), NOW + 1500, 'just under the floor')
   assert.equal(scheduledStartAt(NOW, 750), NOW + 1500, 'exactly the floor')
   assert.equal(scheduledStartAt(NOW, 1000), NOW + 2000, '2 s of rtt beats the floor')
+  assert.equal(scheduledStartAt(NOW, 900), NOW + 1800, 'a 900 ms rtt yields a 1.8 s lead')
   assert.equal(scheduledStartAt(NOW, -10), NOW + 1500, 'a bad rtt cannot go backwards')
 })
 

@@ -10,7 +10,7 @@ import type {
 } from '../shared/protocol.ts'
 import { ANONYMOUS, displayNames } from '../shared/names.ts'
 import { pushChat } from '../shared/chat.ts'
-import { expected, seekIsDuplicate } from '../shared/timing.ts'
+import { expected, scheduledStartAt, seekIsDuplicate } from '../shared/timing.ts'
 
 /** §12: five people is a constraint of the design, not a setting. */
 export const MAX_MEMBERS = 5
@@ -106,7 +106,17 @@ export function markOffline(
 }
 
 export type CommandOutcome =
-  | { ok: true; applied: true; reason: PlaybackReason }
+  | {
+      ok: true
+      applied: true
+      reason: PlaybackReason
+      /** §6.4: the instant a play settled on, fixed at this press and never recomputed. */
+      startAt?: number
+      /** The largest `rtt` known to the authority at that press (the `report` input). */
+      maxRtt?: number
+      /** `startAt − press`, for the log line that shows floor vs RTT. */
+      leadMs?: number
+    }
   /** Accepted as a command, but it changed nothing: §5's idempotency rule. */
   | { ok: true; applied: false }
   | { ok: false; code: ErrorCode }
@@ -150,6 +160,13 @@ export function applyCommand(
     return { ok: true, applied: false }
   }
 
+  // §6.4: the beat is decided *here*, at the press, from the RTTs known at this
+  // instant. Nothing after this line — a join, a report, a reconnect — may
+  // recompute it; the value is stored in `playback.startAt` and travels with
+  // every `state` and `welcome` from now on.
+  const maxRtt = Math.max(0, ...[...room.members.values()].map((member) => member.rtt))
+  const startAt = scheduledStartAt(at, maxRtt)
+
   if (frame.type === 'play') {
     room.playback.playing = true
     room.playback.position = target
@@ -160,7 +177,26 @@ export function applyCommand(
     room.playback.playing = frame.wasPlaying === true
     room.playback.position = target
   }
+
+  if (room.playback.playing) {
+    // §5: `position` is valid at `updatedAt`. During the lead the playhead has
+    // not moved, so `updatedAt` is the beat itself; `expected()` holds the
+    // pressed position until that instant and advances from it afterwards.
+    room.playback.updatedAt = startAt
+    room.playback.startAt = startAt
+    room.revision += 1
+    return {
+      ok: true,
+      applied: true,
+      reason: frame.type,
+      startAt,
+      maxRtt,
+      leadMs: startAt - at,
+    }
+  }
+
   room.playback.updatedAt = at
+  delete room.playback.startAt
   room.revision += 1
   return { ok: true, applied: true, reason: frame.type }
 }

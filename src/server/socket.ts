@@ -127,7 +127,7 @@ export function attachRoomSocket(
     const text = JSON.stringify(payload)
     debug(
       `state rev=${room.revision} reason=${reason} playing=${room.playback.playing} ` +
-        `position=${room.playback.position.toFixed(3)} by=${by}`,
+        `position=${room.playback.position.toFixed(3)} startAt=${room.playback.startAt ?? 'none'} by=${by}`,
     )
     for (const socket of sockets.keys()) socket.send(text)
   }
@@ -213,6 +213,14 @@ export function attachRoomSocket(
           // §5's idempotency rule: an accepted-but-unchanged command is not
           // news. No `state`, no `revision` bump, and no "seeked to" line.
           if (!result.applied) return
+          // §6.4's decision, once per press: the instant and the input that
+          // produced it, so the manual gate can read floor vs RTT.
+          if (result.startAt !== undefined) {
+            debug(
+              `scheduled-start startAt=${result.startAt} maxRtt=${result.maxRtt ?? 0} ` +
+                `leadMs=${result.leadMs ?? 0} reason=${result.reason}`,
+            )
+          }
           broadcastState(member.id, result.reason)
           if (frame.type === 'seek') {
             // §4.6's third sentence: the authority's position, never the client's text.

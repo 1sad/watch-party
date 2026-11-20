@@ -39,6 +39,13 @@ test('R6: one owner play reaches all three within 300 ms as exactly one state, a
       assert.equal(state.playback.playing, true)
       assert.equal(state.playback.position, 30)
     }
+    // §6.4: the play is a *scheduled* start, so "in step 2 s later" is measured
+    // from the beat, not from the packet. Waiting for it is not a weakened
+    // check — the film has not begun before `startAt`, which the next test proves.
+    const startAt = (seen[0]!.frame as StateFrame).playback.startAt
+    assert.equal(typeof startAt, 'number')
+    if (typeof startAt !== 'number') return
+    await waitFor(() => Date.now() >= startAt + 50, 2500, 'the scheduled start instant')
 
     // §5's idempotency rule and §4.3 invariant 8: one command, one `state`,
     // whichever end you count from.
@@ -236,6 +243,127 @@ test('T5: a client whose clock is 137 ms slow estimates the offset within ±20 m
 // The page does not apply a nudge yet (T7b2) — the frame arriving is the
 // assertion this half of the split owns.
 
+test('§6.4/T8: every client starts within 100 ms of the one scheduled instant, and a later joiner cannot move it', async () => {
+  const harness = await startHarness({ clients: 3 })
+  try {
+    // §6.1's own measurement first, so the reports below carry a real `rtt`
+    // (the authority's `maxRtt` input) rather than 0.
+    await Promise.all(harness.clients.map((client) => client.sampleOffset(1)))
+
+    const pressedAt = Date.now()
+    harness.owner.send({ type: 'play', position: 30 })
+    const seen = await Promise.all(
+      harness.clients.map((client) => client.next((frame) => frame.type === 'state')),
+    )
+    const state = seen[0]!.frame as StateFrame
+    const startAt = state.playback.startAt
+    assert.equal(typeof startAt, 'number', 'a play carries §6.4’s scheduled instant')
+    if (typeof startAt !== 'number') return
+
+    // The 1.5 s floor (§6.4): loopback rtt is milliseconds, so 2 × maxRtt
+    // cannot beat it. The instant is fixed at press time and travels unchanged.
+    assert.ok(
+      startAt >= pressedAt + 1490 && startAt < pressedAt + 3000,
+      `startAt is ${startAt - pressedAt} ms after the press (the floor is 1500)`,
+    )
+    assert.equal(state.playback.updatedAt, startAt, 'position is valid at the scheduled instant')
+    assert.equal(state.playback.position, 30, 'the film waits at the pressed position')
+    for (const [index, record] of seen.entries()) {
+      assert.equal(
+        (record.frame as StateFrame).playback.startAt,
+        startAt,
+        `${harness.clients[index]!.name} was told the same instant`,
+      )
+    }
+
+    // T8's Safety line: a member joining after the broadcast gets the same
+    // instant in `welcome`, and the room's own copy is not rewritten for it.
+    const late = await harness.join('late')
+    assert.equal(
+      late.welcome.room.playback.startAt,
+      startAt,
+      'a later joiner cannot move the beat the others are counting down to',
+    )
+
+    // A report arriving before the beat must not recompute it either.
+    for (const client of harness.clients) client.reportNow()
+    await settle(150)
+    assert.equal(harness.room.playback.startAt, startAt, 'reports cannot move the beat')
+
+    // Item 4: no early start, even for a client with fewer than three offset
+    // samples. `waitFor` would hide this by firing late, so it is checked now.
+    for (const client of [...harness.clients, late]) {
+      assert.equal(client.player.startFiredAt, null, `${client.name} has not played yet`)
+      assert.ok(
+        client.player.currentTime <= 30.05,
+        `${client.name} is holding the pressed position (${client.player.currentTime.toFixed(3)} s)`,
+      )
+    }
+
+    // Item 5: the one assertion this ticket adds to the harness — every player
+    // fires its `playing` move within 100 ms of the scheduled instant.
+    const fires = await waitFor(
+      () =>
+        [...harness.clients, late].every((client) => client.player.startFiredAt !== null)
+          ? [...harness.clients, late].map((client) => ({
+              client,
+              at: client.player.startFiredAt as number,
+            }))
+          : null,
+      4000,
+      'every client reached the scheduled start',
+    )
+    for (const { client, at } of fires) {
+      const difference = at - startAt
+      assert.ok(
+        Math.abs(difference) <= 100,
+        `${client.name} started ${difference.toFixed(1)} ms from startAt (100 allowed)`,
+      )
+    }
+
+    // Item 2's other half: pause clears the instant, and a seek that resumes
+    // playback schedules a fresh one — the same one-timer rule as a play.
+    harness.owner.send({ type: 'pause', position: 35 })
+    const paused = (
+      await harness.owner.next((frame) => frame.type === 'state' && frame.reason === 'pause')
+    ).frame as StateFrame
+    assert.equal(paused.playback.startAt, undefined, 'pause clears the pending instant')
+
+    const resumedAt = Date.now()
+    harness.owner.send({ type: 'seek', position: 40, wasPlaying: true })
+    const resumed = (
+      await harness.owner.next((frame) => frame.type === 'state' && frame.reason === 'seek')
+    ).frame as StateFrame
+    const resumedStart = resumed.playback.startAt
+    assert.equal(typeof resumedStart, 'number', 'a resuming seek schedules a start')
+    if (typeof resumedStart !== 'number') return
+    assert.ok(resumedStart >= resumedAt + 1400, 'the resumed beat gets the full lead too')
+    const resumedFires = await waitFor(
+      () => {
+        const values = harness.clients.map((client) => client.player.startFiredAt)
+        return values.every((value) => value !== null && value >= resumedAt) ? values : null
+      },
+      4000,
+      'every client resumed on the new beat',
+    )
+    for (const [index, at] of resumedFires.entries()) {
+      const difference = (at as number) - resumedStart
+      assert.ok(
+        Math.abs(difference) <= 100,
+        `${harness.clients[index]!.name} resumed ${difference.toFixed(1)} ms from the new startAt`,
+      )
+    }
+  } finally {
+    await harness.close()
+  }
+})
+
+// T7b1 item 5, R8 and R9 on the wire: one window is slowed (its frames land
+// 400 ms late, so it runs ahead of the room) and stalled for 5 s; the ladder
+// nudges it, then hard-seeks it, and the other two windows are never touched.
+// The page does not apply a nudge yet (T7b2) — the frame arriving is the
+// assertion this half of the split owns.
+
 test('R8/R9: a slowed, stalled client is nudged before a seek and converges under 250 ms; the healthy clients are untouched', async () => {
   const decisions: string[] = []
   const harness = await startHarness({ clients: 3, debug: (line) => decisions.push(line) })
@@ -257,9 +385,11 @@ test('R8/R9: a slowed, stalled client is nudged before a seek and converges unde
     // re-derives the right position, so it produces no steady drift.
     injectSkew(lagging, 400)
     owner.send({ type: 'play', position: 30 })
+    // The 1.5 s scheduled lead (§6.4) plus this member's 400 ms clock error is
+    // why the wait is longer than the 300 ms R6 line: the lead is intended.
     await waitFor(
       () => harness.clients.every((client) => client.player.currentTime > 30.2),
-      2000,
+      4000,
       'every player adopted the owner’s play',
     )
 
