@@ -1,8 +1,10 @@
 import { randomInt } from 'node:crypto'
 
-// §4.1: six characters from an unambiguous alphabet — no O, 0, I or 1.
-export const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-export const ROOM_CODE_LENGTH = 6
+import { ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH } from './room-code.ts'
+
+// The shape lives in room-code.ts, which the page can import: generating a code
+// needs `node:crypto`, and nothing in the browser does (the page only reads one).
+export { ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH, isRoomCode } from './room-code.ts'
 
 export function newRoomCode(pick: (max: number) => number = randomInt): string {
   let code = ''
@@ -10,12 +12,4 @@ export function newRoomCode(pick: (max: number) => number = randomInt): string {
     code += ROOM_CODE_ALPHABET[pick(ROOM_CODE_ALPHABET.length)]
   }
   return code
-}
-
-export function isRoomCode(value: string): boolean {
-  if (value.length !== ROOM_CODE_LENGTH) return false
-  for (const character of value) {
-    if (!ROOM_CODE_ALPHABET.includes(character)) return false
-  }
-  return true
 }
