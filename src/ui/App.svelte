@@ -1,7 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte'
 
-  import { ERROR_SENTENCES, type ServerFrame, type WireMember } from '../shared/protocol.ts'
+  import {
+    ERROR_SENTENCES,
+    type ChatMessage,
+    type ErrorCode,
+    type ServerFrame,
+    type WireMember,
+  } from '../shared/protocol.ts'
   import { parseJoinLink, UNREADABLE_LINK, UNREACHABLE_ROOM } from './join.ts'
 
   interface DiscoveryResult {
@@ -43,6 +49,15 @@
   let members = $state<WireMember[]>([])
   let sentence = $state<string | null>(null)
 
+  // §4.6's chat, in arrival order only. `welcome.chatTail` starts it and every
+  // later `chat` frame appends; the page never writes its own copy of a message
+  // and never reorders one (§5: chat is centralised on the broadcast).
+  let chat = $state<ChatMessage[]>([])
+  /** Refusals and the mute warning, on the panel's own lines rather than the join box. */
+  let chatNotices = $state<Array<{ kind: 'warning' | 'error'; text: string }>>([])
+  let chatDraft = $state('')
+  let chatList = $state<HTMLDivElement | null>(null)
+
   let joinText = $state('')
   let nameDraft = $state('')
 
@@ -62,6 +77,8 @@
     selfId = null
     roomCode = null
     members = []
+    chat = []
+    chatNotices = []
 
     let opened: WebSocket
     try {
@@ -94,19 +111,65 @@
     }
   }
 
+  /** The chat refusals are the panel's business; every other error stays a sentence. */
+  function isChatRefusal(code: ErrorCode): boolean {
+    return code === 'chat_too_long' || code === 'chat_rate_limited' || code === 'chat_byte_limit'
+  }
+
+  /** True when the panel is close enough to the end that a new line should follow it. */
+  function atBottom(): boolean {
+    const list = chatList
+    if (list === null) return true
+    return list.scrollHeight - list.scrollTop - list.clientHeight <= 8
+  }
+
+  /**
+   * Ask the next DOM update to stay at the newest line. The effect below also
+   * runs when the panel first mounts (a late joiner's welcome arrives before
+   * its list exists), so the tail is scrolled once there is something to scroll.
+   */
+  let stickToBottom = $state(false)
+  $effect(() => {
+    const list = chatList
+    void chat.length
+    void chatNotices.length
+    if (!stickToBottom || list === null) return
+    stickToBottom = false
+    list.scrollTop = list.scrollHeight
+  })
+
+  function followNewest(stick: boolean): void {
+    if (stick) stickToBottom = true
+  }
+
+  function notice(kind: 'warning' | 'error', text: string): void {
+    const stick = atBottom()
+    chatNotices = [...chatNotices, { kind, text }]
+    followNewest(stick)
+  }
+
   function apply(frame: ServerFrame): void {
     if (frame.type === 'welcome') {
       selfId = frame.selfId
       roomCode = frame.room.code
       members = frame.members
+      // A late joiner's panel is the ring buffer the authority sent (R5).
+      chat = [...frame.chatTail]
       sentence = null
+      followNewest(true)
     } else if (frame.type === 'members') {
       members = frame.members
+    } else if (frame.type === 'chat') {
+      const stick = atBottom()
+      chat = [...chat, frame]
+      followNewest(stick)
+    } else if (frame.type === 'warning') {
+      notice('warning', frame.message)
     } else if (frame.type === 'error') {
-      // One sentence, no code and no jargon (T3b item 5). The socket stays
-      // open: a `bad_room` is answered on the same connection, so the box below
-      // is still usable with a corrected link.
-      sentence = ERROR_SENTENCES[frame.code]
+      // T3b item 5: one sentence, no code and no jargon. A chat refusal belongs
+      // beside the messages it refused; anything else keeps the join box.
+      if (isChatRefusal(frame.code)) notice('error', ERROR_SENTENCES[frame.code])
+      else sentence = ERROR_SENTENCES[frame.code]
     }
   }
 
@@ -127,6 +190,17 @@
     // A blank draft is sent as written; the room turns it into `anonymous`
     // (R26). Normalising here would be a second copy of `normalizeName`.
     socket.send(JSON.stringify({ type: 'rename', name: nameDraft }))
+  }
+
+  function submitChat(event: SubmitEvent): void {
+    event.preventDefault()
+    if (socket === null || selfId === null) return
+    const text = chatDraft
+    if (text.length === 0) return
+    // The only way a line reaches the panel is this gate and the broadcast that
+    // comes back (T4). The page never appends its own copy first.
+    socket.send(JSON.stringify({ type: 'chat', text }))
+    chatDraft = ''
   }
 
   async function refresh(): Promise<void> {
@@ -249,26 +323,60 @@
       {/if}
     </section>
 
-    {#if members.length > 0}
-      <section class="roster">
-        <h2>In this room</h2>
-        <ul>
-          {#each members as member (member.id)}
-            <li>
-              <span class="dot {member.status}" title={member.status}></span>
-              <span class="name">{member.displayName}</span>
-              {#if member.id === selfId}<span class="you">you</span>{/if}
-            </li>
-          {/each}
-        </ul>
-
-        {#if selfId !== null}
-          <form onsubmit={submitRename}>
-            <input type="text" aria-label="Your name" placeholder="Your name" bind:value={nameDraft} />
-            <button type="submit">Set name</button>
+    {#if selfId !== null}
+      <div class="room-body">
+        <section class="chat" aria-label="Chat">
+          <h2>Chat</h2>
+          <div class="messages" bind:this={chatList}>
+            {#each chat as message (message.id)}
+              {#if message.kind === 'system'}
+                <p class="system">{message.text}</p>
+              {:else}
+                <p class="message" class:mine={message.memberId === selfId}>
+                  <span class="author">{message.name}</span>
+                  {#if message.memberId === selfId}<span class="you">you</span>{/if}
+                  <span class="text">{message.text}</span>
+                </p>
+              {/if}
+            {/each}
+            {#each chatNotices as entry, index (index)}
+              <p class="notice {entry.kind}" role="status">{entry.text}</p>
+            {/each}
+          </div>
+          <form onsubmit={submitChat}>
+            <input
+              type="text"
+              aria-label="Message"
+              placeholder="Message"
+              autocomplete="off"
+              bind:value={chatDraft}
+            />
+            <button type="submit">Send</button>
           </form>
+        </section>
+
+        {#if members.length > 0}
+          <section class="roster">
+            <h2>In this room</h2>
+            <ul>
+              {#each members as member (member.id)}
+                <li>
+                  <span class="dot {member.status}" title={member.status}></span>
+                  <span class="name">{member.displayName}</span>
+                  {#if member.id === selfId}<span class="you">you</span>{/if}
+                </li>
+              {/each}
+            </ul>
+
+            {#if selfId !== null}
+              <form onsubmit={submitRename}>
+                <input type="text" aria-label="Your name" placeholder="Your name" bind:value={nameDraft} />
+                <button type="submit">Set name</button>
+              </form>
+            {/if}
+          </section>
         {/if}
-      </section>
+      </div>
     {/if}
   {/if}
 </main>
@@ -415,6 +523,76 @@
     border-radius: 999px;
     font-size: 0.75rem;
     color: #7fd0a5;
+  }
+
+  .room-body {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 2rem;
+  }
+
+  .chat {
+    flex: 2 1 22rem;
+    min-width: 0;
+  }
+
+  .roster {
+    flex: 1 1 12rem;
+    min-width: 0;
+  }
+
+  .messages {
+    height: 20rem;
+    overflow-y: auto;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #2c2d36;
+    border-radius: 8px;
+    background: #1a1b22;
+  }
+
+  .message,
+  .system,
+  .notice {
+    margin: 0 0 0.5rem;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+
+  .message .author {
+    margin-right: 0.45rem;
+    font-weight: 600;
+    color: #c8c8d2;
+  }
+
+  .message.mine {
+    padding-left: 0.6rem;
+    border-left: 2px solid #3b6f5a;
+  }
+
+  .message.mine .author {
+    color: #7fd0a5;
+  }
+
+  .message .text {
+    white-space: pre-wrap;
+  }
+
+  .system {
+    color: #7a7a88;
+    font-style: italic;
+  }
+
+  .notice.error {
+    color: #ffb3a7;
+  }
+
+  .notice.warning {
+    color: #e0b34a;
+  }
+
+  .chat form {
+    margin-top: 0.6rem;
   }
 
   button {
