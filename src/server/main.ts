@@ -9,6 +9,8 @@ import { discover, findLanIp } from './discovery.ts'
 import type { DiscoveryResult } from './discovery.ts'
 import { buildInviteLinks } from './invite.ts'
 import type { InviteLinks } from './invite.ts'
+import { createRoom } from './room.ts'
+import { attachRoomSocket } from './socket.ts'
 
 // src/server/main.ts → repo root, which holds package.json and dist/.
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -57,6 +59,12 @@ const server = createSidecarServer({
   start: () => startState,
   retryDiscovery: () => void runDiscovery(),
 })
+
+// The room lives here and nowhere else (ADR-034): the host reads one port line
+// and knows nothing about codes, members or frames. The socket shares the page's
+// listener, so the window and a guest dial the same port (T3 item 1).
+const room = createRoom(roomCode)
+attachRoomSocket(server, room)
 
 server.on('error', (error: Error) => {
   process.stderr.write(`sidecar: cannot listen: ${error.message}\n`)

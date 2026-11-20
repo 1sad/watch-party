@@ -15,6 +15,7 @@
     "vite": "^8.3.8"
   },
   "dependencies": {
-    "@achingbrain/nat-port-mapper": "^4.0.5"
+    "@achingbrain/nat-port-mapper": "^4.0.5",
+    "ws": "^8.23.0"
   }
 }
