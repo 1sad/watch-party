@@ -8,6 +8,13 @@ export interface SidecarOptions {
   distDir: string
   /** What GET /healthz answers with; the page shows it. */
   version: string
+  /**
+   * The start screen's state, as the page asks for it (T2). The host never
+   * reads this: discovery is sidecar code, and the page is the only consumer.
+   */
+  start?: () => unknown
+  /** Runs one more mapping attempt; the page's "try again" button. */
+  retryDiscovery?: () => void
 }
 
 // A four-entry map instead of a `mime` package (ADR-035). Anything the page
@@ -30,7 +37,7 @@ const CONTENT_TYPES: Record<string, string> = {
 export function createSidecarServer(options: SidecarOptions): Server {
   const distDir = resolve(options.distDir)
   return createServer((request, response) => {
-    void handle(request, response, distDir, options.version)
+    void handle(request, response, distDir, options)
   })
 }
 
@@ -38,28 +45,51 @@ async function handle(
   request: IncomingMessage,
   response: ServerResponse,
   distDir: string,
-  version: string,
+  options: SidecarOptions,
 ): Promise<void> {
   const method = request.method ?? 'GET'
-
-  if (method !== 'GET' && method !== 'HEAD') {
-    response.writeHead(405, { 'content-type': 'text/plain; charset=utf-8', allow: 'GET, HEAD' })
-    response.end('method not allowed\n')
-    return
-  }
-
   const url = new URL(request.url ?? '/', 'http://127.0.0.1')
 
-  if (url.pathname === '/healthz') {
-    sendText(response, 200, version, method)
+  if (url.pathname === '/discovery') {
+    if (method !== 'GET' && method !== 'HEAD') {
+      sendMethodNotAllowed(response, 'GET, HEAD')
+      return
+    }
+    sendJson(response, 200, options.start?.() ?? { status: 'pending' }, method)
     return
   }
 
-  const filePath = resolveStaticFile(distDir, url.pathname)
+  if (url.pathname === '/discovery/retry') {
+    if (method !== 'POST') {
+      sendMethodNotAllowed(response, 'POST')
+      return
+    }
+    options.retryDiscovery?.()
+    sendJson(response, 202, { status: 'pending' }, method)
+    return
+  }
+
+  if (method !== 'GET' && method !== 'HEAD') {
+    sendMethodNotAllowed(response, 'GET, HEAD')
+    return
+  }
+
+  if (url.pathname === '/healthz') {
+    sendText(response, 200, options.version, method)
+    return
+  }
+
+  // `/join?c=<code>` is the guest's door: it serves the same page, and the
+  // page asks the sidecar which room that code is (T3 owns the room itself).
+  const filePath =
+    url.pathname === '/join'
+      ? resolveStaticFile(distDir, '/')
+      : resolveStaticFile(distDir, url.pathname)
   if (filePath === null) {
     sendText(response, 404, 'not found\n', method)
     return
   }
+
 
   let body: Buffer
   try {
@@ -102,4 +132,19 @@ function sendText(response: ServerResponse, status: number, body: string, method
     'cache-control': 'no-store',
   })
   response.end(method === 'HEAD' ? undefined : body)
+}
+
+function sendJson(response: ServerResponse, status: number, value: unknown, method: string): void {
+  const body = JSON.stringify(value)
+  response.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'content-length': Buffer.byteLength(body),
+    'cache-control': 'no-store',
+  })
+  response.end(method === 'HEAD' ? undefined : body)
+}
+
+function sendMethodNotAllowed(response: ServerResponse, allow: string): void {
+  response.writeHead(405, { 'content-type': 'text/plain; charset=utf-8', allow })
+  response.end('method not allowed\n')
 }
