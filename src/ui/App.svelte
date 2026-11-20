@@ -6,12 +6,15 @@
     type ChatMessage,
     type CommandFrame,
     type ErrorCode,
+    type NudgeFrame,
     type Playback,
+    type ReportFrame,
     type ServerFrame,
     type WireMember,
   } from '../shared/protocol.ts'
   import { parseJoinLink, UNREADABLE_LINK, UNREACHABLE_ROOM } from './join.ts'
   import { readClockSkew } from './dev-clock.ts'
+  import { readDevPlay } from './dev-drift.ts'
   import Player from './Player.svelte'
   import {
     PING_INTERVAL_MS,
@@ -84,6 +87,11 @@
    * and neither is a `state` frame of its own.
    */
   let realign = $state(0)
+  /**
+   * The authority's latest `nudge` for this window (§6.3, T7b2). Only the player
+   * reads it; it holds no room state of its own, so it is not part of `playback`.
+   */
+  let nudge = $state<NudgeFrame | null>(null)
 
   let socket: WebSocket | null = null
   /** True once this page has decided which room it dials; the poll never overrides it. */
@@ -95,6 +103,12 @@
   // bent by a URL. `npm run build:dev` is the build that keeps them.
   const dev = import.meta.env.DEV || import.meta.env.MODE === 'development'
   const clockSkew = dev ? readClockSkew(location.search) : 0
+  /**
+   * T7b2's dev switch: this window's deliberate stall, or a nudge it never
+   * received. `null` in a shipped page, so a released window cannot be asked to
+   * drift by a URL (dev-drift.ts, the same arrangement as the skew above).
+   */
+  const devPlay = dev ? readDevPlay(location.search) : null
   /**
    * This window's clock as §6.1 measures against it. The skew is applied here,
    * at the one place a `Date.now()` is read for the offset, so nothing else in
@@ -159,6 +173,7 @@
     chatNotices = []
     playback = null
     revision = 0
+    nudge = null
     // §6.1: a reconnect resets the filter rather than feeding it an offset that
     // belonged to the previous connection's clock.
     stopPing()
@@ -258,6 +273,11 @@
       if (frame.revision < revision) return
       playback = frame.playback
       revision = frame.revision
+    } else if (frame.type === 'nudge') {
+      // §6.3, to this window only: a rate and the authority instant it ends by.
+      // It is handed to the player as a new object, so the same nudge cannot be
+      // applied twice by a re-render.
+      nudge = frame
     } else if (frame.type === 'members') {
       members = frame.members
     } else if (frame.type === 'chat') {
@@ -286,8 +306,8 @@
     }
   }
 
-  /** §5's commands, in the one shape the player hands them over. */
-  function sendCommand(frame: CommandFrame): void {
+  /** §5's commands and §5's `report`, in the one shape the player hands them over. */
+  function sendCommand(frame: CommandFrame | ReportFrame): void {
     if (socket === null || selfId === null) return
     socket.send(JSON.stringify(frame))
   }
@@ -458,7 +478,10 @@
           {playback}
           {revision}
           {realign}
+          {nudge}
+          {devPlay}
           clock={authorityClock}
+          rtt={() => estimate.rtt}
           send={sendCommand}
         />
       {/if}

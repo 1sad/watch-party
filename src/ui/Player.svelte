@@ -1,7 +1,16 @@
 <script lang="ts">
-  import type { CommandFrame, Playback } from '../shared/protocol.ts'
-  import { SEEK_SKIP_SECONDS, expected } from '../shared/timing.ts'
+  import type { CommandFrame, NudgeFrame, Playback, ReportFrame } from '../shared/protocol.ts'
+  import {
+    CORRECTION_DEADBAND_SECONDS,
+    REPORT_INTERVAL_MS,
+    SEEK_SKIP_SECONDS,
+    expected,
+    nudgeRateAt,
+    type NudgeHold,
+  } from '../shared/timing.ts'
   import { createEchoSet } from '../shared/echo.ts'
+  import { untrack } from 'svelte'
+  import { DEV_ARM_MS, type DevPlay } from './dev-drift.ts'
 
   interface Props {
     /** The room's `playback`, from the last `welcome` or `state` (§4.1). */
@@ -14,16 +23,29 @@
      * the estimate App owns.
      */
     clock: () => number
-    /** §5's commands. The page sends them; the player never touches a socket. */
-    send: (frame: CommandFrame) => void
+    /** §5's commands and §5's `report`. The page sends them; the player never touches a socket. */
+    send: (frame: CommandFrame | ReportFrame) => void
+    /** T5's rtt estimate, which every `report` carries for §6.4's `maxRtt` (T8). */
+    rtt: () => number
     /** Bumped when the room refused a command or a `welcome` replaced the room. */
     realign: number
+    /** The authority's latest nudge for this window, or null (§6.3, T7b2). */
+    nudge: NudgeFrame | null
+    /** Dev-only disturbance from `dev-drift.ts`; null in a shipped page. */
+    devPlay: DevPlay | null
   }
 
-  let { playback, revision, clock, send, realign }: Props = $props()
+  let { playback, revision, clock, send, rtt, realign, nudge, devPlay }: Props = $props()
 
   // §6.6's set: the events this component's own play/pause/seek calls cause.
   const echoes = createEchoSet()
+
+  /**
+   * How often a held nudge is re-examined. It is a polling interval, not a
+   * §6.3 number: 200 ms is well inside the 0.1 s band's closing time (2 s at
+   * 5 %) and cheap enough to run in every window.
+   */
+  const NUDGE_WATCH_MS = 200
 
   let video = $state<HTMLVideoElement | null>(null)
   let duration = $state(0)
@@ -47,6 +69,127 @@
   function clearStart(): void {
     if (startTimer !== undefined) clearTimeout(startTimer)
     startTimer = undefined
+  }
+
+  // §6.3's one correction the page can apply: a rate, held until the authority's
+  // bound. It is not a second way to move the playhead — a seek or a paused snap
+  // arrives as a `state` and goes through `applyState()` like every other.
+  let held: NudgeHold | null = null
+  let nudgeTimer: ReturnType<typeof setTimeout> | undefined
+  /**
+   * Watches the two ways a nudge ends without a message: the gap closing
+   * (restore as soon as it is under 0.1 s) and the bound passing (the deadline
+   * timer's job, repeated here because a sleeping window throttles timers and a
+   * window must never come back at 0.95×).
+   */
+  let nudgeWatch: ReturnType<typeof setInterval> | undefined
+  /** The last `nudge` frame applied, so a re-render cannot re-apply one. */
+  let lastNudge: NudgeFrame | null = null
+  /** Dev-only: the switch fired once per page load, never in a loop. */
+  let devFired = false
+
+  /** Back to 1× (§6.3's last rule), whichever way the hold ended. */
+  function endNudge(): void {
+    if (nudgeTimer !== undefined) clearTimeout(nudgeTimer)
+    nudgeTimer = undefined
+    if (nudgeWatch !== undefined) clearInterval(nudgeWatch)
+    nudgeWatch = undefined
+    held = null
+    if (video !== null) video.playbackRate = 1
+  }
+
+  /**
+   * Apply §6.3's nudge, to this window only. `untilAuthorityMs` is the bound on
+   * the authority's clock, not a countdown started here: a frame that arrives
+   * already past it is not applied at all, and a held rate can never outlive it
+   * (`nudgeRateAt`, which `npm test` pins at exact instants).
+   */
+  function applyNudge(frame: NudgeFrame): void {
+    const hold: NudgeHold = { rate: frame.rate, untilAuthorityMs: frame.untilAuthorityMs }
+    if (nudgeRateAt(hold, clock()) !== hold.rate) {
+      endNudge()
+      return
+    }
+    const element = video
+    if (element === null) return
+
+    // A newer nudge replaces an older one outright: two deadlines for one
+    // playhead would let the first one restore a rate the second just set.
+    endNudge()
+    held = hold
+    element.playbackRate = hold.rate
+    nudgeTimer = setTimeout(() => {
+      nudgeTimer = undefined
+      endNudge()
+    }, Math.max(0, hold.untilAuthorityMs - clock()))
+    nudgeWatch = setInterval(() => {
+      if (held === null) return
+      // The bound first: a late tick must not keep a stale rate alive.
+      if (nudgeRateAt(held, clock()) !== held.rate) {
+        endNudge()
+        return
+      }
+      if (video === null) return
+      if (Math.abs(video.currentTime - expected(playback, clock())) <= CORRECTION_DEADBAND_SECONDS) {
+        endNudge()
+      }
+    }, NUDGE_WATCH_MS)
+  }
+
+  // §5's `report`, every 3 s while the room plays: a measurement, never a
+  // command. It is the only way the authority can see this window's playhead
+  // (§4.3 invariant 4 — it holds no clock of ours, and no offset).
+  let reportTimer: ReturnType<typeof setInterval> | undefined
+
+  function sendReport(): void {
+    const element = video
+    if (element === null || !playback.playing) return
+    let buffered = 0
+    try {
+      if (element.buffered.length > 0) buffered = element.buffered.end(element.buffered.length - 1)
+    } catch {
+      // A detached or empty TimeRanges has no end; 0 is the honest answer.
+    }
+    send({
+      type: 'report',
+      position: element.currentTime,
+      readyState: element.readyState,
+      buffered,
+      rate: element.playbackRate,
+      duration: Number.isFinite(element.duration) ? element.duration : undefined,
+      origin: location.origin,
+      rtt: rtt(),
+    })
+  }
+
+  /**
+   * T7b2's dev-only disturbance, from `dev-drift.ts`. The stall uses
+   * `pauseElement()`/`playElement()` — the §6.6 echo path — so it is a local
+   * fault the room never hears about, which is what a real stall is.
+   */
+  function disturb(): void {
+    // The one statically-false line the shipped page has here: `vite build`
+    // replaces `import.meta.env.DEV` with `false` and `MODE` with
+    // `'production'`, so the guard folds to `return` and everything below it —
+    // the parameter lookups included — is dropped from `dist/`. The switch is
+    // absent from Release, not merely unarmed (`dev-drift.ts`).
+    if (!(import.meta.env.DEV || import.meta.env.MODE === 'development')) return
+    if (devPlay === null || devFired) return
+    devFired = true
+    setTimeout(() => {
+      if (devPlay === null) return
+      if (devPlay.nudge !== null) {
+        applyNudge({
+          type: 'nudge',
+          target: 0,
+          rate: devPlay.nudge.rate,
+          untilAuthorityMs: clock() + devPlay.nudge.milliseconds,
+        })
+      }
+      if (devPlay.stallSeconds <= 0) return
+      pauseElement()
+      setTimeout(() => playElement(), devPlay.stallSeconds * 1000)
+    }, DEV_ARM_MS)
   }
 
   /**
@@ -110,6 +253,13 @@
     if (revision < appliedRevision) return
     appliedRevision = revision
 
+    // A `state` is the room moving the playhead (§4.3 invariant 9) — and a
+    // targeted hard seek or paused snap is a `state` too (T7b2), which is the
+    // whole point of the authority sending it that way. So the nudge ends here:
+    // the playhead has just been put where it belongs, and §6.3's last rule
+    // restores the rate with it.
+    endNudge()
+
     clearStart()
     const nowMs = clock()
     const startAt = playback.startAt
@@ -141,7 +291,7 @@
   let lastRealign = realign
   $effect(() => {
     // Every input of the application is read here, so a new frame, a newly
-    // bound element, or a refusal re-runs it.
+    // bound element, or a refusal re-runs it — and nothing else does.
     void playback
     void revision
     void video
@@ -149,7 +299,35 @@
       lastRealign = realign
       appliedRevision = -1
     }
-    applyState()
+    // `applyState` reads the clock, and the clock reads §6.1's offset estimate,
+    // which moves on every `pong`. That is a measurement, not a new application
+    // of the room's playback: tracking it would make every pong a second way to
+    // move the playhead — a local snap the ladder never decided. T7b2 measured
+    // exactly that on the two-window gate: a stalled window put itself back on
+    // the room 3 s in, with no `state` and no correction in the log. Untracked,
+    // the only moves are `welcome`, `state`, a load and a refusal (§4.3
+    // invariant 9).
+    untrack(() => applyState())
+  })
+
+  // §5's report loop starts once the element exists and stops with it; the
+  // cadence is the room's, and a paused room is the page's silence.
+  $effect(() => {
+    if (video === null) return
+    reportTimer = setInterval(sendReport, REPORT_INTERVAL_MS)
+    return () => {
+      if (reportTimer !== undefined) clearInterval(reportTimer)
+      reportTimer = undefined
+    }
+  })
+
+  // The authority's own frames: only a *new* nudge object is applied, so a
+  // re-render of the page cannot restart one.
+  $effect(() => {
+    const next = nudge
+    if (next === null || next === lastNudge) return
+    lastNudge = next
+    applyNudge(next)
   })
 
   function onLoadedMetadata(): void {
@@ -188,6 +366,10 @@
 
   function onPlay(): void {
     blocked = false
+    // T7b2's dev switch arms from the first real playback of this window, and
+    // from nothing else: a stall before the room plays would be a stall of
+    // nothing (dev-drift.ts).
+    disturb()
     // Consumed: our own `playElement()`. Not consumed: a person or the site,
     // which is a room action (§6.6, ADR-029).
     if (echoes.consume('play', performance.now())) return

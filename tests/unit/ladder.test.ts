@@ -12,6 +12,7 @@ import {
   STRIKES_BEFORE_CORRECTION,
   clampToMedia,
   decideCorrection,
+  nudgeRateAt,
   reportFrom,
   scheduledStartAt,
   targetFor,
@@ -206,4 +207,29 @@ test('clampToMedia bounds every seek to [0, duration − 0.25]', () => {
   assert.equal(clampToMedia(99.8, 100), 99.75)
   assert.equal(clampToMedia(500, 100), 99.75)
   assert.equal(clampToMedia(5, 0), 0, 'an unknown/zero duration cannot produce a negative bound')
+})
+
+// T7b2: the page's half of the ladder. The bound is the frame's own authority
+// instant, so "restore to 1" is decided by a clock the tests can move, not by a
+// countdown the page starts when the message lands (§6.3's last rule, T7b2's
+// Safety line: a lost restore cannot leave a window sped up).
+
+test('nudgeRateAt holds 0.95/1.05 before the bound and 1 at and after it', () => {
+  const hold = { rate: SLOW_DOWN_RATE, untilAuthorityMs: NOW + 4000 }
+  assert.equal(nudgeRateAt(hold, NOW), SLOW_DOWN_RATE, 'the instant it is applied')
+  assert.equal(nudgeRateAt(hold, NOW + 3999), SLOW_DOWN_RATE, '1 ms before the bound')
+  assert.equal(nudgeRateAt(hold, NOW + 4000), 1, 'the bound itself is already over')
+  assert.equal(nudgeRateAt(hold, NOW + 60000), 1, 'a minute later, with no message in between')
+  assert.equal(
+    nudgeRateAt({ rate: SPEED_UP_RATE, untilAuthorityMs: NOW }, NOW - 1),
+    SPEED_UP_RATE,
+    'speeding up holds on the same rule',
+  )
+})
+
+test('nudgeRateAt refuses a hold it cannot honour', () => {
+  assert.equal(nudgeRateAt({ rate: 1.2, untilAuthorityMs: NOW + 1000 }, NOW), 1, 'not a 6.3 rate')
+  assert.equal(nudgeRateAt({ rate: 1, untilAuthorityMs: NOW + 1000 }, NOW), 1, '1.0 is not a nudge')
+  assert.equal(nudgeRateAt({ rate: SLOW_DOWN_RATE, untilAuthorityMs: Number.NaN }, NOW), 1, 'a bound that cannot expire')
+  assert.equal(nudgeRateAt({ rate: SLOW_DOWN_RATE, untilAuthorityMs: Infinity }, NOW), 1)
 })

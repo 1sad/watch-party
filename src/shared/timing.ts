@@ -14,6 +14,9 @@ import type { Member, Playback } from './protocol.ts'
 /** §6.1: the `ping` every 5 s is both the liveness beat and the clock sample. */
 export const PING_INTERVAL_MS = 5000
 
+/** §5: `report` is a measurement every 3 s while playing (T7b1's cadence, T7b2 sends it). */
+export const REPORT_INTERVAL_MS = 3000
+
 /**
  * §6.1: a sample this far from the filter's mean is a sleeping laptop or a
  * clock step, not a better measurement. The estimator is **reset**, not fed —
@@ -294,4 +297,32 @@ export function decideCorrection(input: CorrectionInput): Correction {
   const untilAuthorityMs =
     input.nowMs + Math.ceil((Math.abs(drift) / Math.abs(rate - 1)) * 1000)
   return { action: 'nudge', rate, target: input.target, untilAuthorityMs }
+}
+
+/**
+ * A nudge the page is holding: the rate to play at, and the authority instant by
+ * which it must be over (`nudge.untilAuthorityMs`). This is the page's half of
+ * T7b1's correction, and it is pure so the bound can be tested at exact instants
+ * instead of by waiting.
+ *
+ * §6.3's last rule is "always restore `playbackRate = 1` afterwards", and the
+ * safety line T7b2 has to keep is stronger: a *lost* restore cannot leave a
+ * window sped up. So the deadline is the frame's own number on the authority's
+ * clock, not a countdown the page starts on arrival — a message that arrives
+ * already stale holds nothing, and a hold never survives its bound.
+ */
+export interface NudgeHold {
+  /** One of `SLOW_DOWN_RATE` / `SPEED_UP_RATE`; anything else is refused. */
+  rate: number
+  /** Authority-clock instant the nudge is over by. */
+  untilAuthorityMs: number
+}
+
+/** The rate in force at `nowMs`: the hold's rate before the bound, `1` at and after it. */
+export function nudgeRateAt(hold: NudgeHold, nowMs: number): number {
+  // A rate the ladder never chooses is not a nudge (§6.3: 0.95 or 1.05), and a
+  // bound that is not a number cannot expire, so neither may be held.
+  if (hold.rate !== SLOW_DOWN_RATE && hold.rate !== SPEED_UP_RATE) return 1
+  if (!Number.isFinite(hold.untilAuthorityMs)) return 1
+  return nowMs < hold.untilAuthorityMs ? hold.rate : 1
 }
