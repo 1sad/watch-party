@@ -5,10 +5,13 @@ carries its own browser window, everyone lands on the same streaming page, playb
 the same connection. No accounts, no server to rent, no paid services. There is also a deliberately small "watch my
 own file" mode, which exists mainly to test sync without a website in the way.
 
-**Status: documents only. Zero code. Nothing here has been built or tested.**
+**Status: Phase 1 (M1, "a room that syncs") is being built.** No milestone is complete and nothing has shipped. The
+only status line kept current is `.scratch/phase-1-m1/spec.md` → `## Status`; read it before believing any claim
+about what works.
 
-**Rebuilt on 2026-11-16** around ADR-022 … ADR-027. If a document contradicts those, the ADRs win and the document
-is stale.
+**Rebuilt on 2026-11-16** around ADR-022 … ADR-027. **ADR-034** (the window is a .NET host around WebView2, the room
+logic stays in TypeScript) and **ADR-035** (this phase's dependency list) are the newest. If a document contradicts
+an ADR, the ADR wins and the document is stale.
 
 ## Read in this order
 
@@ -22,6 +25,33 @@ is stale.
    §27 is the tunnel research, kept only to show why none of it is needed.
 
 Long documents; read the sections you need rather than everything at once.
+
+## How to build and run it
+
+Once per machine, before the first ticket: the .NET SDK, installed **per user** so nothing system-wide changes —
+`dotnet-install.ps1 -Channel LTS -InstallDir "$env:LOCALAPPDATA\Microsoft\dotnet"` — and the WebView2 runtime, which
+Windows 10/11 already has (check it before blaming the app: ADR-034). Node 24 is the other runtime and is present.
+The SDK is **not on PATH** in a fresh shell: add `%LOCALAPPDATA%\Microsoft\dotnet` to `PATH` for the session, or call
+`dotnet` by full path. Installed here: SDK 10.0.404, WebView2 runtime 157.
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | builds the page, starts the sidecar, opens the window. The normal way to run the app. |
+| `npm test` | **the test command.** The timing maths — expected position, clock offset, the drift ladder, offset signs, scheduled start — under `node --test`. No framework, no watch mode; the exit code is the result. |
+| `npm run test:integration` | two scripted clients and one authority over real sockets on localhost, one client deliberately slowed. |
+| `dotnet build host/WatchParty.Host` | the window host alone. |
+
+```
+host/            the .NET window: window and WebView2 lifetime, request filtering, fullscreen
+                 interception, the native file picker, starting and stopping the sidecar
+src/shared/      types and the timing maths, imported by the sidecar and by the page
+src/server/      the sidecar: room, protocol, chat, sync, file serving, and serving the page
+src/ui/          what is drawn in the window: player, chat, roster, controls (Svelte)
+tests/           node --test; unit under tests/unit, the two-client harness under tests/integration
+```
+
+Two rules follow from that shape. The page never touches the filesystem, and the host never touches room state. The
+timing maths lives **only** in `src/shared/` — if one of its numbers appears twice, one copy is wrong.
 
 ## Rules for working here
 

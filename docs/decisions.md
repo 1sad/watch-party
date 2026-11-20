@@ -215,6 +215,9 @@ invited room of five friends is a social problem; the fix is kick, not auth.
 > **Amended 2026-11-16 (ADR-022):** same languages, different shell. The client is a desktop app embedding WebView2,
 > not an SPA served by a browser-facing server. `ws` survives — now as the direct connection between apps rather than
 > a socket into a shared server.
+>
+> **Amended 2026-11-20 (ADR-034):** same languages, and now a named process: TypeScript runs in a sidecar spawned by a
+> small .NET host, which owns the window and the WebView2 control. `npm run dev` starts both.
 
 **Decision.** One Node process, plain `ws` (not Socket.IO), a small SPA.
 
@@ -450,6 +453,9 @@ step rather than one.
 
 **Amends.** ADR-014 (no Electron) still holds: we are not shipping a browser, we are borrowing the one already
 installed. ADR-015 (one codebase, two manifests) survives as the *fallback* client's rule.
+
+> **Amended 2026-11-20 (ADR-034):** the window is created by a small .NET WinForms host, and the product logic runs in
+> a Node sidecar that host spawns. WebView2 is still the engine and is still not bundled.
 
 ---
 
@@ -766,4 +772,87 @@ consequences — it is GPL-3.0, it needs MV3 support in whichever engine we embe
 materially incomplete (its own docs still describe an MV2-era background script), so a failure in the spike would
 prove nothing about WebView2. Accepted plan: our own blocker, driven by those lists (T30), with a separate later
 spike for loading uBOL inside WebView2 as a quality upgrade (T38) once the real shell exists.
+
+---
+
+## ADR-034 — The window is a small .NET host around WebView2; the room stays in TypeScript
+
+**Decision.** The app is one install, one launch and one window, made of two processes that start and stop together:
+
+- a **native host** — a .NET WinForms executable in `host/`. It owns the window, one WebView2 control filling it, the
+  request filter, fullscreen interception, the native "pick a file" dialog, and the lifetime of the other process. It
+  contains no product logic.
+- a **sidecar** — Node 24 + TypeScript in `src/`. It owns the room, the protocol, chat, the clock, the position model,
+  the drift ladder and file serving. **One listener, two jobs**: it serves the page the window loads and it accepts
+  the room's connections, on the port opened at startup and bound to all interfaces, because a guest has to reach
+  it. The window itself loads that page from `127.0.0.1`.
+
+The engine is WebView2, the runtime Windows already has (ADR-022), so nothing is bundled and ADR-014's ban on
+shipping a browser stands.
+
+**Why.** ADR-012 and ADR-022 together leave exactly one question open: which process creates the native window.
+Every capability M2 depends on is a first-party API of the .NET WebView2 control — `AddWebResourceRequestedFilter`
+in its three-argument form with `WebResourceRequested` for ad filtering (R20; the two-argument form is documented as
+"does not behave as expected for iframes", and 6 of the 11 sites in E2 keep the player in a cross-origin frame),
+`ContainsFullScreenElementChanged` for app-owned fullscreen (ADR-028), `AddScriptToExecuteOnDocumentCreatedAsync` —
+which runs before any page script and in child frames too — for blocking peer-to-peer plumbing (ADR-031),
+`PermissionRequested` for granting the page the `Autoplay` permission so a scheduled start is not refused by the
+autoplay policy (§14), and `ExecuteScriptAsync`/CDP for driving the player (M2). The alternative hosts are thin
+cross-language wrappers over the same runtime — the Go, Rust and C++ "webview" libraries, Python's pywebview — which
+expose a single JS-evaluation bridge and none of those hooks. Choosing one of those is choosing to reopen this
+decision at M2. .NET is the supported path, it installs per user with no admin rights and no system change, and its
+surface here is a few hundred lines that one person can read in a sitting.
+
+**Rejected.** (a) Electron — banned twice (ADR-014, ADR-022) and it ships a browser to every friend. (b) A webview
+wrapper in Go or Rust — one binary and a smaller footprint, but no request filter, no fullscreen event and no
+pre-page script hook, so M2 would have to bypass or replace it. (c) Python with pywebview — the same wrapper limits
+plus a third language in a project whose sync maths is copied from TypeScript references. (d) The whole app in C# —
+reverses ADR-012, loses the reference implementations the ladder and clock filter are lifted from, and splits the wire
+types away from the add-on. (e) WPF instead of WinForms — viable and better at high DPI; rejected because the native
+layout is one WebView2 filling the window, so a richer layout system buys nothing, and it stays the fallback if DPI
+scaling bites.
+
+**Cost.** Two runtimes and two processes per person. The non-functional target "≤ 300 MB resident with a page open"
+becomes a number to measure rather than assume, and it is the risk this decision carries. The build is `dotnet build`
+plus `npm`, so `npm run dev` is an orchestrator rather than a compiler. And two lifetimes must be supervised: if the
+window closes the sidecar must die, and if the sidecar dies the window must say so instead of showing a dead page.
+
+**Amends.** ADR-012 (Node + TypeScript + `ws` + Vite/Svelte) is unchanged and now names where it runs: a sidecar on
+loopback. ADR-022 (WebView2, not a bundled browser) is unchanged and now names who creates the window.
+
+---
+
+## ADR-035 — M1's dependency list, and the five things it deliberately does not add
+
+**Decision.** M1 adds the following and nothing else. Already decided elsewhere and only cited here: `ws`
+(ADR-012), TypeScript (ADR-012), Vite + Svelte + `@sveltejs/vite-plugin-svelte` (ADR-012), hls.js (not loaded before
+v2, ADR-013). New in this phase:
+
+| Dependency | Where | Why it earns its place |
+| --- | --- | --- |
+| `@achingbrain/nat-port-mapper` | npm, sidecar | UPnP-IGD, NAT-PMP and PCP in one maintained client. ADR-023 requires the app itself to open the port and learn its own address; hand-rolling SSDP discovery plus SOAP against routers that implement the standard badly is the classic way to lose two evenings. |
+| `Microsoft.Web.WebView2` | NuGet, host | The window's engine, and the only source of the request-filter, fullscreen, permission and script APIs ADR-034 depends on. |
+
+**Deliberately not added, with the cheaper answer each time:**
+
+- **No test framework** (`vitest`, `jest`, `mocha`). Node 24 runs TypeScript directly and ships `node --test`, so
+  `npm test` is a Node flag rather than a dependency tree. The tests are pure functions and sockets; nothing needs a
+  DOM.
+- **No HTTP framework** (`express`, `fastify`). The sidecar serves one page and one file: `node:http` plus `node:fs`
+  is smaller than any framework's own dependency tree.
+- **No `mime` package.** File mode plays MP4/WebM and refuses the rest (R11, §7.2), so a four-entry map
+  (`mp4`, `m4v`, `webm`, `mov`) is the whole requirement.
+- **No `uuid` package.** `node:crypto` has `randomUUID`.
+- **No database, ORM or state library.** The room is in memory and stays there (ADR-010).
+
+**Why a list and not a rule.** AGENTS.md rule 5 requires an ADR for every new dependency; this is that ADR for the
+phase, so a reviewer can check the phase against one table instead of reconstructing intent from `package.json`.
+
+**Cost.** `nat-port-mapper` brings a few transitive packages, and it is the only dependency whose failure is
+environmental — a router that ignores UPnP. If it cannot be made to work, the fallback is a hand-written SSDP/SOAP
+client, not an unmaintained substitute; that fallback is a code change, not a new ADR.
+
+**Constraint carried into every ticket.** Permissive licences only. A dependency's licence is read before it is
+installed; anything GPL or AGPL in the app itself is refused. The uBlock-extension GPL question is separate and later
+(T38).
 

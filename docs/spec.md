@@ -421,7 +421,7 @@ as **member → authority** and **authority → members** so it survives that ch
 | m→a | `setOffset` | `{timelineOffset}` | per member (§4.5); authority re-broadcasts `members` |
 | m→a | `chooseTrack` | `{trackId \| null}` | per member, file mode (R14) |
 | a→m | `sourceInfo` | `{membersWithDifferentSource}` | after reports |
-| m→a | `report` | `{position, readyState, buffered, rate, duration, origin}` | every 3 s while playing; duration is auto-shared |
+| m→a | `report` | `{position, readyState, buffered, rate, duration, origin, rtt}` | every 3 s while playing; duration is auto-shared; `rtt` is client-measured (§6.1) and is how the authority learns `2 × maxRtt` for the scheduled start (§6.4) |
 | m→a | `chat` | `{text}` | ≤ 2000 chars, rate-limited |
 | a→m | `chat` | `{id, name, text, ts}` | |
 | m→a | `rescueRequest` | `{}` | v2 (ADR-026): "I can't load the site" |
@@ -484,9 +484,10 @@ restore `playbackRate = 1` afterwards.
 
 ### 6.4 Scheduled start
 
-Never "play now". Server sets `startAt = serverNow() + max(2 × maxRtt, 600 ms)` (min 1.5 s) and every client
-schedules `play()` on a timer against the corrected clock. This is Jellyfin's `LastActivity` trick and the single
-cheapest accuracy win available.
+Never "play now". Server sets `startAt = serverNow() + max(2 × maxRtt, 1.5 s)` and every client schedules `play()` on
+a timer against the corrected clock. This is Jellyfin's `LastActivity` trick and the single cheapest accuracy win
+available. (Corrected 2026-11-20: the earlier `max(2 × maxRtt, 600 ms)` with a "(min 1.5 s)" parenthetical
+contradicted itself, since the floor dominates the 600 ms term. R6's test row already allows up to 1.5 s.)
 
 ### 6.5 Ready gate (seek during playback)
 
