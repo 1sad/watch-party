@@ -6,11 +6,13 @@ import { normalizeName } from '../shared/names.ts'
 import { admitChat, formatClock, newChatBudget, type ChatBudget } from '../shared/chat.ts'
 import {
   errorFrame,
+  stateFrame,
   warningFrame,
   type ChatMessage,
   type ClientFrame,
   type ErrorCode,
   type Member,
+  type PlaybackReason,
   type ServerFrame,
 } from '../shared/protocol.ts'
 import {
@@ -96,6 +98,15 @@ export function attachRoomSocket(
     for (const socket of sockets.keys()) socket.send(text)
   }
 
+  // §5: `state` goes to everyone, sender included, so the sender adopts the
+  // authority's `revision` rather than its own guess. One call per *applied*
+  // command, so a skipped duplicate is silent (T6a item 4).
+  const broadcastState = (by: string, reason: PlaybackReason): void => {
+    const payload: ServerFrame = stateFrame(room.playback, room.revision, by, reason)
+    const text = JSON.stringify(payload)
+    for (const socket of sockets.keys()) socket.send(text)
+  }
+
   const joinMember = (socket: PeerSocket, frame: ClientFrame, remoteAddress: string | undefined): void => {
     if (frame.type !== 'hello') return
     if (frame.code !== room.code) {
@@ -170,14 +181,10 @@ export function attachRoomSocket(
             fail(socket, result.code)
             return
           }
-          const state: ServerFrame = {
-            type: 'state',
-            playback: room.playback,
-            revision: room.revision,
-            by: member.id,
-          }
-          const text = JSON.stringify(state)
-          for (const peer of sockets.keys()) peer.send(text)
+          // §5's idempotency rule: an accepted-but-unchanged command is not
+          // news. No `state`, no `revision` bump, and no "seeked to" line.
+          if (!result.applied) return
+          broadcastState(member.id, result.reason)
           if (frame.type === 'seek') {
             // §4.6's third sentence: the authority's position, never the client's text.
             broadcastChat(
@@ -231,6 +238,9 @@ export function attachRoomSocket(
         }
         default:
           // §5: unknown message types are ignored, not fatal (forward compatibility).
+          // `report` lands here until the ticket that reads it: it is a member's
+          // own measurement, never a command, so it cannot move `playback` or
+          // `revision` (§4.3 invariant 1, T6a's Safety line).
           return
       }
     })

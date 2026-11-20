@@ -206,12 +206,35 @@ export interface MembersFrame {
   members: WireMember[]
 }
 
+/**
+ * Why a `state` was sent (§5, §6.4). The last two are not emitted yet: `start`
+ * is a scheduled start (§6.4, with `Playback.startAt`) and `join` is the
+ * authority aligning a newcomer without a command — both arrive with the player
+ * (T6b). They live here so the vocabulary has one home rather than growing by
+ * string literal in a handler.
+ */
+export type PlaybackReason = 'play' | 'pause' | 'seek' | 'start' | 'join'
+
 export interface StateFrame {
   type: 'state'
   playback: Playback
   revision: number
   by: string
-  reason?: string
+  reason: PlaybackReason
+}
+
+/**
+ * The single place a `state` frame is made, for the same reason `errorFrame()`
+ * is one: an accepted command is announced in exactly one shape, and a frame
+ * with no `reason` cannot be built by accident.
+ */
+export function stateFrame(
+  playback: Playback,
+  revision: number,
+  by: string,
+  reason: PlaybackReason,
+): StateFrame {
+  return { type: 'state', playback, revision, by, reason }
 }
 
 /** a→m: one message, to every member including its sender (§5). */

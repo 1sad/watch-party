@@ -4,11 +4,13 @@ import type {
   ErrorCode,
   Member,
   Playback,
+  PlaybackReason,
   RoomSnapshot,
   WireMember,
 } from '../shared/protocol.ts'
 import { ANONYMOUS, displayNames } from '../shared/names.ts'
 import { pushChat } from '../shared/chat.ts'
+import { expected, seekIsDuplicate } from '../shared/timing.ts'
 
 /** §12: five people is a constraint of the design, not a setting. */
 export const MAX_MEMBERS = 5
@@ -103,40 +105,64 @@ export function markOffline(
   return true
 }
 
-export type CommandResult = { ok: true } | { ok: false; code: ErrorCode }
+export type CommandOutcome =
+  | { ok: true; applied: true; reason: PlaybackReason }
+  /** Accepted as a command, but it changed nothing: §5's idempotency rule. */
+  | { ok: true; applied: false }
+  | { ok: false; code: ErrorCode }
 
 /**
- * `play`, `pause`, `seek`: the room actions of §4.3 invariant 11 and ADR-030.
+ * `play`, `pause`, `seek`: the room actions of §4.3 invariant 11 and ADR-030,
+ * and the **only** writer of `playback` (§4.3 invariant 1, T6a's Safety line).
  *
  * The guard below is the only place that asks whether a member holds control.
  * A refusal returns before anything is assigned, so `revision` cannot move —
  * that is the Safety line of T3, in one line per mutation.
+ *
+ * §5's idempotency rule lives here too, because it is a fact about the room,
+ * not about a socket: a `play` while playing, a `pause` while paused, or a
+ * `seek` that lands within `SEEK_SKIP_SECONDS` of the expected position is the
+ * second arrival of something that already happened. It is reported as
+ * `applied: false` so the caller broadcasts nothing and `revision` stays put —
+ * that is what removes the "local fire + broadcast fire" double apply. The
+ * thresholds are in `timing.ts`, beside `expected()`.
  */
 export function applyCommand(
   room: RoomState,
   memberId: string,
   frame: CommandFrame,
   now: () => number = Date.now,
-): CommandResult {
+): CommandOutcome {
   if (!room.controllers.includes(memberId)) return { ok: false, code: 'not_controller' }
 
+  const at = now()
   const reported = frame.position
-  const position =
-    typeof reported === 'number' && Number.isFinite(reported) ? reported : room.playback.position
+  // No usable position is not "0": the room's own expectation is the playhead
+  // the sender was looking at, and it comes from the one function that owns it.
+  const target =
+    typeof reported === 'number' && Number.isFinite(reported)
+      ? reported
+      : expected(room.playback, at)
+
+  if (frame.type === 'play' && room.playback.playing) return { ok: true, applied: false }
+  if (frame.type === 'pause' && !room.playback.playing) return { ok: true, applied: false }
+  if (frame.type === 'seek' && seekIsDuplicate(room.playback, at, target)) {
+    return { ok: true, applied: false }
+  }
 
   if (frame.type === 'play') {
     room.playback.playing = true
-    room.playback.position = position
+    room.playback.position = target
   } else if (frame.type === 'pause') {
     room.playback.playing = false
-    room.playback.position = position
+    room.playback.position = target
   } else {
     room.playback.playing = frame.wasPlaying === true
-    room.playback.position = position
+    room.playback.position = target
   }
-  room.playback.updatedAt = now()
+  room.playback.updatedAt = at
   room.revision += 1
-  return { ok: true }
+  return { ok: true, applied: true, reason: frame.type }
 }
 
 /** The `room` half of `welcome` (§5): everything but members and chat. */

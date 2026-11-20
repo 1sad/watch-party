@@ -1,5 +1,6 @@
 /**
- * `spec.md` §6's arithmetic and nothing else (T5).
+ * `spec.md` §6's arithmetic and nothing else (T5), plus §6.2's `expected()` and
+ * §5's duplicate-seek window (T6a).
  *
  * Pure on purpose: no clock of its own, no socket, no I/O, no import from the
  * page or the sidecar. Instants go in as numbers and values come out, so the
@@ -7,6 +8,8 @@
  * §6 says it once, here (AGENTS.md: a number from this module that appears a
  * second time is a copy, and one of the two is wrong).
  */
+
+import type { Playback } from './protocol.ts'
 
 /** §6.1: the `ping` every 5 s is both the liveness beat and the clock sample. */
 export const PING_INTERVAL_MS = 5000
@@ -118,4 +121,41 @@ export function estimateOffset(sample: Sample, previous: OffsetEstimate): Offset
  */
 export function authorityNow(localNowMs: number, estimate: OffsetEstimate): number {
   return localNowMs + estimate.offset
+}
+
+/**
+ * §5: "a seek within 0.3 s of current position is skipped". The window is what
+ * turns a human seek plus the site's own echo into one move — the second
+ * arrival is closer to where the room already is than to anything a person
+ * could have meant.
+ */
+export const SEEK_SKIP_SECONDS = 0.3
+
+/**
+ * §6.2, the one function that says where the playhead is. `position` is where
+ * it was at `updatedAt` (§4.3 invariant 3), so a playing room has moved on by
+ * the elapsed time times the rate, and a paused room has not moved at all.
+ *
+ * §6.2's own line is `position + (now - updatedAt) / 1000 * rate`; the elapsed
+ * time is held at zero here so a member whose clock is behind the authority's
+ * never reads a position *before* the last one. Negative elapsed time is skew,
+ * not a rewind.
+ *
+ * This is the only place a position is worked out: the authority uses it to
+ * skip duplicate seeks, and the page (T6b) uses it to steer the player. A
+ * second copy elsewhere is a bug even while it agrees (AGENTS.md).
+ */
+export function expected(playback: Playback, nowMs: number): number {
+  if (!playback.playing) return playback.position
+  const elapsedMs = Math.max(0, nowMs - playback.updatedAt)
+  return playback.position + (elapsedMs / 1000) * playback.rate
+}
+
+/**
+ * §5's idempotency rule for `seek`, in the one place that owns the window: a
+ * target within `SEEK_SKIP_SECONDS` of where the room already expects the
+ * playhead is the second arrival of a seek that already happened.
+ */
+export function seekIsDuplicate(playback: Playback, nowMs: number, target: number): boolean {
+  return Math.abs(target - expected(playback, nowMs)) <= SEEK_SKIP_SECONDS
 }

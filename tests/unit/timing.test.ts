@@ -5,12 +5,16 @@ import {
   JUMP_RESET_MS,
   MAX_WEIGHT,
   PING_INTERVAL_MS,
+  SEEK_SKIP_SECONDS,
   authorityNow,
   emptyEstimate,
   estimateOffset,
+  expected,
   sampleFrom,
+  seekIsDuplicate,
   type Sample,
 } from '../../src/shared/timing.ts'
+import type { Playback } from '../../src/shared/protocol.ts'
 
 // T5 check 3: §6.1's arithmetic and its filter, fed instants a stopwatch would
 // have seen. No socket and no real clock, so every number below is exact.
@@ -106,4 +110,43 @@ test('a 3 s jump resets the filter instead of dragging it', () => {
   const fed = estimateOffset(near, estimate)
   assert.equal(fed.samples, estimate.samples + 1)
   assert.ok(fed.weight <= MAX_WEIGHT, 'the weight window never grows without bound')
+})
+
+// T6a check 4: §6.2's `expected()` — the one place a position is worked out.
+// Every expectation below is a literal, because a test helper that
+// re-computed the formula would be the second copy AGENTS.md forbids.
+
+test('expected() over a paused playback is the stored position, whatever the clock says', () => {
+  const paused: Playback = { playing: false, position: 42, updatedAt: 1_000_000, rate: 1 }
+  assert.equal(expected(paused, 1_060_000), 42, 'a paused room does not creep')
+  assert.equal(expected(paused, 900_000), 42, 'and does not rewind either')
+})
+
+test('expected() over a playing playback is position plus elapsed time at rate 1.0', () => {
+  const playing: Playback = { playing: true, position: 10, updatedAt: 1_000_000, rate: 1 }
+  assert.equal(expected(playing, 1_005_000), 15, '5 s of play moves the playhead 5 s')
+  assert.equal(expected(playing, 1_000_000), 10, 'at updatedAt itself it is exactly position')
+})
+
+test('expected() multiplies the elapsed time by a non-1.0 rate', () => {
+  const fast: Playback = { playing: true, position: 100, updatedAt: 2_000_000, rate: 1.5 }
+  assert.equal(expected(fast, 2_004_000), 106, '4 s at 1.5x is 6 s of film')
+  const slow: Playback = { playing: true, position: 100, updatedAt: 2_000_000, rate: 0.5 }
+  assert.equal(expected(slow, 2_004_000), 102, '4 s at 0.5x is 2 s of film')
+})
+
+test('a negative now − updatedAt (skewed clock) never drags the position backwards', () => {
+  const playing: Playback = { playing: true, position: 100, updatedAt: 2_000_000, rate: 1 }
+  assert.equal(expected(playing, 1_999_500), 100, 'skew is not a rewind')
+  assert.equal(expected(playing, 1_990_000), 100, 'however far behind the member clock is')
+})
+
+test('a seek within 0.3 s of the expected position is a duplicate; past it, a real seek', () => {
+  // Playing since 3_000_000 s, so 2 s in the expected playhead is 102.
+  const playing: Playback = { playing: true, position: 100, updatedAt: 3_000_000, rate: 1 }
+  assert.equal(seekIsDuplicate(playing, 3_002_000, 102.2), true, 'the site echoing the same move')
+  assert.equal(seekIsDuplicate(playing, 3_002_000, 101.7), true, 'the other side of the window too')
+  assert.equal(seekIsDuplicate(playing, 3_002_000, 102.4), false, 'outside 0.3 s is a new seek')
+  assert.equal(seekIsDuplicate(playing, 3_002_000, 60), false, 'a skip into the intro is a new seek')
+  assert.equal(SEEK_SKIP_SECONDS, 0.3, '§5 says 0.3 s, and the constant is what the room uses')
 })
