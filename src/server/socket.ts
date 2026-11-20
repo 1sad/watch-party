@@ -45,6 +45,12 @@ export interface RoomSocketOptions {
    * loads the page from 127.0.0.1, a guest dials the LAN address.
    */
   isLocal?: (remoteAddress: string | undefined) => boolean
+  /**
+   * A dev-only line per `state` frame, so T6b's "exactly one `state` per
+   * command" is countable in the host log. `main.ts` passes it only when it is
+   * not a production sidecar; it is not a wire feature and changes no rule.
+   */
+  debug?: (line: string) => void
 }
 
 function isLoopback(remoteAddress: string | undefined): boolean {
@@ -70,6 +76,7 @@ export function attachRoomSocket(
   const now = options.now ?? Date.now
   const newId = options.newId ?? randomUUID
   const isLocal = options.isLocal ?? isLoopback
+  const debug = options.debug ?? (() => {})
 
   const sockets = new Map<PeerSocket, Member>()
   /** §4.6's limits are per member, kept beside the sockets rather than in the room. */
@@ -104,6 +111,10 @@ export function attachRoomSocket(
   const broadcastState = (by: string, reason: PlaybackReason): void => {
     const payload: ServerFrame = stateFrame(room.playback, room.revision, by, reason)
     const text = JSON.stringify(payload)
+    debug(
+      `state rev=${room.revision} reason=${reason} playing=${room.playback.playing} ` +
+        `position=${room.playback.position.toFixed(3)} by=${by}`,
+    )
     for (const socket of sockets.keys()) socket.send(text)
   }
 
@@ -147,6 +158,10 @@ export function attachRoomSocket(
       chatTail: room.chat.slice(),
       epoch: room.authority.epoch,
     })
+    // §4.3 invariant 9 has no separate frame here: the snapshot *is* the
+    // command, and `room.revision` travels with it. A newcomer's arrival must
+    // produce no `state` for anyone (T6b's Safety line), so the alignment is a
+    // welcome and nothing else.
     broadcastMembers()
     broadcastChat(postSystemChat(room, result.member.id, (label) => `${label} joined`, now))
   }

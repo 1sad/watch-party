@@ -4,12 +4,15 @@
   import {
     ERROR_SENTENCES,
     type ChatMessage,
+    type CommandFrame,
     type ErrorCode,
+    type Playback,
     type ServerFrame,
     type WireMember,
   } from '../shared/protocol.ts'
   import { parseJoinLink, UNREADABLE_LINK, UNREACHABLE_ROOM } from './join.ts'
   import { readClockSkew } from './dev-clock.ts'
+  import Player from './Player.svelte'
   import {
     PING_INTERVAL_MS,
     authorityNow,
@@ -70,6 +73,18 @@
   let joinText = $state('')
   let nameDraft = $state('')
 
+  // §4.1's `playback` as the room last said it, and `revision` beside it (§4.3
+  // invariant 2). Only a `welcome` or a `state` writes these; the player is the
+  // only reader, and it applies them through `expected()` (invariant 9).
+  let playback = $state<Playback | null>(null)
+  let revision = $state(0)
+  /**
+   * A nudge for the player when the room refused this window's command or a
+   * `welcome` replaced the room: both mean "put the element back on the room",
+   * and neither is a `state` frame of its own.
+   */
+  let realign = $state(0)
+
   let socket: WebSocket | null = null
   /** True once this page has decided which room it dials; the poll never overrides it. */
   let enteredRoom = false
@@ -86,6 +101,9 @@
    * the page has to know the flag exists.
    */
   const localNow = (): number => Date.now() - clockSkew
+
+  /** §6.1's `authorityNow()`, in the one place this window can answer it. */
+  const authorityClock = (): number => authorityNow(localNow(), estimate)
 
   // §6.1's clock. The estimator is the page's own (§4.3 invariant 4), starts at
   // `emptyEstimate()` — "I do not know yet", not 0 ms believed — and is reset by
@@ -139,6 +157,8 @@
     members = []
     chat = []
     chatNotices = []
+    playback = null
+    revision = 0
     // §6.1: a reconnect resets the filter rather than feeding it an offset that
     // belonged to the previous connection's clock.
     stopPing()
@@ -219,12 +239,25 @@
       selfId = frame.selfId
       roomCode = frame.room.code
       members = frame.members
+      // §4.3 invariant 9: a fresh welcome is a new room view. `realign` tells
+      // the player to put the element on it, whatever it had before (a reload,
+      // a reconnect, a different room).
+      playback = frame.room.playback
+      revision = frame.room.revision
+      realign += 1
       // A late joiner's panel is the ring buffer the authority sent (R5).
       chat = [...frame.chatTail]
       sentence = null
       followNewest(true)
       // The one loop starts once this connection has a member identity to beat for.
       startPing()
+    } else if (frame.type === 'state') {
+      // The room's one writer's answer to a command (§5). Older revisions are
+      // dropped here so the button and the bar cannot show an undone future;
+      // the player applies the same rule to its own copy.
+      if (frame.revision < revision) return
+      playback = frame.playback
+      revision = frame.revision
     } else if (frame.type === 'members') {
       members = frame.members
     } else if (frame.type === 'chat') {
@@ -246,7 +279,17 @@
       // beside the messages it refused; anything else keeps the join box.
       if (isChatRefusal(frame.code)) notice('error', ERROR_SENTENCES[frame.code])
       else sentence = ERROR_SENTENCES[frame.code]
+      // ADR-030/§14: a room action this window was not allowed to make is
+      // undone locally too. Explaining it is not enough — the gesture already
+      // moved this element, and the room did not move with it.
+      if (frame.code === 'not_controller') realign += 1
     }
+  }
+
+  /** §5's commands, in the one shape the player hands them over. */
+  function sendCommand(frame: CommandFrame): void {
+    if (socket === null || selfId === null) return
+    socket.send(JSON.stringify(frame))
   }
 
   function submitJoin(event: SubmitEvent): void {
@@ -410,6 +453,16 @@
     </section>
 
     {#if selfId !== null}
+      {#if playback !== null}
+        <Player
+          {playback}
+          {revision}
+          {realign}
+          clock={authorityClock}
+          send={sendCommand}
+        />
+      {/if}
+
       <div class="room-body">
         <section class="chat" aria-label="Chat">
           <h2>Chat</h2>

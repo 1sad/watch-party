@@ -207,11 +207,11 @@ export interface MembersFrame {
 }
 
 /**
- * Why a `state` was sent (§5, §6.4). The last two are not emitted yet: `start`
- * is a scheduled start (§6.4, with `Playback.startAt`) and `join` is the
- * authority aligning a newcomer without a command — both arrive with the player
- * (T6b). They live here so the vocabulary has one home rather than growing by
- * string literal in a handler.
+ * Why a `state` was sent (§5, §6.4). `start` is a scheduled start (§6.4, with
+ * `Playback.startAt`) and arrives with T8. `join` stays vocabulary until the
+ * authority needs to align a joiner with more than the `welcome` snapshot: on
+ * load the snapshot is the alignment (§4.3 invariant 9), and a joiner's arrival
+ * must broadcast no `state` at all (T6b's Safety line).
  */
 export type PlaybackReason = 'play' | 'pause' | 'seek' | 'start' | 'join'
 

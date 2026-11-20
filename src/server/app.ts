@@ -1,11 +1,18 @@
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
-import { readFile } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import { readFile, stat } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 
 export interface SidecarOptions {
   /** The folder the page was built into (vite → dist/). */
   distDir: string
+  /**
+   * §5's fixture clip, served at `/fixture` until T9a swaps in a picked file.
+   * One named path rather than a media folder: the page must not be able to ask
+   * the sidecar for the contents of the disk.
+   */
+  fixture?: string
   /** What GET /healthz answers with; the page shows it. */
   version: string
   /**
@@ -66,6 +73,15 @@ async function handle(
     }
     options.retryDiscovery?.()
     sendJson(response, 202, { status: 'pending' }, method)
+    return
+  }
+
+  if (url.pathname === '/fixture') {
+    if (method !== 'GET' && method !== 'HEAD') {
+      sendMethodNotAllowed(response, 'GET, HEAD')
+      return
+    }
+    await sendFixture(request, response, options.fixture, method)
     return
   }
 
@@ -147,4 +163,86 @@ function sendJson(response: ServerResponse, status: number, value: unknown, meth
 function sendMethodNotAllowed(response: ServerResponse, allow: string): void {
   response.writeHead(405, { 'content-type': 'text/plain; charset=utf-8', allow })
   response.end('method not allowed\n')
+}
+
+/**
+ * The fixture clip, with byte ranges because a `<video>` seeks by asking for a
+ * byte range starting at a keyframe. Without `206` the browser has to download
+ * the whole file before `currentTime = 30` can land, which would make T6b's
+ * seek checks measure the disk rather than the player.
+ *
+ * `no-store` keeps a window's reload from trusting a stale body after the
+ * fixture is regenerated.
+ */
+async function sendFixture(
+  request: IncomingMessage,
+  response: ServerResponse,
+  fixture: string | undefined,
+  method: string,
+): Promise<void> {
+  if (fixture === undefined) {
+    sendText(response, 404, 'no fixture\n', method)
+    return
+  }
+
+  let size: number
+  try {
+    size = (await stat(fixture)).size
+  } catch {
+    sendText(response, 404, 'no fixture\n', method)
+    return
+  }
+
+  const headers: Record<string, string | number> = {
+    'content-type': 'video/mp4',
+    'accept-ranges': 'bytes',
+    'cache-control': 'no-store',
+  }
+
+  const range = parseByteRange(request.headers.range, size)
+  if (range === 'invalid') {
+    response.writeHead(416, { ...headers, 'content-range': `bytes */${size}` })
+    response.end()
+    return
+  }
+
+  if (range === null) {
+    response.writeHead(200, { ...headers, 'content-length': size })
+    if (method === 'HEAD') response.end()
+    else createReadStream(fixture).pipe(response)
+    return
+  }
+
+  response.writeHead(206, {
+    ...headers,
+    'content-length': range.end - range.start + 1,
+    'content-range': `bytes ${range.start}-${range.end}/${size}`,
+  })
+  if (method === 'HEAD') response.end()
+  else createReadStream(fixture, { start: range.start, end: range.end }).pipe(response)
+}
+
+/**
+ * One `Range: bytes=` header in the two forms a media element sends:
+ * `start-` (from a keyframe to the end) and `start-end`. A suffix range
+ * (`-500`) is the tail and is not needed by the player, so it is refused as
+ * invalid rather than half-implemented. Anything unreadable is `invalid`, never
+ * "serve the whole thing": a browser that asked for a range and got 200 will
+ * seek in the wrong place.
+ */
+export function parseByteRange(
+  header: string | undefined,
+  size: number,
+): { start: number; end: number } | 'invalid' | null {
+  if (header === undefined) return null
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim())
+  if (match === null) return 'invalid'
+  const [, rawStart, rawEnd] = match
+  if (rawStart === '' || size === 0) return 'invalid'
+
+  const start = Number(rawStart)
+  const end = rawEnd === '' ? size - 1 : Number(rawEnd)
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return 'invalid'
+  if (start >= size || start > end) return 'invalid'
+  return { start, end: Math.min(end, size - 1) }
 }

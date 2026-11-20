@@ -55,6 +55,9 @@ let startState: StartPayload = {
 
 const server = createSidecarServer({
   distDir: join(root, 'dist'),
+  // T6b: the committed clip the page plays until T9a swaps in a picked file.
+  // It stays for the tests; `/fixture` is the only path that serves it.
+  fixture: join(root, 'tests', 'fixtures', 'fixture.mp4'),
   version: readVersion(),
   start: () => startState,
   retryDiscovery: () => void runDiscovery(),
@@ -64,7 +67,11 @@ const server = createSidecarServer({
 // and knows nothing about codes, members or frames. The socket shares the page's
 // listener, so the window and a guest dial the same port (T3 item 1).
 const room = createRoom(roomCode)
-attachRoomSocket(server, room)
+attachRoomSocket(server, room, {
+  // Dev-only: one line per `state`, so a check can count them in the host log.
+  // A production sidecar (`NODE_ENV=production`) passes nothing and logs none.
+  debug: dev ? (line) => process.stdout.write(`[dev] ${line}\n`) : undefined,
+})
 
 server.on('error', (error: Error) => {
   process.stderr.write(`sidecar: cannot listen: ${error.message}\n`)

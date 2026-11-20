@@ -472,3 +472,48 @@ test('a raw report moves nothing: no state, no revision change, no writer but co
     await fixture.close()
   }
 })
+
+// T6b, R7: "join 20 min into a film" (§2). The snapshot the newcomer receives
+// carries the room's `playback` at its `revision`, so its player can be put on
+// that position without asking for anything. That the others hear no `state` is
+// the ticket's Safety line: an arrival is not a command, so it cannot start a
+// ping-pong with the room.
+test('a late joiner is handed the room position in `welcome`, and its arrival broadcasts no state', async () => {
+  const fixture = await openRoom()
+  const owner = connect('127.0.0.1', fixture.port)
+  const late = connect('127.0.0.1', fixture.port)
+  try {
+    await owner.ready
+    await owner.hello(CODE)
+
+    // The room is 12 s in and playing, from its only writer.
+    owner.send({ type: 'play', position: 12 })
+    const play = await owner.next((frame) => frame.type === 'state' && frame.reason === 'play')
+    assert.equal(play.playback.playing, true)
+
+    await late.ready
+    const welcome = await late.hello(CODE)
+    assert.equal(welcome.room.playback.playing, true)
+    assert.equal(welcome.room.playback.position, 12)
+    assert.ok(welcome.room.revision > play.revision, 'the snapshot is at the room’s revision')
+
+    // Nobody else heard it; a reloaded window produces no command on arrival.
+    let surprise: Frame | null = null
+    try {
+      surprise = await owner.next(
+        (frame) => frame.type === 'state' && frame.revision > play.revision,
+        250,
+      )
+    } catch {
+      surprise = null
+    }
+    assert.equal(
+      surprise,
+      null,
+      `the owner received a state for the arrival: ${JSON.stringify(surprise)}`,
+    )
+    assert.equal(fixture.room.revision, welcome.room.revision, 'and nothing moved')
+  } finally {
+    await fixture.close()
+  }
+})

@@ -15,6 +15,18 @@ public sealed class MainForm : Form
     // gives the filter something to cancel until T30 owns the real list.
     private static readonly string[] BlockedHosts = ["blocked.invalid"];
 
+    /// <summary>
+    /// §14's autoplay grant, and the one Debug switch that withholds it so the
+    /// "click to join playback" overlay can be seen and tested. A released
+    /// build has no switch and always grants.
+    /// </summary>
+#if DEBUG
+    private static readonly bool AutoplayGranted =
+        Environment.GetEnvironmentVariable("WATCHPARTY_AUTOPLAY_GRANT") != "off";
+#else
+    private const bool AutoplayGranted = true;
+#endif
+
     private readonly WebView2 _page = new() { Dock = DockStyle.Fill };
     private readonly System.Windows.Forms.Timer _portTimeout = new() { Interval = 20_000 };
 
@@ -72,7 +84,7 @@ public sealed class MainForm : Form
 
         try
         {
-            await _page.EnsureCoreWebView2Async();
+            await EnsurePageAsync();
         }
         catch (Exception error)
         {
@@ -82,9 +94,49 @@ public sealed class MainForm : Form
         }
 
         InstallRequestFilter();
+        InstallAutoplayGrant();
         _page.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
         StartSidecar();
         _portTimeout.Start();
+    }
+
+    /// <summary>
+    /// The window's one WebView2 control, created with the environment §14 needs
+    /// — and, in a Debug build only, a loopback CDP port so the checks that need
+    /// to read the page (the applied position, `paused`, the overlay) do not need
+    /// a person clicking. The environment variable is what arms it.
+    /// </summary>
+    private async Task EnsurePageAsync()
+    {
+        // §14's grant. ADR-034 names `PermissionRequested` as the Autoplay
+        // lever, but the engine only raises that request in a policy mode it
+        // does not use by default — measured on WebView2 157: with the default
+        // policy the event never fired and `play()` was refused.
+        // `no-user-gesture-required` is the mode in which §14's "no click" is
+        // true; the handler below stays installed as the ADR's lever, for any
+        // engine that does ask.
+        string autoplayPolicy =
+            AutoplayGranted ? "--autoplay-policy=no-user-gesture-required" : string.Empty;
+#if DEBUG
+        string? debugPort = Environment.GetEnvironmentVariable("WATCHPARTY_CDP_PORT");
+        if (debugPort is not null)
+        {
+            HostLog.Write($"dev: remote debugging on 127.0.0.1:{debugPort} (Debug build only)");
+            // Its own profile: WebView2 refuses a second controller in the
+            // browser process another window already owns (0x8007139F), and
+            // two windows on one debugging port could not be told apart.
+            string userData = Path.Combine(Path.GetTempPath(), $"watchparty-dev-{debugPort}");
+            CoreWebView2Environment debugEnvironment = await CoreWebView2Environment.CreateAsync(
+                null, userData,
+                new CoreWebView2EnvironmentOptions(
+                    $"{autoplayPolicy} --remote-debugging-port={debugPort}".Trim()));
+            await _page.EnsureCoreWebView2Async(debugEnvironment);
+            return;
+        }
+#endif
+        CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(
+            null, null, new CoreWebView2EnvironmentOptions(autoplayPolicy));
+        await _page.EnsureCoreWebView2Async(environment);
     }
 
     private void InstallRequestFilter()
@@ -113,6 +165,36 @@ public sealed class MainForm : Form
         e.Response = _page.CoreWebView2.Environment.CreateWebResourceResponse(
             new MemoryStream(Array.Empty<byte>()), 403, "Blocked", "Content-Type: text/plain");
         HostLog.Write($"blocked {uri}");
+    }
+
+    /// <summary>
+    /// §14: a scheduled start must not be refused by the autoplay policy, so the
+    /// window grants the page the <c>Autoplay</c> permission before it loads
+    /// (ADR-034 names <c>PermissionRequested</c> as the lever; the request filter
+    /// above stays in its three-argument form, which is a different event).
+    ///
+    /// The switch that withholds the grant exists only in this Debug build — the
+    /// one <c>npm run dev</c> runs — so a shipped window has no way to be talked
+    /// out of granting it. With it off, the page's own §14 overlay is what has to
+    /// appear, which is how the overlay is tested at all.
+    /// </summary>
+    private void InstallAutoplayGrant()
+    {
+        bool grant = AutoplayGranted;
+        _page.CoreWebView2.PermissionRequested += (_, e) =>
+        {
+            if (e.PermissionKind != CoreWebView2PermissionKind.Autoplay) return;
+
+            // Not handled would mean a prompt this window has no way to show.
+            e.Handled = true;
+            // Not remembered: a profile that saved "allow" would keep autoplay
+            // on even when this build was started with the grant disabled.
+            e.SavesInProfile = false;
+            e.State = grant ? CoreWebView2PermissionState.Allow : CoreWebView2PermissionState.Deny;
+            HostLog.Write(
+                $"autoplay permission for {e.Uri}: {(grant ? "allowed" : "denied (dev switch)")}");
+        };
+        HostLog.Write($"autoplay permission handler installed; grant={grant}");
     }
 
     /// <summary>Matches a request URL's host against the temporary block list.</summary>
