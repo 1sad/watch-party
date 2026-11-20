@@ -18,13 +18,19 @@ public sealed class MainForm : Form
     private readonly WebView2 _page = new() { Dock = DockStyle.Fill };
     private readonly System.Windows.Forms.Timer _portTimeout = new() { Interval = 20_000 };
 
+    // Command-line arguments, untouched: when the app was opened from a clicked
+    // invite link, one of them is that link (T2b).
+    private readonly string[] _launchArgs;
+
     private Process? _sidecar;
     private string _root = string.Empty;
     private bool _closing;
     private bool _navigated;
 
-    public MainForm()
+    public MainForm(string[]? launchArgs)
     {
+        _launchArgs = launchArgs ?? [];
+
         Text = "Watch Party";
         ClientSize = new Size(1100, 720);
         MinimumSize = new Size(640, 420);
@@ -51,6 +57,18 @@ public sealed class MainForm : Form
         }
 
         HostLog.Write($"host started; program folder {_root}");
+
+        // One registry key, for this user only; failure is a log line, never a
+        // dialog and never a reason to stop (T2b item 3).
+        if (ProtocolRegistration.TryRegister(out string command))
+        {
+            HostLog.Write($"watchparty:// registered for this user: {command}");
+        }
+        else
+        {
+            HostLog.Write($"watchparty:// registration failed: {command}. A clicked invite link will not open "
+                + "Watch Party; pasting the link into the join box still works.");
+        }
 
         try
         {
@@ -171,7 +189,9 @@ public sealed class MainForm : Form
         if (_closing || _navigated) return;
 
         _portTimeout.Stop();
-        string url = $"http://127.0.0.1:{port}/";
+        // The page's own URL, plus `?join=` carrying the launched link whole and
+        // encoded. This line is the record of where the window went (T2b check 2).
+        string url = LaunchLink.PageUrl($"http://127.0.0.1:{port}/", _launchArgs);
         HostLog.Write($"parsed sidecar PORT {port}; navigating to {url}");
         _navigated = true;
         _page.CoreWebView2.Navigate(url);
