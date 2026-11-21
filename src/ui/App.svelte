@@ -26,6 +26,14 @@
   } from '../shared/media.ts'
   import { PAGE_STAGE_MS, setPageFrame } from '../shared/page.ts'
   import { previewHolds, type PendingPreview } from './preview.ts'
+  import {
+    POPUP_NOTICE_MS,
+    expirePopup,
+    noPopups,
+    notePopup,
+    popupSentence,
+    type PopupState,
+  } from './popup-notice.ts'
   import { readClockSkew } from './dev-clock.ts'
   import { readDevPlay } from './dev-drift.ts'
   import Player from './Player.svelte'
@@ -93,6 +101,15 @@
   // could not use, or why the clipboard was unreadable.
   let pageDraft = $state('')
   let pageNotice = $state<string | null>(null)
+
+  /**
+   * T04b: R37's line in the same top row. The host cancels every `window.open`
+   * the site asks for and posts which host asked; this page owns the sentence
+   * (ADR-038). One line per host per navigation, cleared on its own after
+   * `POPUP_NOTICE_MS` — the rule and the reasons are `ui/popup-notice.ts`.
+   */
+  let popups = $state<PopupState>(noPopups())
+  let popupTimer: ReturnType<typeof setTimeout> | undefined
 
   /**
    * T03c: the room's committed page, as `welcome` or the last `pageCommitted`
@@ -259,6 +276,10 @@
     picking = false
     pickNotice = null
     pickedPath = null
+    // T04b: another room is another site view, so a popup notice and what it
+    // already announced do not survive the connection.
+    stopPopupTimer()
+    popups = noPopups()
     // §6.1: a reconnect resets the filter rather than feeding it an offset that
     // belonged to the previous connection's clock.
     stopPing()
@@ -583,6 +604,16 @@
       return
     }
 
+    if (kind === 'popupCancelled') {
+      const host = (message as { host?: unknown }).host
+      const nav = (message as { nav?: unknown }).nav
+      if (typeof host !== 'string' || host.length === 0) return
+      // No count means the same navigation the page already knows about, which
+      // keeps a repeat from becoming a second notice.
+      notePopupCancelled(host, typeof nav === 'number' ? nav : popups.nav)
+      return
+    }
+
     if (kind === 'failed') {
       const sentence = (message as { sentence?: unknown }).sentence
       refusePick(typeof sentence === 'string' ? sentence : 'The app could not read the file it chose.')
@@ -757,6 +788,39 @@
   }
 
   /**
+   * T04b: one popup the host refused. The page decides how often it says so;
+   * the host only reports the fact. A repeat from the same host on the same
+   * navigation comes back as the same state object, so the line and its timer
+   * are left exactly where they are and nothing flickers.
+   */
+  function notePopupCancelled(host: string, nav: number): void {
+    const next = notePopup(popups, { host, nav }, Date.now())
+    if (next === popups) return
+    popups = next
+    armPopupTimer()
+    if (dev) console.info(`[popup] cancelled host=${host} nav=${nav}`)
+  }
+
+  /** The line clearing itself: nothing else dismisses it, and nothing re-shows it for the same page. */
+  function onPopupExpired(): void {
+    popupTimer = undefined
+    const next = expirePopup(popups, Date.now())
+    if (next !== popups) popups = next
+    // A clock that disagreed with the timer gets one more wait rather than a spin.
+    if (popups.notice !== null) armPopupTimer()
+  }
+
+  function armPopupTimer(): void {
+    if (popupTimer !== undefined) clearTimeout(popupTimer)
+    popupTimer = setTimeout(onPopupExpired, POPUP_NOTICE_MS)
+  }
+
+  function stopPopupTimer(): void {
+    if (popupTimer !== undefined) clearTimeout(popupTimer)
+    popupTimer = undefined
+  }
+
+  /**
    * T03b: the visible Paste button. WebView2's own clipboard grant does the
    * reading (the host allows `ClipboardRead` for this one view), and Ctrl+V and
    * the right-click menu are the engine's, so neither passes through here.
@@ -863,6 +927,7 @@
     return () => {
       host?.removeEventListener('message', onHostMessage)
       clearTimeout(timer)
+      stopPopupTimer()
       stopPing()
     }
   })
@@ -901,6 +966,11 @@
     {/if}
     {#if pageNotice !== null}
       <p class="bar-notice" role="status">{pageNotice}</p>
+    {/if}
+    {#if popups.notice !== null}
+      <!-- T04b: R37's line. Neutral rather than red: nothing failed and no ad
+           was blocked — the site asked for a window and this app has one. -->
+      <p class="bar-popup" role="status">{popupSentence(popups.notice.host)}</p>
     {/if}
   </header>
 {/if}
@@ -1126,6 +1196,15 @@
     font-size: 0.8rem;
     line-height: 1.25;
     color: #ffb3a7;
+  }
+
+  /* T04b: the popup line, in the bar's own quiet grey. It is information, not
+     a refusal the person has to answer, and it clears itself in ten seconds. */
+  .bar-popup {
+    margin: 0;
+    font-size: 0.8rem;
+    line-height: 1.25;
+    color: #c9ccd8;
   }
 
   /* T03c: the countdown row — the committed address on the left, the seconds and

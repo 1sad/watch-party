@@ -89,6 +89,13 @@ public sealed class MainForm : Form
     /// </summary>
     private int _siteCancelled;
     private readonly List<string> _siteCancelledHosts = new();
+
+    /// <summary>
+    /// T04b: which navigations of the site view the popup events belong to. The
+    /// page's one notice is "one per host per page", and the page has no other
+    /// way to tell one page from the next, so the count travels with each event.
+    /// </summary>
+    private int _siteNav;
 #if DEBUG
     /// <summary>
     /// T8d: whether this window is the measuring one — the window <c>dev:debug</c>
@@ -208,6 +215,7 @@ public sealed class MainForm : Form
         InstallAutoplayGrant();
         InstallFilePicker();
         InstallAppOriginLock();
+        InstallPopupRefusal();
         InstallRelay();
 #if DEBUG
         InstallPageConsole();
@@ -432,6 +440,61 @@ public sealed class MainForm : Form
             && target.Scheme == Uri.UriSchemeHttp
             && string.Equals(target.Host, "127.0.0.1", StringComparison.Ordinal)
             && target.Port == port;
+    }
+
+    /// <summary>
+    /// T04b, R37: a site's popup is cancelled before the engine can open one.
+    /// This window is the only window the app has — a second one would sit
+    /// outside the relay, the layout and the room — so nothing is opened, queued
+    /// or retried. Only the *event* is the host's business: the page is told
+    /// which host asked, and which navigation asked it in, and ADR-038 leaves
+    /// the sentence to the page.
+    ///
+    /// The app view is not wired here: our own page opens no windows (R37's
+    /// notice is about the site's), and its navigation lock already keeps it on
+    /// the sidecar's origin.
+    /// </summary>
+    private void InstallPopupRefusal()
+    {
+        _site.CoreWebView2.NewWindowRequested += OnSiteNewWindowRequested;
+        HostLog.Write("site view: popups cancelled; a second window is never opened");
+    }
+
+    /// <summary>
+    /// One popup the page asked for. <c>Handled</c> is the whole refusal — the
+    /// SDK's own words are "in which case WebView2 does not open a window" — and
+    /// it is set before anything else, so no path through here leaves it unset.
+    /// </summary>
+    private void OnSiteNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
+    {
+        e.Handled = true;
+
+        // The host the page asked for. A popup with no address of its own (an
+        // `about:blank` the page fills in later) has no host to name, so the
+        // sentence says "the page" rather than starting with a blank.
+        string host = Uri.TryCreate(e.Uri, UriKind.Absolute, out Uri? target) && target.Host.Length > 0
+            ? target.Host
+            : "the page";
+
+        // T04b: the measuring build's line, one per popup. ASCII only (AGENTS.md
+        // rule 10): a quoted line stops being evidence once it reads as garbage.
+#if DEBUG
+        if (_measuring)
+        {
+            HostLog.Write($"site: popup cancelled host={host} url={e.Uri}");
+        }
+#endif
+
+        try
+        {
+            PostToPage(new { kind = "popupCancelled", host, nav = _siteNav });
+        }
+        catch (Exception error)
+        {
+            // The window already refused it; a page that did not hear of it is a
+            // missing line, never a second window.
+            HostLog.Write($"relay: a popup event could not reach the app view: {error.Message}");
+        }
     }
 
     /// <summary>
@@ -1047,6 +1110,8 @@ public sealed class MainForm : Form
         // restarts here, before the new document asks for anything.
         _siteCancelled = 0;
         _siteCancelledHosts.Clear();
+        // T04b: and it is the unit a popup notice is said once in.
+        _siteNav++;
     }
 
     private void OnSiteNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
