@@ -101,7 +101,10 @@ Website mode adds one prefix per speaker, quoted from a real run on 2026-11-21 (
   never connected, which is a different failure from a page that loaded and voted nothing.
 - `player:` is one line per election and is written in both builds. It names the frame the winner sits in, its size, its
   duration and the reason. A second line with a later timestamp is a re-election, so the gap between two lines is the
-  number a replaced-mirror check quotes.
+  number a replaced-mirror check quotes. Since ticket 06 two command shapes share the prefix, both in both builds:
+  `player: applied reason=play target=83.500 from=80.120` when the room's command reached the site's player, and
+  `player: drift expected=83.500 actual=83.608 delta=108` at most once a second for the elected player. A live sync
+  check quotes those two lines rather than reading a picture.
 - `site:` is the site view reporting to the host. A `bridge report` line is one frame's candidate list and is
   **measuring build only** (two lines a second per frame in a busy page); the ad-filter lines are in both builds.
 
