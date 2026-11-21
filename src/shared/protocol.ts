@@ -208,6 +208,49 @@ export interface SetMediaFrame {
   epoch: number
 }
 
+/**
+ * m→a: the room's page (R21, §5). **Staged, not applied** (ADR-032): the
+ * authority holds it for its own window, sends it to nobody, and either
+ * `cancelPage` clears it or `pageCommitted` announces it.
+ *
+ * `stageMs` is §5's field and is the sender's suggestion only. The authority
+ * owns the window (`PAGE_STAGE_MS` in `room.ts`), because a client that could
+ * shorten it — or a slow one that could stretch it — would own the undo.
+ * `epoch` is §5's rule for authority-bearing frames (§4.3 invariant 6).
+ */
+export interface SetPageFrame {
+  type: 'setPage'
+  page: string
+  stageMs?: number
+  epoch: number
+}
+
+/**
+ * m→a: cancels the sender's own pending page (§5). "Nobody else ever hears of
+ * it" is the whole point of the window: no frame, no chat line, no flicker.
+ */
+export interface CancelPageFrame {
+  type: 'cancelPage'
+  epoch: number
+}
+
+/**
+ * a→m: the staged page is now the room's (§5, ADR-032). Every window navigates,
+ * and the room's playback is at position 0, paused — a new page is a new film.
+ * `by` is the member who staged it; `at` is the authority's commit instant.
+ */
+export interface PageCommittedFrame {
+  type: 'pageCommitted'
+  page: string
+  by: string
+  at: number
+}
+
+/** The single place a `pageCommitted` is made, for the reason `stateFrame()` is one. */
+export function pageCommittedFrame(page: string, by: string, at: number): PageCommittedFrame {
+  return { type: 'pageCommitted', page, by, at }
+}
+
 /** m→a: what the member typed. The authority supplies everything else (§5). */
 export interface ChatSendFrame {
   type: 'chat'
@@ -273,6 +316,8 @@ export type ClientFrame =
   | RenameFrame
   | CommandFrame
   | SetMediaFrame
+  | SetPageFrame
+  | CancelPageFrame
   | ChatSendFrame
   | PingFrame
   | ReportFrame
@@ -358,6 +403,7 @@ export type ServerFrame =
   | WelcomeFrame
   | MembersFrame
   | MediaFrame
+  | PageCommittedFrame
   | StateFrame
   | RoomOverFrame
   | ErrorFrame

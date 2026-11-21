@@ -7,6 +7,7 @@ import { normalizeName } from '../shared/names.ts'
 import { admitChat, formatClock, newChatBudget, type ChatBudget } from '../shared/chat.ts'
 import {
   errorFrame,
+  pageCommittedFrame,
   ROOM_OVER_SENTENCE,
   stateFrame,
   warningFrame,
@@ -27,8 +28,11 @@ import {
 } from '../shared/timing.ts'
 import {
   applyCommand,
+  cancelPage,
+  commitDuePage,
   discardRoom,
   displayNameOf,
+  dropPendingPage,
   joinRoom,
   markOffline,
   postChat,
@@ -36,6 +40,7 @@ import {
   renameMember,
   setMedia,
   snapshot,
+  stagePage,
   wireMembers,
   type RoomState,
 } from './room.ts'
@@ -143,6 +148,48 @@ export function attachRoomSocket(
         `position=${room.playback.position.toFixed(3)} startAt=${room.playback.startAt ?? 'none'} by=${by}`,
     )
     for (const socket of sockets.keys()) socket.send(text)
+  }
+
+  /**
+   * ADR-032's window, owned by the authority and by nothing else. One timer per
+   * pending page; it is the only thing that turns `pendingPage` into a
+   * `pageCommitted`. No client holds a timer for this, so a slow or frozen
+   * window can neither commit early nor late — the page it previews has no say.
+   */
+  let pageTimer: ReturnType<typeof setTimeout> | null = null
+
+  const stopPageTimer = (): void => {
+    if (pageTimer === null) return
+    clearTimeout(pageTimer)
+    pageTimer = null
+  }
+
+  // §5's `pageCommitted` goes to everyone, sender included: every app navigates
+  // now, and a later joiner reads the same page from its `welcome` snapshot.
+  const commitPage = (): void => {
+    const commit = commitDuePage(room, now)
+    if (commit === null) return
+    const text = JSON.stringify(pageCommittedFrame(commit.page, commit.by, commit.at))
+    for (const socket of sockets.keys()) socket.send(text)
+    log(`[page] committed page=${commit.page} by=${commit.by} at=${commit.at}`)
+  }
+
+  const startPageTimer = (expiresAt: number): void => {
+    stopPageTimer()
+    pageTimer = setTimeout(() => {
+      pageTimer = null
+      const pending = room.pendingPage
+      if (pending === null) return
+      // A timer that fired a hair early waits out the rest of the window rather
+      // than dropping the change: the commit is the authority's decision, and it
+      // happens when the window has really ended.
+      if (now() < pending.expiresAt) {
+        startPageTimer(pending.expiresAt)
+        return
+      }
+      commitPage()
+    }, Math.max(0, expiresAt - now()))
+    pageTimer.unref?.()
   }
 
   const joinMember = (socket: PeerSocket, frame: ClientFrame, remoteAddress: string | undefined): void => {
@@ -365,6 +412,10 @@ export function attachRoomSocket(
             fail(socket, result.code)
             return
           }
+          // A successful pick cleared any pending page (§4.2), so its window has
+          // nothing left to commit and the timer goes with it. A **refused** pick
+          // returned above, leaving the pending page exactly where it was.
+          stopPageTimer()
           // T9a2: the room's record of what it accepted, with the duration the
           // owner's page measured before this frame was sent. A refused pick
           // never reaches here, so this line's absence is the proof that no file
@@ -381,6 +432,41 @@ export function attachRoomSocket(
           // own pick. It is the wire snapshot, so the path stays in this process.
           const mediaText = JSON.stringify({ type: 'media', media: snapshot(room).media } satisfies ServerFrame)
           for (const socket of sockets.keys()) socket.send(mediaText)
+          return
+        }
+        case 'setPage': {
+          // A frame that cannot be read is ignored (§5), the same rule `report`,
+          // `chat` and `setMedia` keep.
+          if (
+            typeof frame.page !== 'string' ||
+            typeof frame.epoch !== 'number' ||
+            !Number.isFinite(frame.epoch)
+          ) {
+            return
+          }
+          const result = stagePage(room, member.id, frame.page, frame.epoch, now)
+          if (!result.ok) {
+            // `bad_page` is not a wire code (§5 has none, and inventing one is a
+            // protocol change), so an address that cannot be shared is dropped
+            // silently like an unreadable frame.
+            if (result.code !== 'bad_page') fail(socket, result.code)
+            return
+          }
+          // ADR-032: nothing goes to any client — the initiator included — until
+          // the window ends. The initiator's own preview is local to their
+          // window (03b); only the authority's timer speaks here.
+          startPageTimer(result.pending.expiresAt)
+          return
+        }
+        case 'cancelPage': {
+          if (typeof frame.epoch !== 'number' || !Number.isFinite(frame.epoch)) return
+          const result = cancelPage(room, member.id, frame.epoch)
+          if (!result.ok) {
+            fail(socket, result.code)
+            return
+          }
+          // §5: "nobody else ever hears of it" — no frame, no chat line.
+          if (result.cancelled) stopPageTimer()
           return
         }
         case 'chat': {
@@ -422,12 +508,17 @@ export function attachRoomSocket(
       sockets.delete(socket)
       budgets.delete(member.id)
       lastCorrectionAt.delete(member.id)
+      // ADR-032: the initiator leaving mid-window discards the pending entry —
+      // nobody else ever learns what they nearly changed (§5).
+      if (dropPendingPage(room, member.id)) stopPageTimer()
 
       // §14's "owner leaves in file mode: room ends, everyone told plainly, no
       // pretend recovery" (ADR-024). File mode is the only mode this phase has,
       // so the end fires whether or not a file was picked. Website mode's
       // transfer of authority (T22) is a later mode, not a counter-case.
       if (room.owner === member.id) {
+        // No window outlives the room it belonged to.
+        stopPageTimer()
         // One system line, not "sam left" plus a second line: the room's end is
         // the one fact worth telling, and chat carries it exactly once (§4.6).
         broadcastChat(postChat(room, { kind: 'system', name: label, text: ROOM_OVER_SENTENCE }, now))

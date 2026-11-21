@@ -14,10 +14,33 @@ import type {
 import { ANONYMOUS, displayNames } from '../shared/names.ts'
 import { pushChat } from '../shared/chat.ts'
 import { contentTypeFor } from '../shared/media.ts'
+import { canonicalPage } from '../shared/page.ts'
 import { clampToMedia, expected, scheduledStartAt, seekIsDuplicate } from '../shared/timing.ts'
 
 /** §12: five people is a constraint of the design, not a setting. */
 export const MAX_MEMBERS = 5
+
+/**
+ * ADR-032: the authority holds a pending room change for two seconds. The value
+ * is the authority's, not the sender's — §5's `setPage` carries `stageMs` as a
+ * suggestion, and a client that could shorten the window would own the undo.
+ */
+export const PAGE_STAGE_MS = 2000
+
+/**
+ * ADR-032's one pending entry: stored, sent to nobody, until `expiresAt`. It
+ * lives in the room rather than beside the socket because it is a fact about
+ * what the room is about to become, and because the authority must expire it
+ * even if the initiator's socket has gone (§5's `cancelPage` line).
+ */
+export interface PendingPage {
+  /** Already canonical (§4.3 invariant 5): no query string, no fragment. */
+  page: string
+  /** The member who staged it; only they may cancel it. */
+  by: string
+  /** Authority-clock instant the window ends and the page commits. */
+  expiresAt: number
+}
 
 /**
  * §4.2's file half plus the one fact that stays in this process: the absolute
@@ -40,6 +63,8 @@ export interface RoomState {
   /** Always `[owner]` in M1 (phase slice §5); grants are T33. */
   controllers: string[]
   page: string | null
+  /** ADR-032's staged page: in the room, invisible to every client, until it commits. */
+  pendingPage: PendingPage | null
   media: RoomMedia | null
   playback: Playback
   /** Monotonic on every mutation (§4.3 invariant 2). */
@@ -59,6 +84,7 @@ export function createRoom(code: string, now: () => number = Date.now): RoomStat
     authority: { memberId: '', epoch: 0 },
     controllers: [],
     page: null,
+    pendingPage: null,
     media: null,
     playback: { playing: false, position: 0, updatedAt: now(), rate: 1 },
     revision: 0,
@@ -158,8 +184,115 @@ export function setMedia(
     path: file.path,
   }
   room.page = null
+  // §4.2: the two kinds of media never coexist, and a pending page would commit
+  // two seconds from now and wipe the file that was just picked. A pick replaces
+  // the pending change, exactly as a second `setPage` replaces the first.
+  room.pendingPage = null
   room.revision += 1
   return { ok: true }
+}
+
+/**
+ * A refusal that is **not** a wire code. §5 has no `error` code for an address
+ * that cannot be shared, and inventing one would be a protocol change beyond the
+ * frames §5 defines; an address that cannot be canonicalised is therefore
+ * dropped the way an unreadable frame is (§5's last rule), never sent as a
+ * refusal. The page validates before sending (03b).
+ */
+export type StagePageRefusal = ErrorCode | 'bad_page'
+
+export type StagePageOutcome =
+  | { ok: true; pending: PendingPage }
+  | { ok: false; code: StagePageRefusal }
+
+/**
+ * §5's `setPage`, staged (ADR-032): a controller names the room's page, the
+ * authority canonicalises it (§4.3 invariant 5) and holds it. **Nothing is sent
+ * to any client and `revision` does not move** — the room has not changed yet,
+ * and a pending entry that is cancelled must leave no trace anywhere.
+ *
+ * A second `setPage` while one is pending replaces it (ADR-032's cost line): the
+ * later request wins, and its window starts again from now.
+ */
+export function stagePage(
+  room: RoomState,
+  memberId: string,
+  page: string,
+  epoch: number,
+  now: () => number = Date.now,
+): StagePageOutcome {
+  if (!room.controllers.includes(memberId)) return { ok: false, code: 'not_controller' }
+  // §5 + §4.3 invariant 6, the same two checks `setMedia()` makes in this order.
+  if (epoch !== room.authority.epoch) return { ok: false, code: 'stale_host' }
+
+  const canonical = canonicalPage(page)
+  if (canonical === null) return { ok: false, code: 'bad_page' }
+
+  const pending: PendingPage = { page: canonical, by: memberId, expiresAt: now() + PAGE_STAGE_MS }
+  room.pendingPage = pending
+  return { ok: true, pending }
+}
+
+export type CancelPageOutcome = { ok: true; cancelled: boolean } | { ok: false; code: ErrorCode }
+
+/**
+ * §5's `cancelPage`: the sender's own pending change, and only theirs. Someone
+ * else's window is not theirs to close, so a cancel that matches nothing is a
+ * quiet no-op rather than an error.
+ */
+export function cancelPage(
+  room: RoomState,
+  memberId: string,
+  epoch: number,
+): CancelPageOutcome {
+  if (!room.controllers.includes(memberId)) return { ok: false, code: 'not_controller' }
+  if (epoch !== room.authority.epoch) return { ok: false, code: 'stale_host' }
+  const pending = room.pendingPage
+  if (pending === null || pending.by !== memberId) return { ok: true, cancelled: false }
+  room.pendingPage = null
+  return { ok: true, cancelled: true }
+}
+
+/**
+ * ADR-032's cost line: "a pending entry the authority must expire if the
+ * initiator disconnects mid-window". Their window is gone with their socket, so
+ * nobody else ever learns what they nearly changed (§5).
+ */
+export function dropPendingPage(room: RoomState, memberId: string): boolean {
+  const pending = room.pendingPage
+  if (pending === null || pending.by !== memberId) return false
+  room.pendingPage = null
+  return true
+}
+
+/** What `pageCommitted` carries (§5): the page, who staged it, when it landed. */
+export interface PageCommit {
+  page: string
+  by: string
+  at: number
+}
+
+/**
+ * The window's end, and the room's only writer of `page` (ADR-024). Returns
+ * `null` while the window is open or when nothing is pending, so the caller can
+ * tell "commit nothing" from "commit this".
+ *
+ * §5's `pageCommitted` row is the whole of it here: the page becomes the room's,
+ * `media` is cleared (§4.2: the two kinds never coexist), and playback resets to
+ * position 0, paused — a new page is a new film.
+ */
+export function commitDuePage(room: RoomState, now: () => number = Date.now): PageCommit | null {
+  const pending = room.pendingPage
+  if (pending === null) return null
+  const at = now()
+  if (at < pending.expiresAt) return null
+
+  room.page = pending.page
+  room.media = null
+  room.playback = { playing: false, position: 0, updatedAt: at, rate: 1 }
+  room.pendingPage = null
+  room.revision += 1
+  return { page: pending.page, by: pending.by, at }
 }
 
 /** Presence follows the socket (§4.4): a closed socket is `offline`, not gone. */
@@ -196,6 +329,7 @@ export function discardRoom(room: RoomState, now: () => number = Date.now): void
   room.authority = { memberId: '', epoch: room.authority.epoch }
   room.controllers = []
   room.page = null
+  room.pendingPage = null
   room.media = null
   room.playback = { playing: false, position: 0, updatedAt: now(), rate: 1 }
   room.members.clear()
