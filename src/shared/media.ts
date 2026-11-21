@@ -32,6 +32,18 @@ export function contentTypeFor(filePath: string): string | null {
   return MEDIA_CONTENT_TYPES[name.slice(dot + 1).toLowerCase()] ?? null
 }
 
+/**
+ * T9a3: the address a window loads the room's file from. The wire carries only
+ * `Media.id` (`protocol.ts`), so the origin has to be the **owner's** — the one
+ * this window is connected to — rather than this page's own: a guest loads the
+ * page from its own sidecar, which holds no file and would answer 404 (§7.2).
+ * `null` means the room has no file yet, so there is nothing to load at all.
+ */
+export function mediaUrl(ownerOrigin: string, media: { id: string } | null): string | null {
+  if (media === null) return null
+  return `${ownerOrigin.replace(/\/+$/, '')}/media/${encodeURIComponent(media.id)}`
+}
+
 /** Letters whose written names begin with a vowel sound; `an MKV`, `a WEBM`. */
 const AN_LETTERS = 'AEFHILMNORSX'
 

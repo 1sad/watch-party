@@ -64,8 +64,9 @@ function log(line: string): void {
 
 const server = createSidecarServer({
   distDir: join(root, 'dist'),
-  // T6b: the committed clip the page plays until T9a swaps in a picked file.
-  // It stays for the tests; `/fixture` is the only path that serves it.
+  // T6b's clip stays served for the tests (T9a3 makes it the tests' only
+  // consumer: the page no longer opens on it; `/fixture` is one path, nothing
+  // more, and `tests/integration/sidecar.test.ts` is what still reads it).
   fixture: join(root, 'tests', 'fixtures', 'fixture.mp4'),
   // T9a1: `/media/<id>` streams the one file the owner registered; the id is
   // the only thing a guest's window ever holds.
@@ -153,5 +154,10 @@ server.listen(0, '0.0.0.0', () => {
   startState = { ...startState, localPort: address.port }
   // The host parses exactly this line, and nothing else, from stdout.
   process.stdout.write(`${portLine(address.port)}\n`)
+  // T9a3: file mode's opening state, said once after the PORT line (which must
+  // stay first) so a check can tell "no file yet" from "the pick never
+  // happened". A fresh window shows the picker and plays nothing; the T6b
+  // fixture is served for the tests only, never opened by the page any more.
+  log('[media] none set - the room opens with no file')
   void runDiscovery()
 })

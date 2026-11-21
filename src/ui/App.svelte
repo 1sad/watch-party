@@ -6,6 +6,7 @@
     type ChatMessage,
     type CommandFrame,
     type ErrorCode,
+    type Media,
     type NudgeFrame,
     type Playback,
     type ReportFrame,
@@ -19,6 +20,7 @@
     checkExtension,
     loadRefusal,
     mediaTitle,
+    mediaUrl,
     type LoadRefusal,
   } from '../shared/media.ts'
   import { readClockSkew } from './dev-clock.ts'
@@ -100,6 +102,21 @@
    * reads it; it holds no room state of its own, so it is not part of `playback`.
    */
   let nudge = $state<NudgeFrame | null>(null)
+  /**
+   * §4.2's `media` as the room last said it (T9a3): `welcome`'s snapshot, and
+   * then one `media` frame when the owner picks. Every window plays this same
+   * file, and `media.duration` is the owner's measurement — no window here
+   * measures it again (§4.2, T9a2 item 3).
+   */
+  let media = $state<Media | null>(null)
+  /**
+   * The owner's address, as this window connected to it. A guest's page comes
+   * from its own sidecar, which holds no file, so the `<video>` source has to
+   * name this origin rather than the page's (`mediaUrl`).
+   */
+  let ownerOrigin = $state<string | null>(null)
+  /** Where the player loads the room's file from, or `null` while the room has none. */
+  const playerSrc = $derived(ownerOrigin === null ? null : mediaUrl(ownerOrigin, media))
 
   let socket: WebSocket | null = null
   /** True once this page has decided which room it dials; the poll never overrides it. */
@@ -181,7 +198,11 @@
     chatNotices = []
     playback = null
     revision = 0
+    media = null
     nudge = null
+    // T9a3: this connection's owner — the window and every guest fetch the room's
+    // one file from here (`mediaUrl`), never from their own sidecar.
+    ownerOrigin = `http://${host}:${port}`
     // T9a2: a different room has a different owner, so a pending pick is gone.
     picking = false
     pickNotice = null
@@ -271,6 +292,10 @@
       // a reconnect, a different room).
       playback = frame.room.playback
       revision = frame.room.revision
+      // §4.2 + invariant 9: the snapshot also says which file; a window landing
+      // here plays it and realigns below, so a late joiner or a reload arrives
+      // where the room is (T9a3).
+      media = frame.room.media
       realign += 1
       // A late joiner's panel is the ring buffer the authority sent (R5).
       chat = [...frame.chatTail]
@@ -285,6 +310,12 @@
       if (frame.revision < revision) return
       playback = frame.playback
       revision = frame.revision
+    } else if (frame.type === 'media') {
+      // T9a3: the owner picked a file while this window was already here. The
+      // player gets a new source and is put on the room's position (invariant 9),
+      // exactly as a `welcome` that carried the same field would.
+      media = frame.media
+      realign += 1
     } else if (frame.type === 'nudge') {
       // §6.3, to this window only: a rate and the authority instant it ends by.
       // It is handed to the player as a new object, so the same nudge cannot be
@@ -670,6 +701,8 @@
           {revision}
           {realign}
           {nudge}
+          {media}
+          src={playerSrc}
           {devPlay}
           clock={authorityClock}
           rtt={() => estimate.rtt}

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { CommandFrame, NudgeFrame, Playback, ReportFrame } from '../shared/protocol.ts'
+  import type { CommandFrame, Media, NudgeFrame, Playback, ReportFrame } from '../shared/protocol.ts'
   import {
     CORRECTION_DEADBAND_SECONDS,
     REPORT_INTERVAL_MS,
@@ -31,11 +31,22 @@
     realign: number
     /** The authority's latest nudge for this window, or null (§6.3, T7b2). */
     nudge: NudgeFrame | null
+    /**
+     * §4.2's file, as the room holds it (T9a3). Its `duration` is what the
+     * owner's page measured at pick time, and this player's bar uses it rather
+     * than measuring again — the room has one answer (T9a2 item 3).
+     */
+    media: Media | null
+    /**
+     * Where to load that file: the owner's `/media/<id>`, built by the page.
+     * `null` means the room has no file yet, so there is nothing to play.
+     */
+    src: string | null
     /** Dev-only disturbance from `dev-drift.ts`; null in a shipped page. */
     devPlay: DevPlay | null
   }
 
-  let { playback, revision, clock, send, rtt, realign, nudge, devPlay }: Props = $props()
+  let { playback, revision, clock, send, rtt, realign, nudge, media, src, devPlay }: Props = $props()
 
   // §6.6's set: the events this component's own play/pause/seek calls cause.
   const echoes = createEchoSet()
@@ -48,7 +59,11 @@
   const NUDGE_WATCH_MS = 200
 
   let video = $state<HTMLVideoElement | null>(null)
-  let duration = $state(0)
+  /**
+   * The bar's length, and the room's answer to "how long" (T9a3, T9a2 item 3):
+   * the owner measured it once at pick time and no window measures it again.
+   */
+  const duration = $derived(media === null ? 0 : media.duration)
   /** Where the bar shows the playhead. `timeupdate` follows it, a drag moves it. */
   let scrub = $state(0)
   let scrubbing = $state(false)
@@ -251,6 +266,11 @@
   function applyState(): void {
     const element = video
     if (element === null) return
+    // Nothing to place before the file's metadata is in: `loadedmetadata` calls
+    // `forceAlign()` below, so the room's position arrives then. Calling
+    // `play()` on a still-empty element would only raise an error this page
+    // would show as "autoplay blocked", which would be a lie (T9a3).
+    if (element.readyState < 1) return
     // §4.3 invariant 2: an older revision is not news, and applying it would
     // undo a command that arrived first.
     if (revision < appliedRevision) return
@@ -340,9 +360,8 @@
   })
 
   function onLoadedMetadata(): void {
-    const element = video
-    if (element === null) return
-    duration = Number.isFinite(element.duration) ? element.duration : 0
+    // The duration shown is the room's (the `duration` above) — this element's
+    // own measurement is not news and must not overwrite it (T9a3).
     forceAlign()
   }
 
@@ -451,21 +470,26 @@
 
 <section class="player" aria-label="Player">
   <div class="frame">
-    <!-- T6b: the committed clip, served by the sidecar at /fixture. T9a swaps a
-         picked file in; until then this is what every check presses play on. -->
-    <video
-      bind:this={video}
-      src="/fixture"
-      preload="auto"
-      playsinline
-      onloadedmetadata={onLoadedMetadata}
-      ontimeupdate={onTimeUpdate}
-      onplay={onPlay}
-      onplaying={onPlaying}
-      onpause={onPause}
-      onseeking={onSeeking}
-      onseeked={onSeeked}
-    ></video>
+    <!-- T9a3: the owner's one file, at `/media/<id>` on the owner's address.
+         There is no clip of our own: with no file the room shows the picker
+         state and nothing plays (the T6b fixture is the tests' now). -->
+    {#if src !== null}
+      <video
+        bind:this={video}
+        {src}
+        preload="auto"
+        playsinline
+        onloadedmetadata={onLoadedMetadata}
+        ontimeupdate={onTimeUpdate}
+        onplay={onPlay}
+        onplaying={onPlaying}
+        onpause={onPause}
+        onseeking={onSeeking}
+        onseeked={onSeeked}
+      ></video>
+    {:else}
+      <p class="empty">No file in this room yet. The owner picks one.</p>
+    {/if}
 
     {#if blocked}
       <div class="autoplay" role="alertdialog" aria-label="Playback did not start">
@@ -475,22 +499,24 @@
     {/if}
   </div>
 
-  <div class="controls">
-    <button type="button" class="toggle" onclick={togglePlay}>
-      {playback.playing ? 'Pause' : 'Play'}
-    </button>
-    <input
-      type="range"
-      aria-label="Seek"
-      min="0"
-      max={duration}
-      step="0.01"
-      value={scrub}
-      oninput={onScrubInput}
-      onchange={onScrubChange}
-    />
-    <span class="time">{clockText(scrub)} / {clockText(duration)}</span>
-  </div>
+  {#if src !== null}
+    <div class="controls">
+      <button type="button" class="toggle" onclick={togglePlay}>
+        {playback.playing ? 'Pause' : 'Play'}
+      </button>
+      <input
+        type="range"
+        aria-label="Seek"
+        min="0"
+        max={duration}
+        step="0.01"
+        value={scrub}
+        oninput={onScrubInput}
+        onchange={onScrubChange}
+      />
+      <span class="time">{clockText(scrub)} / {clockText(duration)}</span>
+    </div>
+  {/if}
 </section>
 
 <style>
@@ -511,6 +537,17 @@
     width: 100%;
     aspect-ratio: 16 / 9;
     background: #000;
+  }
+
+  .empty {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 16 / 9;
+    padding: 1rem;
+    color: #9a9aab;
+    text-align: center;
   }
 
   .autoplay {

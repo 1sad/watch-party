@@ -280,6 +280,17 @@ export interface WelcomeFrame {
   epoch: number
 }
 
+/**
+ * a→m: the room's one file changed (T9a3). `welcome`'s snapshot already carries
+ * `media`; this is the same field for a window that was **already** in the room
+ * when the owner picked, because §5 has no other frame that moves it and a
+ * window that is never told cannot play the file.
+ */
+export interface MediaFrame {
+  type: 'media'
+  media: Media | null
+}
+
 export interface MembersFrame {
   type: 'members'
   members: WireMember[]
@@ -322,6 +333,7 @@ export type ChatFrame = ChatMessage & { type: 'chat' }
 export type ServerFrame =
   | WelcomeFrame
   | MembersFrame
+  | MediaFrame
   | StateFrame
   | ErrorFrame
   | WarningFrame

@@ -364,6 +364,11 @@ export function attachRoomSocket(
                 `duration=${registered.duration} type=${registered.contentType} path=${registered.path}`,
             )
           }
+          // T9a3: every window already here learns the same field `welcome`
+          // carries — the owner's included, which otherwise hears nothing of its
+          // own pick. It is the wire snapshot, so the path stays in this process.
+          const mediaText = JSON.stringify({ type: 'media', media: snapshot(room).media } satisfies ServerFrame)
+          for (const socket of sockets.keys()) socket.send(mediaText)
           return
         }
         case 'chat': {

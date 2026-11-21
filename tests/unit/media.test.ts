@@ -8,6 +8,7 @@ import {
   extensionRefusal,
   loadRefusal,
   mediaTitle,
+  mediaUrl,
   parseRange,
   type ByteRange,
 } from '../../src/shared/media.ts'
@@ -95,4 +96,14 @@ test('T9a2: the room calls a file by its name, not by its path', () => {
   assert.equal(mediaTitle('C:\\Users\\sam\\Videos\\film.mp4'), 'film.mp4')
   assert.equal(mediaTitle('/home/sam/film.mp4'), 'film.mp4')
   assert.equal(mediaTitle('film.mp4'), 'film.mp4')
+})
+
+test('T9a3: every window fetches /media/<id> from the owner, not from itself', () => {
+  // A guest loads the page from its own sidecar, which holds no file: a
+  // relative `/media/<id>` would 404 there. The origin is the connection's.
+  assert.equal(mediaUrl('http://192.168.1.5:51234', { id: 'f1' }), 'http://192.168.1.5:51234/media/f1')
+  assert.equal(mediaUrl('http://127.0.0.1:51234/', { id: 'f1' }), 'http://127.0.0.1:51234/media/f1')
+  assert.equal(mediaUrl('http://127.0.0.1:51234', { id: 'a b/c' }), 'http://127.0.0.1:51234/media/a%20b%2Fc')
+  // No file: no source at all, so the player has nothing to load.
+  assert.equal(mediaUrl('http://127.0.0.1:51234', null), null)
 })
