@@ -824,6 +824,10 @@ loopback. ADR-022 (WebView2, not a bundled browser) is unchanged and now names w
 
 ## ADR-035 — M1's dependency list, and the five things it deliberately does not add
 
+> **Amended 2026-11-21 (ADR-036):** two dev-only dependencies are added — `typescript` and `svelte-check`. Neither
+> ships in the app, and neither replaces anything in this list: `node --test` is still the test runner and the
+> "no test framework" answer below still holds.
+
 **Decision.** M1 adds the following and nothing else. Already decided elsewhere and only cited here: `ws`
 (ADR-012), TypeScript (ADR-012), Vite + Svelte + `@sveltejs/vite-plugin-svelte` (ADR-012), hls.js (not loaded before
 v2, ADR-013). New in this phase:
@@ -855,4 +859,42 @@ client, not an unmaintained substitute; that fallback is a code change, not a ne
 **Constraint carried into every ticket.** Permissive licences only. A dependency's licence is read before it is
 installed; anything GPL or AGPL in the app itself is refused. The uBlock-extension GPL question is separate and later
 (T38).
+
+## ADR-036 — A dev-only typechecker, and a pre-commit hook as the only guardrail
+
+**Decision.** Two `devDependencies` — `typescript` and `svelte-check` — plus one script (`npm run check`) and one
+committed hook (`.githooks/pre-commit`, activated with `git config core.hooksPath .githooks`). The hook runs
+`npm test`, and runs `npm run check` once the baseline is green. Neither dependency is imported by the app; neither
+reaches a build that ships.
+
+**Why a typechecker, and why not the two things already here.** Tests run TypeScript by *stripping* the types
+(Node 24) and Vite transpiles it the same way (esbuild): both delete the annotations without ever reading them, so a
+wrong type is invisible until the line runs, and a renamed field is invisible until it is `undefined` at runtime. The
+build is not a check either — it is run by hand, and `npm test` covers `tests/unit` and nothing else. `tsc --noEmit`
+alone would still miss the `.svelte` files, which is most of what a player is; `svelte-check` wraps `tsc` and reads
+the markup, so it is one command instead of two. `typescript` is its peer dependency, not a second tool.
+
+**Why a hook, and why nothing else.** There is no remote and no CI. A commit is the only moment where a mistake is
+cheap to catch, and on this project it is also the moment where a mistake is cheapest to *see*: the tree is clean
+apart from the work under review. Without the hook, "does it still typecheck?" is a question someone remembers to
+ask, which is the same as not asking it.
+
+**The cost, stated so nobody is surprised.** A hook that takes long gets `--no-verify`'d, and then it protects
+nothing. So the hook's budget is about 20 seconds and it deliberately excludes `npm run test:integration` — that
+suite is 23 s and climbing and it opens real sockets. The consequence is unavoidable and should be written down: the
+protocol's integration assertions are **not** guarded by the hook, only by whoever runs them. If that turns out to
+bite, the fix is a faster suite or a second hook for the files that need it — not a slower hook.
+
+**Why not a CI service.** There is no remote to run a pipeline against, and a hosted runner is a paid service
+(ADR-023). Same answer if a remote appears later: the hook stays the local gate, and CI becomes a second copy of the
+same two commands.
+
+**What this does not decide.** The baseline may not be green. A typechecker added to a fourteen-ticket tree finds
+things, and those things are tickets, not a licence to edit whatever turns red on the way past. If the first run is
+red the hook ships with `npm test` alone, the errors are recorded, and a green baseline is its own ticket.
+
+**Refused, with the cheaper answer each time.** `vitest`/`jest` with type-aware assertions — `node --test` stays
+(ADR-035). `husky` — it is a dependency that installs a shell script; `core.hooksPath` is a git setting and the hook
+is a file in the repo. `lint-staged` — the suites are small enough that running both whole is under the budget, and
+a partial run is a way to miss the thing that broke.
 
