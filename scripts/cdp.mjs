@@ -1,6 +1,6 @@
-// Drives a running window from a shell, without the mouse or the screen (T8c):
-// lists the page the window is showing, runs one expression inside it, saves a
-// picture of it.
+// Drives a running window from a shell, without a hand on the mouse and without
+// the screen (T8c, T19): lists the page the window is showing, runs one
+// expression inside it, saves a picture of it, presses the mouse at a point.
 //
 // It speaks to the DevTools endpoint that only the measuring build opens —
 // `npm run dev:debug` — and that endpoint listens on loopback only. Nothing
@@ -10,11 +10,18 @@
 //   node scripts/cdp.mjs targets [--port 9222]
 //   node scripts/cdp.mjs eval <target-id|index> <expression> [--port 9222]
 //   node scripts/cdp.mjs shot <target-id|index> <file.png> [--port 9222]
+//   node scripts/cdp.mjs click <target-id|index> <x> <y> [--double] [--port 9222]
 //
 // stdout carries the answer and nothing else: JSON for `targets`, the
-// expression's value for `eval`, the file's path for `shot`. Every complaint is
+// expression's value for `eval`, the file's path for `shot`, one line naming
+// the target, the point and the focused element for `click`. Every complaint is
 // one line on stderr and a non-zero exit, so a check never hangs on a window
 // that is not there.
+//
+// `click` is the only way here to make a *trusted* press: it goes through
+// `Input.dispatchMouseEvent`, so the page sees a real gesture and a handler it
+// reaches may call `requestFullscreen()`. An `eval`led call is refused with
+// `TypeError: not granted` (T08, T19).
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
@@ -26,6 +33,7 @@ const USAGE = [
   '  node scripts/cdp.mjs targets [--port 9222]',
   '  node scripts/cdp.mjs eval <target-id|index> <expression> [--port 9222]',
   '  node scripts/cdp.mjs shot <target-id|index> <file.png> [--port 9222]',
+  '  node scripts/cdp.mjs click <target-id|index> <x> <y> [--double] [--port 9222]',
 ].join('\n')
 
 /** A problem worth one line on stderr. `usage` separates a typo from a failure. */
@@ -44,6 +52,7 @@ function isPort(value) {
 /** Splits `--port` out of the arguments wherever it appears; order never matters. */
 function parseArgs(argv) {
   let port = DEFAULT_PORT
+  let double = false
   const configured = process.env.WP_DEBUG_PORT
 
   if (configured) {
@@ -56,7 +65,9 @@ function parseArgs(argv) {
   const positional = []
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index]
-    if (arg === '--port') {
+    if (arg === '--double') {
+      double = true
+    } else if (arg === '--port') {
       const value = argv[++index]
       port = Number(value)
       if (!isPort(port)) {
@@ -73,7 +84,7 @@ function parseArgs(argv) {
     }
   }
 
-  return { port, positional }
+  return { port, positional, double }
 }
 
 /** The page targets of the window on `port`, or one clear line saying there is none. */
@@ -115,30 +126,41 @@ function pickTarget(targets, key) {
   throw new CliError(`no target with id ${key} — run \`targets\` to list them`)
 }
 
-/** One DevTools command over one WebSocket, answered or refused; never open-ended. */
-function send(webSocketUrl, method, params = {}) {
+/**
+ * Several DevTools commands over one WebSocket, in order, each answered or
+ * refused; never open-ended. One socket because a press and its release belong
+ * to the same gesture: a second connection would be a second session.
+ */
+function exchange(webSocketUrl, commands) {
   return new Promise((settle, reject) => {
     const socket = new WebSocket(webSocketUrl)
-    const timer = setTimeout(() => {
+    const results = []
+    let step = 0
+    let timer
+
+    const close = () => {
       try {
         socket.close()
       } catch {
-        // Already gone; the timeout is the answer either way.
+        // The answer is already read, or the socket is already gone.
       }
-      reject(new CliError(`${method} got no answer within ${ANSWER_TIMEOUT_MS / 1000} s`))
-    }, ANSWER_TIMEOUT_MS)
-
+    }
     const finish = (action, value) => {
       clearTimeout(timer)
-      try {
-        socket.close()
-      } catch {
-        // The answer is already read.
-      }
+      close()
       action(value)
     }
+    const advance = () => {
+      if (step >= commands.length) return finish(settle, results)
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        close()
+        reject(new CliError(`${commands[step].method} got no answer within ${ANSWER_TIMEOUT_MS / 1000} s`))
+      }, ANSWER_TIMEOUT_MS)
+      socket.send(JSON.stringify({ id: step + 1, method: commands[step].method, params: commands[step].params ?? {} }))
+    }
 
-    socket.onopen = () => socket.send(JSON.stringify({ id: 1, method, params }))
+    socket.onopen = advance
     socket.onmessage = (event) => {
       let message
       try {
@@ -146,24 +168,51 @@ function send(webSocketUrl, method, params = {}) {
       } catch {
         return
       }
-      if (message.id !== 1) return
+      if (message.id !== step + 1) return
+      const { method } = commands[step]
       if (message.error) {
         finish(reject, new CliError(`${method} refused: ${message.error.message}`))
       } else {
-        finish(settle, message.result)
+        results.push(message.result)
+        step++
+        advance()
       }
     }
     socket.onerror = () => finish(reject, new CliError(`could not open the page's DevTools socket at ${webSocketUrl}`))
   })
 }
 
+/** One DevTools command over one WebSocket, answered or refused; never open-ended. */
+function send(webSocketUrl, method, params = {}) {
+  return exchange(webSocketUrl, [{ method, params }]).then(([result]) => result)
+}
+
 function print(value) {
   process.stdout.write(`${JSON.stringify(value)}\n`)
 }
 
-async function run(command, rest, port) {
+/** What the page focused once the press was handled: a tag and an id, or null. */
+const ACTIVE_ELEMENT_AFTER_CLICK = `new Promise((settle) => {
+  requestAnimationFrame(() => {
+    const element = document.activeElement
+    if (!element) return settle(null)
+    settle(element.tagName + (element.id ? '#' + element.id : ''))
+  })
+})`
+
+/** A real mouse gesture at a point: hover, then press and release, once per click. */
+function clickSteps(x, y, double) {
+  const move = { method: 'Input.dispatchMouseEvent', params: { type: 'mouseMoved', x, y, button: 'none', buttons: 0 } }
+  const gestures = (double ? [1, 2] : [1]).flatMap((clickCount) => [
+    { method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount } },
+    { method: 'Input.dispatchMouseEvent', params: { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount } },
+  ])
+  return [move, ...gestures, { method: 'Runtime.evaluate', params: { expression: ACTIVE_ELEMENT_AFTER_CLICK, returnByValue: true, awaitPromise: true } }]
+}
+
+async function run(command, rest, port, double) {
   // Checked before the endpoint is dialled: a typo is not a missing window.
-  if (command !== 'targets' && command !== 'eval' && command !== 'shot') {
+  if (command !== 'targets' && command !== 'eval' && command !== 'shot' && command !== 'click') {
     throw new CliError(`"${command ?? ''}" is not a subcommand.\n${USAGE}`, true)
   }
 
@@ -212,6 +261,35 @@ async function run(command, rest, port) {
     process.stdout.write(`${file}\n`)
     return
   }
+
+  if (command === 'click') {
+    // Validated after the dial, like `eval`: with no window the missing
+    // endpoint is the answer, not the counting of arguments.
+    const [key, x, y, ...extra] = rest
+    if (key === undefined || x === undefined || y === undefined || extra.length > 0) {
+      throw new CliError('click needs a target, an x and a y', true)
+    }
+    const pointX = Number(x)
+    const pointY = Number(y)
+    if (!Number.isFinite(pointX) || !Number.isFinite(pointY)) {
+      throw new CliError(`click needs numbers for x and y, got "${x}" "${y}"`, true)
+    }
+
+    const target = pickTarget(targets, key)
+    const results = await exchange(target.webSocketDebuggerUrl, clickSteps(pointX, pointY, double))
+    const focused = results[results.length - 1]
+
+    if (focused.exceptionDetails) {
+      const thrown = focused.exceptionDetails.exception?.description ?? focused.exceptionDetails.text
+      throw new CliError(`reading the focused element threw: ${thrown.split('\n')[0]}`)
+    }
+
+    const element = focused.result?.value === undefined ? null : focused.result.value
+    const gesture = double ? 'double-click' : 'click'
+    process.stdout.write(
+      `${gesture} ${key} at (${pointX}, ${pointY}) on ${target.title || target.id}: activeElement ${element ?? 'null'}\n`,
+    )
+  }
 }
 
 async function main() {
@@ -224,7 +302,7 @@ async function main() {
 
   const [command, ...rest] = parsed.positional
   try {
-    await run(command, rest, parsed.port)
+    await run(command, rest, parsed.port, parsed.double)
   } catch (error) {
     fail(error)
   }
