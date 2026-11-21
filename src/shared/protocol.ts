@@ -320,11 +320,12 @@ export interface RoomOverFrame {
 }
 
 /**
- * Why a `state` was sent (§5, §6.4). `start` is a scheduled start (§6.4, with
- * `Playback.startAt`) and arrives with T8. `join` stays vocabulary until the
- * authority needs to align a joiner with more than the `welcome` snapshot: on
- * load the snapshot is the alignment (§4.3 invariant 9), and a joiner's arrival
- * must broadcast no `state` at all (T6b's Safety line).
+ * Why a `state` was sent (§5, §6.4): `applyCommand` in `room.ts` picks one, and
+ * a play that settles a beat is `play` with the beat in `Playback.startAt`;
+ * nothing sends `start`. `join` stays vocabulary until the authority needs to
+ * align a joiner with more than the `welcome` snapshot: on load the snapshot is
+ * the alignment (§4.3 invariant 9), and a joiner's arrival must broadcast no
+ * `state` at all (T6b's Safety line).
  */
 export type PlaybackReason = 'play' | 'pause' | 'seek' | 'start' | 'join'
 

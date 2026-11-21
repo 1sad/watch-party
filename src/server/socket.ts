@@ -250,7 +250,7 @@ export function attachRoomSocket(
         }
         case 'ping': {
           // §6.1: one loop, two jobs. The beat keeps this member's `lastSeen`
-          // honest (the 10 s / 20 s presence ladder is a later ticket), and the
+          // honest (the 10 s / 20 s presence ladder is T17's), and the
           // same frame is the clock sample. `t1` is the receive instant and `t2`
           // the send one; the member works out its own offset from all four and
           // the authority never learns it (§4.3 invariant 4).

@@ -17,9 +17,10 @@ export interface SidecarOptions {
   /** The folder the page was built into (vite → dist/). */
   distDir: string
   /**
-   * §5's fixture clip, served at `/fixture` until T9a swaps in a picked file.
-   * One named path rather than a media folder: the page must not be able to ask
-   * the sidecar for the contents of the disk.
+   * T6b's clip, served at `/fixture` for `tests/integration/sidecar.test.ts`;
+   * the page opens `/media/<id>` only. One named path rather than a media
+   * folder: the page must not be able to ask the sidecar for the contents of
+   * the disk.
    */
   fixture?: string
   /**
