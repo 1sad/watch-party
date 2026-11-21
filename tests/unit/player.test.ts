@@ -14,6 +14,7 @@ import assert from 'node:assert/strict'
 
 import {
   PLAYER_REPORT_TTL_MS,
+  documentsLeft,
   elect,
   mergeReports,
   reportIsNewer,
@@ -214,4 +215,90 @@ test('a reloaded document is news again even though its count restarted (T07, 06
     true,
     'a new document counts from 1 and is still news',
   )
+})
+
+test('a report naming the previous page after a commit is dropped', () => {
+  // 07b, 2026-11-21: the room committed the next episode, every window cleared
+  // its frames and reset to 0 paused, and the old page's report — already in
+  // flight — landed 32 ms later (`site: bridge report ... ep1 seq=67`) and
+  // re-added the old candidate. A score tie then held it until the 5 s expiry,
+  // so the first new-page election came about six seconds late.
+  const oldPage: FrameReport = {
+    source: 'https://plyr.animex.one/embed/ep1',
+    href: 'https://plyr.animex.one/embed/ep1?t=1320',
+    doc: 'document-ep1',
+    seq: 66,
+    candidates: [candidate()],
+    receivedAt: 1_000,
+  }
+  const left = documentsLeft([oldPage])
+  assert.deepEqual([...left], ['document-ep1'], 'the documents held at the commit are the page being left')
+
+  // The frames are cleared at the commit; the in-flight report lands after it.
+  const inFlight: FrameReport = { ...oldPage, seq: 67, receivedAt: 1_032 }
+  const merged = mergeReports([inFlight], 1_032, left)
+  assert.equal(merged.length, 0, 'the old page is not a candidate after the commit')
+  assert.equal(elect(null, merged, [], left).elected, null, 'so nothing is elected from it')
+
+  // No commit, the same report: a candidate as it has always been.
+  assert.equal(mergeReports([inFlight], 1_032).length, 1, 'a normal election still holds it')
+
+  // The new page's own document is a candidate, and is elected at once.
+  const newPage: FrameReport = {
+    ...oldPage,
+    source: 'https://plyr.animex.one/embed/ep2',
+    href: 'https://plyr.animex.one/embed/ep2?t=0',
+    doc: 'document-ep2',
+    seq: 1,
+    receivedAt: 1_040,
+  }
+  const both = mergeReports([inFlight, newPage], 1_040, left)
+  assert.equal(both.length, 1)
+  assert.equal(both[0]?.doc, 'document-ep2', 'the report carries its document, for the tie rule')
+  assert.equal(elect(null, both, [], left).elected?.doc, 'document-ep2')
+})
+
+test('a tie between the current page and another favours the current page', () => {
+  // The guard behind the drop: a candidate that cannot be told apart by its
+  // document (a bridge too old to send one) still must not outlive the commit.
+  const old = candidate({ id: 1, doc: 'document-ep1' })
+  const current = candidate({ id: 2, doc: 'document-ep2' })
+  const left = new Set(['document-ep1'])
+
+  assert.equal(elect(null, [old, current], [], left).elected?.id, 2, 'the old page arrives first')
+  assert.equal(elect(null, [current, old], [], left).elected?.id, 2, 'the old page arrives second')
+
+  const unnamed = candidate({ id: 3, doc: '' })
+  assert.equal(elect(null, [unnamed, current], [], left).elected?.id, 2, 'an unnamed document loses the tie')
+  assert.equal(elect(null, [current, unnamed], [], left).elected?.id, 2, 'from either side of it')
+  assert.equal(
+    elect(unnamed, [unnamed, current], [], left).elected?.id,
+    2,
+    'and not even being the incumbent holds it',
+  )
+})
+
+test('a normal election with no commit behaves as today', () => {
+  // Two documents of one page tie: the incumbent is kept, whichever document it
+  // belongs to, exactly as "a tie keeps the incumbent" has always said.
+  const incumbent = candidate({ id: 1, doc: 'document-one' })
+  const twin = candidate({ id: 2, doc: 'document-two' })
+  assert.equal(elect(incumbent, [incumbent, twin]).elected?.id, 1)
+  assert.equal(elect(incumbent, [twin, incumbent]).elected?.id, 1, 'in either order')
+  assert.equal(elect(incumbent, [twin, incumbent]).reason, null, 'and a tie is not an election')
+
+  // An empty commit set is the same as none: nothing has been left behind.
+  assert.equal(elect(incumbent, [incumbent, twin], [], new Set()).elected?.id, 1)
+
+  // And the merge is the list it always was.
+  const report: FrameReport = {
+    source: 'https://plyr.example/embed/1',
+    href: 'https://plyr.example/embed/1?t=80',
+    doc: 'document-one',
+    seq: 1,
+    candidates: [candidate()],
+    receivedAt: 1_000,
+  }
+  assert.equal(mergeReports([report], 1_100).length, 1)
+  assert.equal(elect(null, mergeReports([report], 1_100)).reason, 'appeared')
 })

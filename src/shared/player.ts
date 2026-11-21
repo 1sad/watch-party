@@ -59,10 +59,16 @@ export interface FrameReport {
   receivedAt: number
 }
 
-/** A candidate with the frame it lives in: across frames, identity is `(source, id)`. */
+/**
+ * A candidate with the frame it lives in: across frames, identity is
+ * `(source, id)`. `doc` is which document of that frame reported it (T07), and
+ * it is what tells the room's current page from the one it just left (T18);
+ * {@link mergeReports} is what fills it in.
+ */
 export interface PlayerCandidate extends FrameCandidate {
   source: string
   href: string
+  doc?: string
 }
 
 /** §7.1: the four ways a winner is chosen. */
@@ -136,17 +142,48 @@ export function reportIsNewer(
 }
 
 /**
+ * T18: the documents the page being left was still reporting through.
+ *
+ * The room commits a new page and every window navigates, but a report that was
+ * already in flight when the commit landed still names the old page and arrives
+ * after the clear. 07b measured it: the guest's old-page `ep1 seq=67` reached it
+ * 32 ms after the commit, re-added the old candidate, and a score tie held the
+ * election until the 5 s expiry, so the first new-page election was about six
+ * seconds late. A document identity (T07's `doc`) is random per document and
+ * never comes back once that document is gone, so the tokens held at the commit
+ * are exactly the old page's — the reliable test, where two frames of the same
+ * page have different URLs and a cross-origin player frame has no URL in common
+ * with the room's page.
+ */
+export function documentsLeft(reports: Iterable<FrameReport>): ReadonlySet<string> {
+  const docs = new Set<string>()
+  for (const report of reports) if (report.doc.length > 0) docs.add(report.doc)
+  return docs
+}
+
+/**
  * Every live frame's candidates as one list. A frame whose last report is older
  * than {@link PLAYER_REPORT_TTL_MS} contributes nothing — the bridge reports at
  * least once a second, so a silent frame is a frame that went away, and its
  * videos have to stop holding the election.
+ *
+ * `left` is {@link documentsLeft} for the page the room just committed away
+ * from (T18): a report naming one of those documents is the previous page's and
+ * is not a candidate at all, however recently it arrived. A bridge too old to
+ * name its document cannot be told apart here; the tie rule in {@link elect}
+ * covers that case.
  */
-export function mergeReports(reports: Iterable<FrameReport>, now: number): PlayerCandidate[] {
+export function mergeReports(
+  reports: Iterable<FrameReport>,
+  now: number,
+  left?: ReadonlySet<string>,
+): PlayerCandidate[] {
   const merged: PlayerCandidate[] = []
   for (const report of reports) {
     if (now - report.receivedAt > PLAYER_REPORT_TTL_MS) continue
+    if (left !== undefined && left.has(report.doc)) continue
     for (const candidate of report.candidates) {
-      merged.push({ ...candidate, source: report.source, href: report.href })
+      merged.push({ ...candidate, source: report.source, href: report.href, doc: report.doc })
     }
   }
   return merged
@@ -160,15 +197,33 @@ export function mergeReports(reports: Iterable<FrameReport>, now: number): Playe
  * `events` are what the frames posted since the last election. An
  * `emptied`/`loadstart` on the incumbent counts only if the incumbent was
  * playing: a preload that starts loading before playback is not a replacement.
+ *
+ * `left` is {@link documentsLeft} for the page the room just committed away
+ * from (T18). It moves one rule: on a tie, a candidate from the room's current
+ * page beats one that is not — so a report that cannot be told apart by its
+ * document (a bridge too old to send one) still cannot outlive the commit by
+ * tying with the new page. With no commit there is no such candidate and every
+ * tie keeps the incumbent, exactly as before.
  */
 export function elect(
   previous: PlayerCandidate | null,
   candidates: readonly PlayerCandidate[],
   events: readonly PlayerEvent[] = [],
+  left?: ReadonlySet<string>,
 ): Election {
   const incumbent = previous === null ? null : identity(previous)
   const replaced = incumbent !== null && previous !== null && previous.playing
     && events.some((event) => identity(event) === incumbent)
+
+  /**
+   * Whether this candidate belongs to the page the room is on now. Only
+   * meaningful after a commit: with nothing left behind, a tie stays a tie.
+   */
+  const onCurrentPage = (candidate: PlayerCandidate): boolean => left !== undefined
+    && left.size > 0
+    && typeof candidate.doc === 'string'
+    && candidate.doc.length > 0
+    && !left.has(candidate.doc)
 
   let winner: PlayerCandidate | null = null
   let winnerScore = 0
@@ -181,9 +236,15 @@ export function elect(
       winnerScore = score
       continue
     }
-    // A tie keeps the incumbent: equal scores never move the election.
-    if (score === winnerScore && identity(candidate) === incumbent) {
-      winner = candidate
+    if (score === winnerScore) {
+      // T18: the current page wins a tie it would otherwise have to share.
+      const candidateIsCurrent = onCurrentPage(candidate)
+      if (candidateIsCurrent !== onCurrentPage(winner)) {
+        if (candidateIsCurrent) winner = candidate
+        continue
+      }
+      // A tie keeps the incumbent: equal scores never move the election.
+      if (identity(candidate) === incumbent) winner = candidate
     }
   }
 

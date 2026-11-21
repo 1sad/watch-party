@@ -40,6 +40,7 @@
   import Player from './Player.svelte'
   import {
     PLAYER_MESSAGE_KINDS,
+    documentsLeft,
     elect,
     mergeReports,
     reportIsNewer,
@@ -507,6 +508,13 @@
       // document's own election is what realigns - to 0, because the room is.
       // This frame itself applies nothing: a page change resets, only a player
       // replacement realigns.
+      //
+      // T18: the documents held at this instant are the page the room has just
+      // left, and noting them before the clear is what refuses a report still in
+      // flight from one of them. A window that previewed its own page is already
+      // on it, so what it holds is the new page's — noting that would throw away
+      // the election this commit is asking for.
+      if (!previewed) notePageLeft()
       playerFrames.clear()
       playerEvents = []
       elected = null
@@ -693,6 +701,15 @@
    * one `player:` line.
    */
   const playerFrames = new Map<string, FrameReport>()
+  /**
+   * T18: which documents belonged to a page this window (or the room) has left.
+   * A commit navigates every window, but a report already in flight still names
+   * the old page and lands after the clear — 07b measured the guest's old-page
+   * report arriving 32 ms after the commit and holding the election for the 5 s
+   * expiry. Those tokens are what refuses it; grown, never replaced, so a report
+   * crossing two page changes is still refused.
+   */
+  let pageLeftDocs: ReadonlySet<string> = new Set()
   /** The bridge's `emptied`/`loadstart` messages since the last election (§7.1). */
   let playerEvents: PlayerEvent[] = []
   /** §10.1's winner: one per room, kept until it goes. */
@@ -854,7 +871,12 @@
    * reason comes back because T07 treats a change as "unaligned".
    */
   function electPlayer(): PlayerReason | null {
-    const result = elect(elected, mergeReports(playerFrames.values(), Date.now()), playerEvents)
+    const result = elect(
+      elected,
+      mergeReports(playerFrames.values(), Date.now(), pageLeftDocs),
+      playerEvents,
+      pageLeftDocs,
+    )
     playerEvents = []
     // Kept even when nothing changed: the winner is the element as its latest
     // report describes it, and a reload can only be `replaced` if the snapshot
@@ -1109,12 +1131,25 @@
   }
 
   /**
+   * T18: every document the site view is holding right now belongs to the page
+   * it is leaving, so a report still in flight from one of them is not the new
+   * page's candidate (a document's identity is never reused). Grown rather than
+   * replaced: a report that crosses two page changes is still refused.
+   */
+  function notePageLeft(): void {
+    pageLeftDocs = new Set([...pageLeftDocs, ...documentsLeft(playerFrames.values())])
+  }
+
+  /**
    * T03c: the only way the site view ever moves (ADR-038) — a `siteCommand` the
    * host performs itself. Nothing outside this window hears of it, which is what
    * makes the preview a preview: a guest's site view is not moved until the
    * authority's `pageCommitted` reaches it.
    */
   function moveSiteView(page: string): void {
+    // T18: a preview and a Cancel move the site view no less than a commit does,
+    // so the documents held here are the page being left in every case.
+    notePageLeft()
     postToHost({ kind: 'siteCommand', payload: { kind: 'navigate', url: page } })
     if (dev) console.info(`[page] site view -> ${page}`)
   }
