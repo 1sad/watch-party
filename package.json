@@ -8,8 +8,8 @@
     "build:dev": "vite build --mode development",
     "dev": "npm run build && node scripts/run-host.mjs",
     "dev:debug": "npm run build:dev && node scripts/run-host.mjs --cdp-port 9222",
-    "test": "node --test \"tests/unit/*.test.ts\"",
-    "test:integration": "node --test \"tests/integration/*.test.ts\"",
+    "test": "node --test --test-timeout=10000 --test-force-exit \"tests/unit/*.test.ts\"",
+    "test:integration": "node --test --test-timeout=45000 --test-force-exit \"tests/integration/*.test.ts\"",
     "check": "svelte-check --tsconfig ./tsconfig.json"
   },
   "devDependencies": {

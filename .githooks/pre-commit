@@ -24,9 +24,17 @@ refuse() {
 
 # node --test's spec reporter prints the count as "ℹ pass 73"; three fields,
 # the middle one "pass". Nothing else in its output has that shape.
+#
+# A hung test cannot hold this hook: each test carries a wall-clock bound
+# (package.json, --test-timeout) and --test-force-exit makes the runner leave
+# even when a leaked handle would keep it alive. The output already names the
+# test; only the refused line is told apart, so a timeout reads as a timeout.
 test_out=$(npm test 2>&1) || {
 	printf 'pre-commit: npm test — failed\n'
 	printf '%s\n' "$test_out"
+	if printf '%s\n' "$test_out" | grep -q 'test timed out after'; then
+		refuse 'npm test timed out — a test overran its bound'
+	fi
 	refuse 'npm test failed'
 }
 passed=$(printf '%s\n' "$test_out" | awk '$2 == "pass" && NF == 3 { n = $3 } END { print n }')
