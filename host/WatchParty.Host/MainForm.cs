@@ -42,6 +42,14 @@ public sealed class MainForm : Form
     /// <summary>T9a2: one dialog at a time, and the file it last returned.</summary>
     private bool _pickOpen;
     private string? _pickedPath;
+#if DEBUG
+    /// <summary>
+    /// T8d: whether this window is the measuring one — the window <c>dev:debug</c>
+    /// opened, which is also the one that loads the development page. Only that
+    /// page has the dev log lines to forward, so only that window asks for them.
+    /// </summary>
+    private bool _measuring;
+#endif
 
     public MainForm(string[]? launchArgs)
     {
@@ -100,6 +108,9 @@ public sealed class MainForm : Form
         InstallRequestFilter();
         InstallAutoplayGrant();
         InstallFilePicker();
+#if DEBUG
+        InstallPageConsole();
+#endif
         _page.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
         StartSidecar();
         _portTimeout.Start();
@@ -126,6 +137,7 @@ public sealed class MainForm : Form
         string? debugPort = Environment.GetEnvironmentVariable("WATCHPARTY_CDP_PORT");
         if (debugPort is not null)
         {
+            _measuring = true;
             HostLog.Write($"dev: remote debugging on 127.0.0.1:{debugPort} (Debug build only)");
             // Its own profile: WebView2 refuses a second controller in the
             // browser process another window already owns (0x8007139F), and
@@ -223,6 +235,108 @@ public sealed class MainForm : Form
         _page.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
         HostLog.Write("file picker bridge installed");
     }
+
+#if DEBUG
+    /// <summary>
+    /// T8d: the page's own console, into this window's own log file. A live check
+    /// reads a window's timing numbers from its log, not by wrapping
+    /// <c>console.info</c> in the page through the DevTools endpoint.
+    ///
+    /// The engine's <c>Runtime.consoleAPICalled</c> event is the source, through
+    /// <c>GetDevToolsProtocolEventReceiver</c>: nothing is injected into the page,
+    /// so the line in the log is the line the page printed. <c>Runtime.enable</c>
+    /// is what makes the engine send those events at all, and it needs no
+    /// debugging port — the port only decides whether a shell may drive the
+    /// window.
+    ///
+    /// Armed only for the measuring window. The page's dev log lines are compiled
+    /// out of the production page, and <c>npm run dev</c> opens that page, so the
+    /// normal run has no page lines either way; this switch keeps the ordinary
+    /// window's log free of console noise as well.
+    ///
+    /// The ordering rule the integration suite depends on is untouched: this
+    /// writes nothing of its own but one host line after the picker's, and a page
+    /// line can only arrive once a document exists — long after the sidecar's
+    /// <c>PORT</c> line, which is the first line of the sidecar's stdout.
+    /// </summary>
+    private void InstallPageConsole()
+    {
+        if (!_measuring) return;
+
+        try
+        {
+            CoreWebView2DevToolsProtocolEventReceiver receiver =
+                _page.CoreWebView2.GetDevToolsProtocolEventReceiver("Runtime.consoleAPICalled");
+            receiver.DevToolsProtocolEventReceived += OnPageConsoleMessage;
+            // Not awaited: the window must not wait on the engine to open, and
+            // the first line in this log is what proves it worked. A fault here
+            // is a page whose console is missing, not a window that dies.
+            _ = _page.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.enable", "{}");
+            HostLog.Write("page console forwarded into this log (Debug build only)");
+        }
+        catch (Exception error)
+        {
+            // Logging must never take the window down: without forwarding, the
+            // window still plays and the debug endpoint still answers.
+            HostLog.Write($"page console not forwarded: {error.Message}");
+        }
+    }
+
+    /// <summary>
+    /// One page console call. <c>page:</c> in front, and the level's own name when
+    /// it is one worth noticing (<c>page error:</c>), so a reader can tell a page
+    /// line from a <c>sidecar:</c> line at a glance.
+    /// </summary>
+    private void OnPageConsoleMessage(object? sender, CoreWebView2DevToolsProtocolEventReceivedEventArgs e)
+    {
+        string level;
+        string text;
+        try
+        {
+            using JsonDocument payload = JsonDocument.Parse(e.ParameterObjectAsJson);
+            JsonElement root = payload.RootElement;
+            level = root.TryGetProperty("type", out JsonElement type) && type.ValueKind == JsonValueKind.String
+                ? type.GetString() ?? "log"
+                : "log";
+            text = root.TryGetProperty("args", out JsonElement args) && args.ValueKind == JsonValueKind.Array
+                ? string.Join(" ", args.EnumerateArray().Select(ConsoleArgumentText))
+                : string.Empty;
+        }
+        catch (JsonException)
+        {
+            // Not a console event we can read: nothing to log.
+            return;
+        }
+
+        string marker = level is "log" or "info" or "debug" ? "page" : $"page {level}";
+        HostLog.Write($"{marker}: {text}");
+    }
+
+    /// <summary>One console argument as text, the way the console shows it.</summary>
+    private static string ConsoleArgumentText(JsonElement argument)
+    {
+        if (argument.ValueKind != JsonValueKind.Object) return argument.GetRawText();
+
+        if (argument.TryGetProperty("value", out JsonElement value))
+        {
+            return value.ValueKind == JsonValueKind.String
+                ? value.GetString() ?? string.Empty
+                : value.GetRawText();
+        }
+
+        if (argument.TryGetProperty("unserializableValue", out JsonElement special))
+        {
+            return special.GetString() ?? string.Empty;
+        }
+
+        if (argument.TryGetProperty("description", out JsonElement description))
+        {
+            return description.GetString() ?? string.Empty;
+        }
+
+        return string.Empty;
+    }
+#endif
 
     private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
