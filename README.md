@@ -35,11 +35,11 @@ file" mode, kept mostly to prove sync without a website in the way.
 - The host's own PC is the only machine involved, and it is on for the evening only.
 - Windows first. Linux and Android later; iOS never (no add-on exists there).
 - The video never travels between people. Only chat and controls do.
-- Everyone can pause, seek, and change the page — there is no "host only" mode.
+- The owner controls playback and which video plays; everyone else follows along (ADR-030).
 
 ## Where to start
 
 M1 exists, but it is not a finished product. The two experiments that can still overturn the architecture —
 **E1** (can your friends' connections accept visitors at all) and **E2** (can an embedded browser play these sites
 with ads blocked) — are answered in [`docs/handoff.md`](docs/handoff.md); E1's hosting half stays unproven on this
-whether the architecture stands; everything else is a detail.
+machine. Those two decide whether the architecture stands; everything else is a detail.
