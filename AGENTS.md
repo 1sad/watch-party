@@ -36,10 +36,10 @@ The SDK is **not on PATH** in a fresh shell: add `%LOCALAPPDATA%\Microsoft\dotne
 
 | Command | What it does |
 | --- | --- |
-| `npm run dev` | builds the page, starts the sidecar, opens the window. The normal way to run the app. **This build is production: the dev-only log lines are compiled out**, so a run for measuring is `dev:debug`. |
+| `npm run dev` | builds the page, starts the sidecar, opens the window. The normal way to run the app. **This build is production: the dev-only log lines are compiled out**, so a run for measuring is `dev:debug`. It builds the host as **Release**; `dotnet build` on its own builds Debug, so a host change needs `dotnet build host/WatchParty.Host -c Release` too, or a Release-only error stays invisible. |
 | `npm run dev:debug` | the measuring build: the development page plus the window with its DevTools endpoint open on `127.0.0.1:9222` (loopback only, Debug host only); `npm run dev` opens no endpoint. A second window: `node scripts/run-host.mjs --cdp-port 9223`. |
 | `node scripts/cdp.mjs <targets\|eval\|shot>` | drives a window `dev:debug` opened, with no mouse and no screen: `targets` lists its page as JSON, `eval <id\|index> <expression>` prints one value, `shot <id\|index> <file.png>` saves a picture and prints its path. `--port <n>` or `WP_DEBUG_PORT` picks the window. Nothing listening = one line on stderr, exit 1. |
-| `powershell -NoProfile -File scripts/window-shot.ps1 <file.png> [title] [-Process <name>]` | photographs the **whole window** — site view, strip and sidebar together — and prints the window rectangle and the PNG's own size, so a cropped capture shows in the output. DPI-aware, so 125% scaling does not cut the edge off; `cdp.mjs shot` is still the tool for a single page. No focus needed. |
+| `powershell -NoProfile -File scripts/window-shot.ps1 <file.png> [title] [-Process <name>] [-Pid <n>] [-Pids <n,n>] [-Place]` | photographs the **whole window** — site view, strip and sidebar together — and prints the pid, the window rectangle, each capture's instant and the PNG's own size, so a cropped or stale capture shows in the output. `-Pid` picks a window by process (both of this app's windows share the title and process, so the plain form only ever sees the topmost); `-Pids a,b` puts several windows in one picture, top to bottom, from one command; `-Place` stacks them first and never moves one back. DPI-aware, so 125% scaling does not cut the edge off; `cdp.mjs shot` is still the tool for a single page. No focus needed. |
 | `npm run check` | the typecheck (`svelte-check`, ADR-036). **Green as of 2026-11-21** — 0 errors, 2 warnings; the pre-commit hook runs it after `npm test`. |
 | `npm test` | **the test command.** The timing maths — expected position, clock offset, the drift ladder, offset signs, scheduled start — under `node --test`. No framework, no watch mode; the exit code is the result. |
 | `npm run test:integration` | two scripted clients and one authority over real sockets on localhost, one client deliberately slowed. |
@@ -80,6 +80,8 @@ timing maths lives **only** in `src/shared/` — if one of its numbers appears t
 8. **After editing any doc, re-check cross-references.** Every `§`, ADR and ticket reference must resolve; tickets
    stay continuous; section numbers stay continuous.
 9. **Edit surgically.** These files are dense on purpose. Do not rewrite a section to change a sentence.
+10. **Log lines stay ASCII.** PowerShell's default `Get-Content` renders an em dash as `�?"`, so a quoted log line
+    becomes garbage exactly when it is evidence (measured on ticket 04). Use `:` or `-`.
 
 ## Known-weak answers (attack these first)
 
