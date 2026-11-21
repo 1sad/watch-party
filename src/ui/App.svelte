@@ -424,6 +424,12 @@
       // preview's: navigating again would reload the page it just loaded, which
       // is the visible revert ADR-032 exists to avoid.
       const previewed = pendingPreview !== null && pendingPreview.page === frame.page
+      // T03d: the instant this window learned of the commit. The initiator's site
+      // view moved on Enter, so `moveSiteView` below is skipped for it and the
+      // navigation line is the **guest's** only; without this line the initiator's
+      // log would hold nothing at the commit at all, and ADR-032's two seconds
+      // could not be measured in the window that started them.
+      if (dev) console.info(`[page] pageCommitted page=${frame.page} previewed=${previewed}`)
       roomPage = frame.page
       pendingPreview = null
       // Ours, or someone else's that replaced ours (ADR-032's cost line): either
