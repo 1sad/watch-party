@@ -130,6 +130,10 @@ it possible for the lead to check a worker's claim without repeating the mouse w
   same room code.
 - `cdp.mjs` finds nothing: the window came from `npm run dev`, not `npm run dev:debug`.
 - The logs are in the way: `logs/` is not committed; delete the old files freely.
+- **A sidecar started by hand is easy to leak.** `Get-Process node` should show nothing when no window is open; six
+  orphaned `node src/server/main.ts` processes survived one afternoon of live checks on 2026-11-21, each holding a
+  port. Closing a window with `CloseMainWindow()` takes its sidecar with it; `Stop-Process` on the host, or starting a
+  sidecar yourself, does not.
 
 ## 9. What this page cannot prove
 
