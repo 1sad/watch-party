@@ -201,6 +201,8 @@ v1 uses two kinds. The rest are recorded for later and are not built (ADR-027).
 type Media =
   | { kind: 'external'; page: string }                                        // website mode: the app loads the page
   | { kind: 'file'; id: string; title: string; duration: number; subtitleTracks: Track[] }  // file mode, LAN or test
+  // as built in phase 1: the wire record adds `contentType` (the response type for /media/<id>) and omits
+  // `subtitleTracks`, which nothing reads yet — R14 is not M1. No other field is added.
   // v2, not built: direct (Mode 1), hls (Mode 2), transcode (Mode 3)
 ```
 

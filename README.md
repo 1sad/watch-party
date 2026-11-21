@@ -3,7 +3,8 @@
 Five friends, one film, wherever each of them happens to be. One person starts a small Windows program, shares a
 link, and everyone else is in the same room on the same streaming page, in step, with chat.
 
-Status: **research and spec only. No code yet.**
+Status: **M1 ("a room that syncs") is code-complete** — the window runs, a room stays in step, and file mode plays
+end to end on one machine. What is proved, and what is not, is in `.scratch/phase-1-m1/spec.md` → `## Status`.
 
 ## Read in this order
 
@@ -38,7 +39,7 @@ file" mode, kept mostly to prove sync without a website in the way.
 
 ## Where to start
 
-Nothing is built yet. Before any product code, run experiments **E1 and E2** in
-[`docs/handoff.md`](docs/handoff.md#before-writing-product-code-nine-experiments): whether your friends' connections
-can accept visitors at all, and whether an embedded browser can play these sites with ads blocked. Those two decide
+M1 exists, but it is not a finished product. The two experiments that can still overturn the architecture —
+**E1** (can your friends' connections accept visitors at all) and **E2** (can an embedded browser play these sites
+with ads blocked) — are answered in [`docs/handoff.md`](docs/handoff.md); E1's hosting half stays unproven on this
 whether the architecture stands; everything else is a detail.
