@@ -252,12 +252,17 @@ export function applyCommand(
       ? reported
       : expected(room.playback, at)
   // §4.5 (`docs/spec.md:315`) and phase slice §6's `clampToMedia` row: every
-  // seek lands in `[0, duration − 0.25]`. The clamp is here, once, before §5's
-  // idempotency checks compare anything and before the assignments below, so a
-  // refused or duplicate command still writes nothing. File mode is the only
-  // mode that knows a duration; a website room has none to clamp to.
+  // **seek** lands in `[0, duration − 0.25]`. A `play` or `pause` is not a seek —
+  // its position is the playhead the press was made at, and bounding it would be
+  // the room disagreeing with the film: pausing 0.1 s before the end would
+  // rewind every client to 0.25 s short. The clamp is here, once, for seeks
+  // only, before §5's idempotency checks compare anything and before the
+  // assignments below, so a refused or duplicate command still writes nothing.
+  // File mode is the only mode that knows a duration; a website room has none
+  // to clamp to.
   const media = room.media
-  const target = media === null ? wanted : clampToMedia(wanted, media.duration)
+  const target =
+    frame.type === 'seek' && media !== null ? clampToMedia(wanted, media.duration) : wanted
 
   if (frame.type === 'play' && room.playback.playing) return { ok: true, applied: false }
   if (frame.type === 'pause' && !room.playback.playing) return { ok: true, applied: false }

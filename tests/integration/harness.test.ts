@@ -674,6 +674,54 @@ test('R6: a seek to the media duration lands at duration − 0.25, never at the 
   }
 })
 
+// F7: §4.5's clamp is a rule about **seek targets** (`docs/spec.md:315`, "Seek
+// targets clamp to `[0, duration − 0.25]`", and phase slice §6's "Every seek
+// goes through it"). A `play` or `pause` frame carries the playhead the press was
+// made at, which is a measurement of where the film is, not a place anyone asked
+// to jump to. Pressing pause 0.1 s before the end must leave the room there; a
+// clamp applied to every command would rewind every client to 0.25 s short.
+test('F7: a pause at duration − 0.1 is stored and broadcast where it was pressed', async () => {
+  const harness = await startHarness({ clients: 2 })
+  const fixture = fileURLToPath(new URL('../fixtures/fixture.mp4', import.meta.url))
+  try {
+    harness.owner.send({
+      type: 'setMedia',
+      id: 'f7',
+      title: 'Fixture',
+      duration: 60,
+      path: fixture,
+      epoch: harness.owner.welcome.epoch,
+    })
+    const media = await waitFor(() => harness.room.media, 2000, 'the room holds the fixture')
+
+    // A `pause` is only applied while the room is playing, so play first and
+    // consume the `state` it broadcasts — `next()` hands a frame out once.
+    const started = harness.clients.map((client) => client.next((frame) => frame.type === 'state'))
+    harness.owner.send({ type: 'play', position: 10 })
+    for (const record of await Promise.all(started)) {
+      assert.equal((record.frame as StateFrame).reason, 'play')
+    }
+
+    const hearing = harness.clients.map((client) => client.next((frame) => frame.type === 'state'))
+    harness.owner.send({ type: 'pause', position: media.duration - 0.1 })
+    const heard = await Promise.all(hearing)
+
+    for (const [index, record] of heard.entries()) {
+      const state = record.frame as StateFrame
+      assert.equal(state.reason, 'pause')
+      assert.equal(state.playback.playing, false)
+      assert.equal(
+        state.playback.position,
+        59.9,
+        `${harness.clients[index]!.name} is told where the pause was pressed, not 59.75`,
+      )
+    }
+    assert.equal(harness.room.playback.position, 59.9, 'the room stored the pause’s own position')
+  } finally {
+    await harness.close()
+  }
+})
+
 // F4, docs/spec.md:417 and §14/ADR-024: file mode has no room without its
 // owner. The end does not wait for a pick — a room with no owner could neither
 // be given bytes nor controlled — and everyone still here is told plainly.
