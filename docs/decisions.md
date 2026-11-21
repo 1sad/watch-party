@@ -811,6 +811,11 @@ expose a single JS-evaluation bridge and none of those hooks. Choosing one of th
 decision at M2. .NET is the supported path, it installs per user with no admin rights and no system change, and its
 surface here is a few hundred lines that one person can read in a sitting.
 
+> **Amended 2026-11-21 (measurement, no new decision):** the `PermissionRequested` lever above is **not** a lever we
+> have. Measured on WebView2 runtime 157 (phase 1, ticket 01): it does not fire for autoplay, so nothing in the app can
+> grant the page the `Autoplay` permission that way. The rest of the capability list stands. What does let a scheduled
+> start play (`spec.md` §14) is unmeasured; when it is measured, this line names it.
+
 **Rejected.** (a) Electron — banned twice (ADR-014, ADR-022) and it ships a browser to every friend. (b) A webview
 wrapper in Go or Rust — one binary and a smaller footprint, but no request filter, no fullscreen event and no
 pre-page script hook, so M2 would have to bypass or replace it. (c) Python with pywebview — the same wrapper limits
@@ -986,5 +991,27 @@ never was.
 
 **Amends.** ADR-034: "one WebView2 control filling it" becomes two. Its other rules stand unchanged — the split, the
 relay and the fullscreen toggle are window mechanics, not product logic.
+
+## ADR-039 - The room may sit a quarter of a second apart
+
+**Decision.** The correction ladder's deadband is **0.25 s**, not the 0.1 s borrowed from Syncplay (`spec.md` §6.3): a
+window within a quarter of a second of `expected` is left alone, and the rate nudge runs from 0.25 s to 1.5 s and stops
+when the gap is back under 0.25 s. The four-second hard seek, the "more than 1.75 s behind" trigger, the two
+consecutive bad reports, the once-per-five-seconds limit and the restore to `playbackRate = 1` are unchanged.
+
+**Why.** Measured on 2026-11-21 (phase 1): a healthy window sits 0.086-0.112 s behind, so with a 0.1 s deadband ordinary
+jitter alone puts it over the line and it is rate-nudged while nothing is wrong - the picture changes speed for no
+reason a person asked for. Asked how far apart two windows may be, the user answered a quarter of a second is fine.
+A quarter covers the jitter and still corrects what a real stall needs.
+
+**Rejected.** (a) Keep 0.1 s - it is Syncplay's number, tuned for a different client measuring a different delta; here
+it fires on jitter, which costs more than the few milliseconds of accuracy it buys. (b) 0.5 s or a full second - the
+user allowed it ("it doesn't have to be perfect"), but the room then sits that far apart in normal running, and the
+correction that eventually fires starts from further away and lasts longer. Nothing is gained once jitter is covered.
+(c) A deadband adapted to each client's measured jitter - better in principle and unmeasurable here until E5 says how
+much mirrors differ.
+
+**Cost.** The room is looser by design: two windows a quarter second apart are in step. Nothing else moves; the ladder's
+other constants and the wire format are untouched.
 
 

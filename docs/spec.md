@@ -92,7 +92,7 @@ unaffected (ADR-024, §4.4).
 | R5 | Chat keeps the last 100 messages for late joiners | join after 120 messages, see 100 |
 | R6 | Play/pause/seek by one member is applied by all | play/pause visible within 300 ms; a scheduled start may add up to 1.5 s and that is intended (§6.4) |
 | R7 | A late joiner starts at the correct position ±0.5 s | join 20 min into a film |
-| R8 | A client that stalls 5 s catches up without a room-wide jump | throttle one window, others undisturbed |
+| R8 | A client that stalls 5 s catches up without a room-wide jump | throttle the lagging window only; a window within a quarter second is in step, not drifting (6.3, ADR-039) |
 | R9 | Drift > 4 s on one client is corrected by a seek; < 1.5 s by a rate nudge | force drift, observe rate briefly ≠ 1.0 |
 | R10 | Seeking during playback pauses everyone, waits for buffering, then resumes together | seek while all playing |
 | R11 | A room can play a file from the owner's disk with native seeking | drag scrubber, no re-encode |
@@ -478,8 +478,8 @@ This one function is why late joiners and stalling clients recover without extra
 
 | Drift | Action |
 | --- | --- |
-| < 0.1 s | nothing |
-| 0.1 – 1.5 s | `playbackRate = 0.95` (or 1.05) until back under 0.1 s |
+| < 0.25 s | nothing (ADR-039) |
+| 0.25 - 1.5 s | `playbackRate = 0.95` (or 1.05) until back under 0.25 s |
 | 1.5 – 4 s | same nudge; a bit of visible lag is preferable to a jump |
 | > 4 s (or > 1.75 s *behind*) | hard seek to `expected` |
 | paused | snap directly |

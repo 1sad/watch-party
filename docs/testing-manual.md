@@ -86,6 +86,25 @@ and, when the window closes, its own last line:
 If `logs/` holds a file per window but one of them lacks its own `PORT` line, or shows a port another window also
 names, the two are sharing a sidecar — that is the failure this log split exists to catch.
 
+Website mode adds one prefix per speaker, quoted from a real run on 2026-11-21 (`logs/host-20261121-183017-716-5412.log`):
+
+```
+[host 18:19:54.330] page: [ws] hello
+[host 18:20:13.698] page: [popup] cancelled host=example.com nav=1
+[host 18:30:21.577] player: frame https://plyr.animex.one/e/...cnygl/1 554x312 duration=1420.0 reason=appeared
+[host 18:30:19.109] site: bridge report frame=https://animex.one/watch/... seq=3 count=0 [none]
+[host 18:19:52.101] site: ad list <n> host(s) from data/ad-hosts.txt
+[host 18:19:58.744] site: navigation cancelled=2 host(s)=acscdn.com
+```
+
+- `page:` is what our page sent the host. `[ws] hello` is the room page's greeting: a window with no `page:` line at all
+  never connected, which is a different failure from a page that loaded and voted nothing.
+- `player:` is one line per election and is written in both builds. It names the frame the winner sits in, its size, its
+  duration and the reason. A second line with a later timestamp is a re-election, so the gap between two lines is the
+  number a replaced-mirror check quotes.
+- `site:` is the site view reporting to the host. A `bridge report` line is one frame's candidate list and is
+  **measuring build only** (two lines a second per frame in a busy page); the ad-filter lines are in both builds.
+
 The timing lines come from the drift ladder (`spec.md` §6.3) and are read from **each window's own log**. The fields to
 compare are the ones §6.3 names: that window's reported offset, its round trip, and the delta against `expected()`.
 The bar for the gate is the one in §6.3, not a number invented here. Two windows over 60 s measured offset −0.4 ms and
@@ -121,6 +140,18 @@ and exits 1 — it never hangs.
 
 Anything a person would read off the screen, ask the page for instead. That is what makes a check cheap and what makes
 it possible for the lead to check a worker's claim without repeating the mouse work.
+
+For the whole window — site view, strip and sidebar in one frame, which `shot` cannot give you — use the camera:
+
+```
+powershell -NoProfile -File scripts/window-shot.ps1 .scratch/run.png
+powershell -NoProfile -File scripts/window-shot.ps1 .scratch/pair.png -Pids 1234,5678 -Place
+```
+
+It prints each window's pid, rectangle and capture instant plus the PNG's own size, so a cropped or stale picture shows
+in its output rather than in your judgement. `-Pid`/`-Pids` pick by process, which is what two windows need: they share
+a title, so the plain form only ever photographs the topmost. `-Place` stacks them first and never puts one back, so run
+it last.
 
 ## 8. If something is wrong
 
