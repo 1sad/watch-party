@@ -40,6 +40,24 @@ public sealed class MainForm : Form
     private const int SidebarWidth = 380;
     private const int TopStripHeight = 48;
 
+    /// <summary>
+    /// T08 item 3: how long an <c>enter</c> that arrives while the layout is
+    /// already full is read as the echo of the press that filled it rather than
+    /// as a second press. One press can be named twice — by the page's intent
+    /// message and by the engine's event — and a page can ask twice for it.
+    /// </summary>
+    private const int FullscreenEchoMs = 500;
+
+    /// <summary>
+    /// T08, ADR-028: whether the site view is filling the column right now. The
+    /// layout is ours, so this is the only place that knows: nothing here reads
+    /// it back from the engine, which refuses the site view's requests anyway.
+    /// </summary>
+    private bool _siteFull;
+
+    /// <summary>The instant of the last fullscreen transition (T08's echo window).</summary>
+    private DateTime _siteFullAt = DateTime.MinValue;
+
     private readonly WebView2 _page = new() { Dock = DockStyle.Fill };
     private readonly WebView2 _site = new() { Dock = DockStyle.Fill };
     private readonly Panel _topStrip = new() { Dock = DockStyle.Top };
@@ -574,12 +592,23 @@ public sealed class MainForm : Form
     /// A page can run the bridge's own script too, so a frame is not trusted
     /// with any kind it likes: only <c>playerReport</c> and <c>playerEvent</c>
     /// cross to the app view, and anything else is dropped here rather than
-    /// taught to the app view. The one exception is 02b's relay self-test, which
+    /// taught to the app view. T08's <c>fullscreen</c> is handled above and never
+    /// crosses either. The one exception is 02b's relay self-test, which
     /// exists only in the measuring build with the test armed.
     /// </summary>
     private void RelaySiteEvent(CoreWebView2Frame? frame, string source, string json)
     {
         string? kind = MessageKind(json);
+
+        // T08, ADR-028: the page's fullscreen intent is the host's own business
+        // - the layout is a window decision - so it is read here and goes no
+        // further. The relay's whitelist below has no reason to learn this kind.
+        if (kind == "fullscreen")
+        {
+            OnFullscreenIntent(json);
+            return;
+        }
+
         if (!IsRelayable(kind))
         {
             // A page that posts junk every second would otherwise fill the log:
@@ -587,7 +616,7 @@ public sealed class MainForm : Form
             if (++_relayDropped <= RelayDropLines)
             {
                 HostLog.Write($"relay: dropped a site message of kind {kind ?? "(none)"}; "
-                    + "a frame may post playerReport and playerEvent only");
+                    + "a frame may post playerReport and playerEvent, and the host reads fullscreen itself");
             }
             return;
         }
@@ -1424,13 +1453,19 @@ public sealed class MainForm : Form
 
     /// <summary>
     /// ADR-028: fullscreen is a layout decision and the app owns it (T08). The
-    /// engine already keeps a page's fullscreen request inside the control it came
-    /// from — <c>ContainsFullScreenElement</c> means "an HTML element inside the
-    /// WebView entered fullscreen <em>to the size of the WebView</em>" (the SDK's
-    /// own words) — so nothing has to be refused and no window is opened. What the
-    /// host adds is the rest of the window: the reserved top strip goes, which
-    /// gives the site view the column's whole height, while the app view keeps its
-    /// fixed column on the right and stays visible.
+    /// picture fills our window and our UI stays: on enter the reserved top strip
+    /// goes, which gives the site view the column's whole height while the app
+    /// column on the right stays visible; on exit the strip comes back and the
+    /// layout is exactly what it was. No window is created and the window's state
+    /// is never touched.
+    ///
+    /// Two things name the same transition. The page's own intent arrives from
+    /// the bridge as a <c>fullscreen</c> message (<see cref="OnFullscreenIntent"/>),
+    /// which is the one that fires: the engine refuses the site view's request
+    /// (measured twice in this ticket), so <c>ContainsFullScreenElementChanged</c>
+    /// never fires for it. That event is still honoured once when it does fire -
+    /// in the app view it does - and the layout state below is what stops one
+    /// press toggling twice.
     /// </summary>
     private void InstallFullscreenIntercept()
     {
@@ -1441,22 +1476,75 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
-    /// One line per transition (T08), so the live check can be read from the log
-    /// instead of the screen: the sizes are the site view's own, which is what the
-    /// press is judged by. Hiding the strip is the whole of the enter and showing
-    /// it again is the whole of the exit, so the layout comes back exactly as it
-    /// was — the strip is only ever hidden here.
+    /// The engine's half of the trigger (T08 item 3). It says what is true, not
+    /// what to do, so it is idempotent: the page's intent may have filled the
+    /// layout a moment before the engine agreed, and that must not toggle back.
     /// </summary>
     private void OnSiteFullScreenChanged(object? sender, object e)
     {
-        bool full = _site.CoreWebView2.ContainsFullScreenElement;
+        SetFullscreenLayout(_site.CoreWebView2.ContainsFullScreenElement);
+    }
 
+    /// <summary>
+    /// One <c>fullscreen</c> message from a frame of the site view: the page
+    /// asking to go fullscreen, or to come back (T08 items 1 and 2). It is obeyed
+    /// whether or not the engine granted the request - owning the layout is the
+    /// point of ADR-028 - and it is never relayed to the app view.
+    ///
+    /// A press toggles: an <c>enter</c> while the layout is already full gives it
+    /// back. The one exception is a second <c>enter</c> inside
+    /// <see cref="FullscreenEchoMs"/>, the same press heard twice, which leaves
+    /// the layout where it is.
+    /// </summary>
+    private void OnFullscreenIntent(string json)
+    {
+        // No site view, no layout to own: an intent from a hidden view is noise.
+        if (!_site.Visible) return;
+
+        string? state;
+        try
+        {
+            using JsonDocument message = JsonDocument.Parse(json);
+            state = StringField(message.RootElement, "state");
+        }
+        catch (JsonException)
+        {
+            return;
+        }
+
+        if (state == "enter")
+        {
+            bool echo = _siteFull && (DateTime.UtcNow - _siteFullAt).TotalMilliseconds < FullscreenEchoMs;
+            if (echo) return;
+            SetFullscreenLayout(!_siteFull);
+        }
+        else if (state == "exit")
+        {
+            SetFullscreenLayout(false);
+        }
+    }
+
+    /// <summary>
+    /// The one place the fullscreen layout changes (T08 item 4), so there is one
+    /// line per transition and never two for one press. The sizes are read after
+    /// <c>PerformLayout</c>, which is what makes them describe the layout being
+    /// announced rather than the one before it — a check can be read from the log
+    /// without eyes on the window.
+    /// </summary>
+    private void SetFullscreenLayout(bool full)
+    {
+        if (full == _siteFull) return;
+
+        _siteFull = full;
+        _siteFullAt = DateTime.UtcNow;
+        // The strip is the whole of the enter, and showing it again is the whole
+        // of the exit: nothing else about the layout is touched, so the previous
+        // one comes back exactly.
         _topStrip.Visible = !full;
+        // Docking follows Visible, but not before the message returns.
+        PerformLayout();
 
-        // The dock layout has already run by the time Visible returns, so this
-        // reads the size the site view has for the state being logged.
-        HostLog.Write(
-            $"site: fullscreen={(full ? "enter" : "exit")} w={_site.Width} h={_site.Height}");
+        HostLog.Write($"site: fullscreen={(full ? "enter" : "exit")} w={_site.Width} h={_site.Height}");
     }
 
     private void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)

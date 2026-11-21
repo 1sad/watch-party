@@ -15,7 +15,11 @@
  * reload), `play`/`pause`/`seeked` (a state the room may have to hear about),
  * and `applied` (a command this frame just carried out, for the `player:` line).
  * The host's relay drops every other kind - a page can run this script too, so
- * the frame is not trusted with more. It is plain ES5-ish JavaScript with no
+ * the frame is not trusted with more. Since T08 it posts a third, `fullscreen`:
+ * the page's fullscreen *intent* (`wrapFullscreen` below). The host keeps that
+ * one for itself and relays none of it, because the layout is the window's and
+ * the room has no business with the shape of anyone's window. It is plain
+ * ES5-ish JavaScript with no
  * imports because it is injected as text, and it must not depend on anything the
  * page may have broken: every read of an element is defensive.
  *
@@ -36,6 +40,9 @@
   var EVENT = 'playerEvent'
   var COMMAND = 'siteCommand'
   var APPLY = 'playerCommand'
+  // T08: the page's fullscreen intent, posted, read by the host and by nothing
+  // else. It is not in the relay's whitelist on purpose.
+  var FULLSCREEN = 'fullscreen'
 
   // A report never repeats faster than this while the candidate set is the
   // same; a changed set may go sooner, but not more than four times a second.
@@ -115,6 +122,44 @@
   function number(value) {
     return typeof value === 'number' && isFinite(value) ? value : 0
   }
+
+  /**
+   * T08, ADR-028: the page's fullscreen intent crosses the bridge, because the
+   * engine cannot be the trigger. Measured twice in that ticket: the site view's
+   * `requestFullscreen()` is refused with `TypeError: not granted`, and it stays
+   * refused when the site view is a direct child of the form, so
+   * `ContainsFullScreenElementChanged` never fires for it. The picture filling
+   * our window is our layout choice anyway, not the engine's - so what the host
+   * needs is the page's wish, and this wrapper is where it is heard.
+   *
+   * One message per call, before the call runs, then the original unchanged. Its
+   * rejection gets a no-op handler here: a site that ignores its own promise has
+   * no unhandled error on our account, while a site that watches it still sees
+   * the refusal. That is the accepted cost of ADR-028 - a site's own icon does
+   * not show itself as toggled when the engine refuses - not a defect to report.
+   */
+  function wrapFullscreen(owner, name, state) {
+    try {
+      if (!owner || typeof owner[name] !== 'function') return
+      var original = owner[name]
+      owner[name] = function () {
+        post({ kind: FULLSCREEN, state: state })
+        var answer = original.apply(this, arguments)
+        // T08: the engine's refusal is ours to swallow, never the site's to
+        // crash on. The promise is returned as it was, for a player that reads it.
+        if (answer && typeof answer.catch === 'function') answer.catch(function () {})
+        return answer
+      }
+    } catch (error) {
+      // A page that froze the prototype keeps its own behaviour and loses the
+      // layout; the picture still plays.
+    }
+  }
+
+  // Every frame this script runs in gets its own realm, so each wraps its own
+  // prototypes once and a player in an iframe is heard as well as the top page.
+  wrapFullscreen(window.Element && window.Element.prototype, 'requestFullscreen', 'enter')
+  wrapFullscreen(window.Document && window.Document.prototype, 'exitFullscreen', 'exit')
 
   function bufferedEnd(element) {
     try {

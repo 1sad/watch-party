@@ -94,14 +94,34 @@ function harness(videos: FakeVideo[]) {
   let nextTimer = 1
   let clock = 1_000_000
 
-  const document = {
+  // T08: the two prototypes the fullscreen wrapper installs itself on. A frame
+  // has one of each, so the fake document is made from `Document`'s and the fake
+  // element is `Element`'s, and the wrapper and the page call the same method.
+  const fullscreenCalls: string[] = []
+  let fullscreenAnswer: Promise<void> = Promise.resolve()
+  const elementPrototype = {
+    requestFullscreen(): Promise<void> {
+      fullscreenCalls.push('request')
+      return fullscreenAnswer
+    },
+  }
+  const documentPrototype = {
+    exitFullscreen(): Promise<void> {
+      fullscreenCalls.push('exit')
+      return fullscreenAnswer
+    },
+  }
+
+  const document = Object.assign(Object.create(documentPrototype), {
     readyState: 'complete',
     querySelectorAll: (selector: string) => (selector === 'video' ? videos : []),
     addEventListener: () => {},
     // The fake page has no focus, which is the paused-rate case.
     hasFocus: () => false,
-  }
+  })
   const window = {
+    Element: { prototype: elementPrototype },
+    Document: { prototype: documentPrototype },
     chrome: {
       webview: {
         postMessage: (message: Posted) => posted.push(message),
@@ -146,6 +166,16 @@ function harness(videos: FakeVideo[]) {
 
   return {
     posted,
+    /** T08: the page's two calls, and the promise the engine would answer with. */
+    fullscreen: {
+      request: () => elementPrototype.requestFullscreen(),
+      exit: () => (document as { exitFullscreen(): Promise<void> }).exitFullscreen(),
+      calls: fullscreenCalls,
+      /** The engine's answer to both calls from now on. */
+      answer(promise: Promise<void>) {
+        fullscreenAnswer = promise
+      },
+    },
     /** One `siteCommand` as the host posts it into the frame. */
     command(payload: Posted) {
       for (const listener of hostListeners) {
@@ -598,6 +628,69 @@ test('a rate command writes playbackRate and nothing else, and the beat still wa
     1,
     'a rate writes no `applied` line: the room gave it no reason and no target',
   )
+})
+
+// ---- T08: the page's fullscreen intent, posted before the call runs ----
+
+test('requestFullscreen posts one enter and still calls the page\'s own method (T08)', () => {
+  const bridge = harness([video()])
+  bridge.posted.length = 0
+
+  bridge.fullscreen.request()
+
+  const intents = bridge.posted.filter((message) => message.kind === 'fullscreen')
+  assert.equal(intents.length, 1, 'one call, one message: no repeat, no pair')
+  assert.equal(intents[0]?.state, 'enter')
+  assert.equal(typeof intents[0]?.doc, 'string', 'it carries the document token every message has')
+  assert.ok(String(intents[0]?.doc).length > 0)
+  assert.deepEqual(bridge.fullscreen.calls, ['request'], 'the engine still received the call')
+})
+
+test('exitFullscreen posts exit, and only the one message (T08)', () => {
+  const bridge = harness([video()])
+  bridge.posted.length = 0
+
+  bridge.fullscreen.exit()
+
+  const intents = bridge.posted.filter((message) => message.kind === 'fullscreen')
+  assert.equal(intents.length, 1)
+  assert.equal(intents[0]?.state, 'exit')
+  assert.equal(intents[0]?.href, HREF)
+  assert.deepEqual(bridge.fullscreen.calls, ['exit'])
+})
+
+test('an engine refusal is swallowed: an ignored promise is not an unhandled rejection (T08)', async () => {
+  const bridge = harness([video()])
+  bridge.posted.length = 0
+  bridge.fullscreen.answer(Promise.reject(new TypeError('not granted')))
+
+  const escaped: unknown[] = []
+  const record = (reason: unknown) => escaped.push(reason)
+  process.on('unhandledRejection', record)
+  try {
+    // The site's own code ignores what the call returned, as most players do.
+    bridge.fullscreen.request()
+    // Two turns of the microtask queue: the point at which a rejection with no
+    // handler is reported.
+    await new Promise((settle) => setImmediate(settle))
+    await new Promise((settle) => setImmediate(settle))
+  } finally {
+    process.off('unhandledRejection', record)
+  }
+
+  assert.deepEqual(escaped, [], 'the refusal did not surface as an unhandled rejection')
+  assert.equal(bridge.posted.filter((message) => message.kind === 'fullscreen').length, 1,
+    'and the intent was still sent, which is the whole point: the layout follows the wish, not the grant')
+})
+
+test('a player that watches the promise still sees the engine\'s refusal (T08)', async () => {
+  const bridge = harness([video()])
+  bridge.posted.length = 0
+  bridge.fullscreen.answer(Promise.reject(new TypeError('not granted')))
+
+  // The wrapper is not allowed to turn a refusal into a success: a site that
+  // reads its own promise must be able to tell, or it paints an icon that lies.
+  await assert.rejects(bridge.fullscreen.request(), /not granted/)
 })
 
 
