@@ -135,11 +135,18 @@ It does **not** show when the screenshot was taken. So:
 node scripts/cdp.mjs targets
 node scripts/cdp.mjs eval 0 "document.querySelectorAll('video').length"
 node scripts/cdp.mjs shot 0 .scratch/run.png
+node scripts/cdp.mjs click 0 440 144
 ```
 
 `targets` lists the open window's page as JSON; `eval` prints one value (a number, a string, `null`); `shot` saves a
 picture and prints its path. Add `--port 9223` to address window B. If nothing is listening, `targets` prints one line
 and exits 1 — it never hangs.
+
+`click <id|index> <x> <y>` sends a real mouse press and release at a point in the page and prints the target, the point
+and the page's `document.activeElement`; add `--double` for a double click. Use it whenever a page will only act on a
+person's gesture: a `requestFullscreen()` reached by a real press is granted, while the same call from `eval` is
+refused. A press grants that trust for about five seconds only, so prove a scripted call is refused in a freshly written
+document, or at least six seconds after the last press (measured 2026-11-22, ticket 19).
 
 Anything a person would read off the screen, ask the page for instead. That is what makes a check cheap and what makes
 it possible for the lead to check a worker's claim without repeating the mouse work.
@@ -158,7 +165,7 @@ it last.
 
 ### The rig for a live check
 
-Four traps cost a re-run on 06b and again on 07b. Do these before a live check, not after it fails.
+Five traps cost a re-run on 06b and again on 07b. Do these before a live check, not after it fails.
 
 1. **Every `cdp.mjs` call names its window.** Two windows means `--port 9223` on B and `--port 9222` on A, or
    `WP_DEBUG_PORT` in the environment. A call with no port reads the default window and quietly answers for the wrong one.
@@ -168,7 +175,11 @@ Four traps cost a re-run on 06b and again on 07b. Do these before a live check, 
    `video.seekable` read `[0, 0]`, so every seek lands at 0 and the ladder looks broken. Serve real `Range` responses.
 4. **PowerShell 5.1 cannot send a `Range` header.** `Invoke-WebRequest` drops it; the `206` proof is
    `curl.exe -s -o NUL -w "%{http_code}" -r 0-99 <url>`.
-5. **A reload is not a re-election.** `location.reload()` on the site view can leave `player: none reason=replaced` with
+5. **A real press and a scripted call are not the same call.** A `click` grants the page transient trust for about five
+   seconds; inside that window an `eval`led `requestFullscreen()` succeeds too, so a "trusted beats scripted" comparison
+   run too soon reads inverted. Write a fresh document for the negative probe, or wait six seconds. On this engine
+   (WebView2 157) the refusal reads `TypeError: Permissions check failed`, not the older `not granted`.
+6. **A reload is not a re-election.** `location.reload()` on the site view can leave `player: none reason=replaced` with
    nothing taking its place; if the log shows that, restart both windows rather than chasing the bridge.
 
 ## 8. If something is wrong
