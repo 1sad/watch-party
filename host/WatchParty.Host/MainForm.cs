@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -38,6 +39,9 @@ public sealed class MainForm : Form
     private string _root = string.Empty;
     private bool _closing;
     private bool _navigated;
+    /// <summary>T9a2: one dialog at a time, and the file it last returned.</summary>
+    private bool _pickOpen;
+    private string? _pickedPath;
 
     public MainForm(string[]? launchArgs)
     {
@@ -95,6 +99,7 @@ public sealed class MainForm : Form
 
         InstallRequestFilter();
         InstallAutoplayGrant();
+        InstallFilePicker();
         _page.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
         StartSidecar();
         _portTimeout.Start();
@@ -158,6 +163,16 @@ public sealed class MainForm : Form
     private void OnWebResourceRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
     {
         string uri = e.Request.Uri;
+
+        // T9a2: the page measuring the file it just picked. Only the one path the
+        // dialog returned, and only while the measurement is in flight.
+        if (Uri.TryCreate(uri, UriKind.Absolute, out Uri? probe)
+            && string.Equals(probe.Host, FilePick.MediaHost, StringComparison.OrdinalIgnoreCase))
+        {
+            e.Response = ProbeResponse(probe);
+            return;
+        }
+
         if (!IsBlocked(uri)) return;
 
         // An empty 403 replaces the response, which cancels the request: the page
@@ -195,6 +210,141 @@ public sealed class MainForm : Form
                 $"autoplay permission for {e.Uri}: {(grant ? "allowed" : "denied (dev switch)")}");
         };
         HostLog.Write($"autoplay permission handler installed; grant={grant}");
+    }
+
+    /// <summary>
+    /// T9a2's bridge. The page asks for a file, the host opens the native dialog
+    /// (ADR-034), and then serves that one file to the page so it can wait for
+    /// <c>loadedmetadata</c> before the room hears anything. Three messages in,
+    /// and only the page ever initiates.
+    /// </summary>
+    private void InstallFilePicker()
+    {
+        _page.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
+        HostLog.Write("file picker bridge installed");
+    }
+
+    private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        string? kind = null;
+        string? contentType = null;
+        try
+        {
+            using JsonDocument message = JsonDocument.Parse(e.WebMessageAsJson);
+            if (message.RootElement.ValueKind == JsonValueKind.Object
+                && message.RootElement.TryGetProperty("kind", out JsonElement value)
+                && value.ValueKind == JsonValueKind.String)
+            {
+                kind = value.GetString();
+            }
+
+            if (message.RootElement.ValueKind == JsonValueKind.Object
+                && message.RootElement.TryGetProperty("type", out JsonElement type)
+                && type.ValueKind == JsonValueKind.String)
+            {
+                contentType = type.GetString();
+            }
+        }
+        catch (JsonException)
+        {
+            // Not one of ours: ignored, the same rule §5 keeps for unknown frames.
+        }
+
+        switch (kind)
+        {
+            case "pick":
+                AskForFile();
+                break;
+            case "probe":
+                OfferProbe(contentType);
+                break;
+            case "probeDone":
+                ConcealPickedFile();
+                break;
+        }
+    }
+
+    private void AskForFile()
+    {
+        if (_pickOpen) return;
+        _pickOpen = true;
+        try
+        {
+            string? path = FilePick.Choose(this);
+            if (path is null)
+            {
+                PostToPage(new { kind = "cancelled" });
+                return;
+            }
+
+            // The path is remembered here, and only here: the page asks to
+            // measure "the picked file", never names a path of its own.
+            _pickedPath = path;
+            PostToPage(new { kind = "picked", path });
+        }
+        finally
+        {
+            _pickOpen = false;
+        }
+    }
+
+    private void OfferProbe(string? contentType)
+    {
+        if (_pickedPath is null || !File.Exists(_pickedPath) || string.IsNullOrEmpty(contentType))
+        {
+            PostToPage(new { kind = "failed", sentence = "The app could not read the file it chose." });
+            return;
+        }
+
+        PostToPage(new { kind = "probeReady", url = FilePick.ProbeUrl(contentType) });
+    }
+
+    private void ConcealPickedFile()
+    {
+        _pickedPath = null;
+    }
+
+    /// <summary>
+    /// The picked file's bytes, for the page's one measurement. A whole response
+    /// rather than a folder mapping: the mapping's documentation says a page that
+    /// is already loaded may not see it without a reload, and a reload would lose
+    /// the room this window is in.
+    /// </summary>
+    private CoreWebView2WebResourceResponse ProbeResponse(Uri uri)
+    {
+        CoreWebView2Environment environment = _page.CoreWebView2.Environment;
+        string? path = _pickedPath;
+
+        if (path is null || !File.Exists(path))
+        {
+            return environment.CreateWebResourceResponse(
+                new MemoryStream(), 404, "Not Found", "Content-Type: text/plain");
+        }
+
+        string contentType = FilePick.ProbeContentType(uri);
+        try
+        {
+            // A read-only stream: the engine reads as much as it wants and lets
+            // go; the sidecar serves the room from the same file later (T9a3).
+            FileStream content = new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            HostLog.Write($"pick: serving {path} to the page as {contentType}, {content.Length} bytes");
+            return environment.CreateWebResourceResponse(
+                content,
+                200,
+                "OK",
+                $"Content-Type: {contentType}\r\nContent-Length: {content.Length}\r\nAccept-Ranges: none");
+        }
+        catch (Exception error)
+        {
+            HostLog.Write($"pick: could not read {path}: {error.Message}");
+            return environment.CreateWebResourceResponse(
+                new MemoryStream(), 500, "Unreadable", "Content-Type: text/plain");
+        }
+    }
+
+    private void PostToPage(object message)
+    {
+        _page.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(message));
     }
 
     /// <summary>Matches a request URL's host against the temporary block list.</summary>

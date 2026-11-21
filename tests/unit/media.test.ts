@@ -3,7 +3,11 @@ import assert from 'node:assert/strict'
 
 import {
   MEDIA_CONTENT_TYPES,
+  checkExtension,
   contentTypeFor,
+  extensionRefusal,
+  loadRefusal,
+  mediaTitle,
   parseRange,
   type ByteRange,
 } from '../../src/shared/media.ts'
@@ -49,4 +53,46 @@ test('a Range header answers with one of the three outcomes, one row per case', 
   for (const [header, size, expected, label] of rows) {
     assert.deepEqual(parseRange(header, size), expected, label)
   }
+})
+
+test('T9a2: an unplayable file is refused in one sentence naming it and the reason', () => {
+  assert.equal(
+    extensionRefusal('C:\\Users\\sam\\Videos\\Some Film.MKV'),
+    "Some Film.MKV is an MKV file, and the app's browser cannot play it — file mode plays MP4, M4V, WebM and MOV files only.",
+  )
+  assert.equal(
+    extensionRefusal('/home/sam/no-extension'),
+    "no-extension has no file type this app can play, and the app's browser cannot play it — file mode plays MP4, M4V, WebM and MOV files only.",
+  )
+
+  // The four ADR-035 types pass the first check; the page's load check is next.
+  for (const playable of ['a.mp4', 'b.M4V', 'c.webm', 'd.mov']) {
+    assert.equal(extensionRefusal(playable), null, playable)
+  }
+})
+
+test('T9a2: the page gets the type it must serve, or the refusal, from one call', () => {
+  assert.deepEqual(checkExtension('C:\\Videos\\film.MP4'), { playable: true, contentType: 'video/mp4' })
+  assert.deepEqual(checkExtension('C:\\Videos\\film.mkv'), {
+    playable: false,
+    refusal:
+      "film.mkv is an MKV file, and the app's browser cannot play it — file mode plays MP4, M4V, WebM and MOV files only.",
+  })
+})
+
+test('T9a2: the load check refuses with the file named and the room left alone', () => {
+  const outcomes = ['error', 'no-duration', 'timeout'] as const
+  for (const outcome of outcomes) {
+    const sentence = loadRefusal('C:\\Videos\\half.mp4', outcome)
+    assert.match(sentence, /^half\.mp4 /, outcome)
+    assert.match(sentence, /the room is still on what it had\.$/, outcome)
+  }
+  assert.notEqual(loadRefusal('half.mp4', 'error'), loadRefusal('half.mp4', 'no-duration'))
+  assert.notEqual(loadRefusal('half.mp4', 'error'), loadRefusal('half.mp4', 'timeout'))
+})
+
+test('T9a2: the room calls a file by its name, not by its path', () => {
+  assert.equal(mediaTitle('C:\\Users\\sam\\Videos\\film.mp4'), 'film.mp4')
+  assert.equal(mediaTitle('/home/sam/film.mp4'), 'film.mp4')
+  assert.equal(mediaTitle('film.mp4'), 'film.mp4')
 })

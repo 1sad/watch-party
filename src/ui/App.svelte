@@ -10,9 +10,17 @@
     type Playback,
     type ReportFrame,
     type ServerFrame,
+    type SetMediaFrame,
     type WireMember,
   } from '../shared/protocol.ts'
   import { parseJoinLink, UNREADABLE_LINK, UNREACHABLE_ROOM } from './join.ts'
+  import {
+    MEASURE_TIMEOUT_MS,
+    checkExtension,
+    loadRefusal,
+    mediaTitle,
+    type LoadRefusal,
+  } from '../shared/media.ts'
   import { readClockSkew } from './dev-clock.ts'
   import { readDevPlay } from './dev-drift.ts'
   import Player from './Player.svelte'
@@ -174,6 +182,10 @@
     playback = null
     revision = 0
     nudge = null
+    // T9a2: a different room has a different owner, so a pending pick is gone.
+    picking = false
+    pickNotice = null
+    pickedPath = null
     // §6.1: a reconnect resets the filter rather than feeding it an offset that
     // belonged to the previous connection's clock.
     stopPing()
@@ -312,6 +324,171 @@
     socket.send(JSON.stringify(frame))
   }
 
+  // ---- T9a2: the owner's picker --------------------------------------------------
+
+  /**
+   * The host's message bridge (ADR-034). The path is produced by the native
+   * dialog in the host, and a page never names one; a plain browser tab has no
+   * bridge, so there is no picker to offer there.
+   */
+  interface HostWebview {
+    postMessage(message: unknown): void
+    addEventListener(type: 'message', listener: (event: MessageEvent) => void): void
+    removeEventListener(type: 'message', listener: (event: MessageEvent) => void): void
+  }
+
+  function hostWebview(): HostWebview | null {
+    const chrome = (window as unknown as { chrome?: { webview?: HostWebview } }).chrome
+    return chrome?.webview ?? null
+  }
+
+  const host = hostWebview()
+
+  let picking = $state(false)
+  let pickNotice = $state<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  /** The host's latest answer; a measurement that finishes after a newer pick is dropped. */
+  let pickedPath: string | null = null
+
+  /** §7.2: only the window whose own sidecar owns this room may pick a file. */
+  const canPick = $derived(selfId !== null && inOwnRoom)
+
+  function postToHost(message: unknown): void {
+    host?.postMessage(message)
+  }
+
+  function requestFile(): void {
+    if (host === null) {
+      pickNotice = { kind: 'error', text: "The file picker is only in the app's window, not in a browser tab." }
+      return
+    }
+    picking = true
+    pickNotice = null
+    pickedPath = null
+    postToHost({ kind: 'pick' })
+  }
+
+  /** Nothing was sent, so the room is still on what it had — and the host stops exposing the file. */
+  function refusePick(sentence: string): void {
+    picking = false
+    pickedPath = null
+    pickNotice = { kind: 'error', text: sentence }
+    postToHost({ kind: 'probeDone' })
+  }
+
+  function onHostMessage(event: MessageEvent): void {
+    const message: unknown = event.data
+    if (typeof message !== 'object' || message === null) return
+    const kind = (message as { kind?: unknown }).kind
+
+    if (kind === 'picked') {
+      const path = (message as { path?: unknown }).path
+      if (typeof path !== 'string') {
+        refusePick('The file picker answered with no file name.')
+        return
+      }
+      // The first check, before the file is loaded or anyone hears of it.
+      const check = checkExtension(path)
+      if (!check.playable) {
+        refusePick(check.refusal)
+        return
+      }
+      pickedPath = path
+      postToHost({ kind: 'probe', type: check.contentType })
+      return
+    }
+
+    if (kind === 'probeReady') {
+      const url = (message as { url?: unknown }).url
+      if (pickedPath === null) {
+        picking = false
+        return
+      }
+      if (typeof url !== 'string') {
+        refusePick('The app could not read the file it chose.')
+        return
+      }
+      void measureAndRegister(pickedPath, url)
+      return
+    }
+
+    if (kind === 'cancelled') {
+      picking = false
+      return
+    }
+
+    if (kind === 'failed') {
+      const sentence = (message as { sentence?: unknown }).sentence
+      refusePick(typeof sentence === 'string' ? sentence : 'The app could not read the file it chose.')
+    }
+  }
+
+  /**
+   * The second check (§7.2): the owner's own page loads the file and waits for
+   * `loadedmetadata`. Only a duration above zero means the room may have it,
+   * and that duration is the one written to the room — measured once, here.
+   */
+  async function measureAndRegister(path: string, url: string): Promise<void> {
+    const outcome = await measureFile(url)
+    postToHost({ kind: 'probeDone' })
+    if (path !== pickedPath) return
+
+    if (outcome.kind !== 'ok') {
+      refusePick(loadRefusal(path, outcome.kind))
+      return
+    }
+    if (socket === null || selfId === null) {
+      refusePick(`${mediaTitle(path)} was measured, but this window is not in the room.`)
+      return
+    }
+
+    const frame: SetMediaFrame = {
+      type: 'setMedia',
+      id: crypto.randomUUID(),
+      title: mediaTitle(path),
+      duration: outcome.duration,
+      path,
+    }
+    socket.send(JSON.stringify(frame))
+    picking = false
+    pickedPath = null
+    pickNotice = {
+      kind: 'ok',
+      text: `Picked ${mediaTitle(path)} — this window measured ${outcome.duration.toFixed(1)} s.`,
+    }
+  }
+
+  type Measurement = { kind: 'ok'; duration: number } | { kind: LoadRefusal }
+
+  /** One throwaway `<video>`: metadata only, never played, and always cleaned up. */
+  function measureFile(url: string): Promise<Measurement> {
+    return new Promise((settle) => {
+      const video = document.createElement('video')
+      video.preload = 'metadata'
+      video.muted = true
+
+      let done = false
+      const finish = (outcome: Measurement): void => {
+        if (done) return
+        done = true
+        clearTimeout(timer)
+        video.removeAttribute('src')
+        video.load()
+        settle(outcome)
+      }
+
+      const timer = setTimeout(() => finish({ kind: 'timeout' }), MEASURE_TIMEOUT_MS)
+      video.addEventListener('loadedmetadata', () => {
+        if (Number.isFinite(video.duration) && video.duration > 0) {
+          finish({ kind: 'ok', duration: video.duration })
+        } else {
+          finish({ kind: 'no-duration' })
+        }
+      })
+      video.addEventListener('error', () => finish({ kind: 'error' }))
+      video.src = url
+    })
+  }
+
   function submitJoin(event: SubmitEvent): void {
     event.preventDefault()
     const target = parseJoinLink(joinText)
@@ -406,7 +583,9 @@
     }
 
     void refresh()
+    host?.addEventListener('message', onHostMessage)
     return () => {
+      host?.removeEventListener('message', onHostMessage)
       clearTimeout(timer)
       stopPing()
     }
@@ -450,6 +629,18 @@
 
       {#if payload.status === 'ready'}
         <button type="button" class="secondary" onclick={() => void retry()}>Try again</button>
+      {/if}
+
+      {#if canPick}
+        <section class="pick">
+          <h2>File mode</h2>
+          <button type="button" data-pick onclick={requestFile} disabled={picking || host === null}>
+            {picking ? 'Waiting for the file…' : 'Open a file'}
+          </button>
+          {#if pickNotice !== null}
+            <p class="notice {pickNotice.kind}" role="status">{pickNotice.text}</p>
+          {/if}
+        </section>
       {/if}
     {:else}
       <h2>You joined a room</h2>
@@ -796,5 +987,23 @@
     font-family: Consolas, monospace;
     font-size: 0.8rem;
     color: #6f6f7e;
+  }
+
+  .pick {
+    margin: 0 0 1.5rem;
+  }
+
+  .pick button:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  .pick .notice {
+    margin: 0.75rem 0 0;
+    font-size: 1.05rem;
+  }
+
+  .pick .notice.ok {
+    color: #7fd0a5;
   }
 </style>

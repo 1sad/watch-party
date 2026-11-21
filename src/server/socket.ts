@@ -61,6 +61,13 @@ export interface RoomSocketOptions {
    * not a production sidecar; it is not a wire feature and changes no rule.
    */
   debug?: (line: string) => void
+  /**
+   * One line per file the room registers (T9a2). The picker's checks are the
+   * page's; this is the sidecar's own record that a file was accepted, with the
+   * duration the owner's page measured — which is how a check tells an accepted
+   * pick from a refused one.
+   */
+  log?: (line: string) => void
 }
 
 function isLoopback(remoteAddress: string | undefined): boolean {
@@ -87,6 +94,7 @@ export function attachRoomSocket(
   const newId = options.newId ?? randomUUID
   const isLocal = options.isLocal ?? isLoopback
   const debug = options.debug ?? (() => {})
+  const log = options.log ?? (() => {})
 
   const sockets = new Map<PeerSocket, Member>()
   /** §4.6's limits are per member, kept beside the sockets rather than in the room. */
@@ -341,7 +349,21 @@ export function attachRoomSocket(
             return
           }
           const result = setMedia(room, member.id, frame, existsSync)
-          if (!result.ok) fail(socket, result.code)
+          if (!result.ok) {
+            fail(socket, result.code)
+            return
+          }
+          // T9a2: the room's record of what it accepted, with the duration the
+          // owner's page measured before this frame was sent. A refused pick
+          // never reaches here, so this line's absence is the proof that no file
+          // was registered.
+          const registered = room.media
+          if (registered !== null) {
+            log(
+              `[media] registered id=${registered.id} title=${registered.title} ` +
+                `duration=${registered.duration} type=${registered.contentType} path=${registered.path}`,
+            )
+          }
           return
         }
         case 'chat': {
