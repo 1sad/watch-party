@@ -42,7 +42,6 @@ public sealed class MainForm : Form
 
     private readonly WebView2 _page = new() { Dock = DockStyle.Fill };
     private readonly WebView2 _site = new() { Dock = DockStyle.Fill };
-    private readonly Panel _siteColumn = new() { Dock = DockStyle.Fill };
     private readonly Panel _topStrip = new() { Dock = DockStyle.Top };
     private readonly System.Windows.Forms.Timer _portTimeout = new() { Interval = 20_000 };
 
@@ -160,21 +159,26 @@ public sealed class MainForm : Form
 
         // Docking runs from the last child added, so each Fill control goes in
         // before the control that takes space off it: the sidebar takes its
-        // width from the right, the site column takes the rest, and the strip
-        // takes its height off the top of the site column.
+        // width from the right, the strip takes its height off the top of what
+        // is left, and the site view keeps the rest.
+        //
+        // The site view is a child of the form itself (T08 attempt 2): nested in
+        // an intermediate panel it was refused every fullscreen request
+        // (`TypeError: not granted`) while the same page in the app view — a
+        // direct child — was granted. The layout is otherwise unchanged.
         _topStrip.Height = TopStripHeight;
         // The same dark chrome as our page's own body, so the reserved strip is
         // an empty row rather than a glare next to a dark window (03b fills it).
         _topStrip.BackColor = Color.FromArgb(0x14, 0x15, 0x1A);
-        _siteColumn.Controls.Add(_site);
-        _siteColumn.Controls.Add(_topStrip);
-        Controls.Add(_siteColumn);
+        Controls.Add(_site);
+        Controls.Add(_topStrip);
         Controls.Add(_page);
 
         // ADR-038: with no page there is no site view. A window opens with no
         // room, so this is file mode until something sets a page (03), and the
         // app view fills the window exactly as in M1.
-        _siteColumn.Visible = false;
+        _site.Visible = false;
+        _topStrip.Visible = false;
 
         Load += OnLoad;
         FormClosed += OnFormClosed;
@@ -1402,17 +1406,18 @@ public sealed class MainForm : Form
 
     /// <summary>
     /// ADR-038's page mode: the app view becomes a fixed sidebar on the right and
-    /// the site column takes the rest, with the top strip reserved above the site.
+    /// the site view takes the rest, with the top strip reserved above the site.
     /// Called only when the room has a page — until 03 sets one, that is the
     /// measuring build's <c>WATCHPARTY_SPIKE_URL</c> alone.
     /// </summary>
     private void ShowSiteView()
     {
-        if (_siteColumn.Visible) return;
+        if (_site.Visible) return;
 
         _page.Dock = DockStyle.Right;
         _page.Width = SidebarWidth;
-        _siteColumn.Visible = true;
+        _site.Visible = true;
+        _topStrip.Visible = true;
         HostLog.Write(
             $"layout: page mode — site view left of a {SidebarWidth} px app view, top strip {TopStripHeight} px");
     }
