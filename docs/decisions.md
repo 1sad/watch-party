@@ -827,6 +827,9 @@ loopback. ADR-022 (WebView2, not a bundled browser) is unchanged and now names w
 > **Amended 2026-11-21 (ADR-036):** two dev-only dependencies are added — `typescript` and `svelte-check`. Neither
 > ships in the app, and neither replaces anything in this list: `node --test` is still the test runner and the
 > "no test framework" answer below still holds.
+>
+> **Amended 2026-11-21 (ADR-037):** type declarations only — `@types/node`, `@types/ws`, `vite/client` — are added
+> and are not counted against this list. They ship nothing and change no runtime.
 
 **Decision.** M1 adds the following and nothing else. Already decided elsewhere and only cited here: `ws`
 (ADR-012), TypeScript (ADR-012), Vite + Svelte + `@sveltejs/vite-plugin-svelte` (ADR-012), hls.js (not loaded before
@@ -867,6 +870,11 @@ committed hook (`.githooks/pre-commit`, activated with `git config core.hooksPat
 `npm test`, and runs `npm run check` once the baseline is green. Neither dependency is imported by the app; neither
 reaches a build that ships.
 
+> **Amended 2026-11-21 (ADR-037):** "and nothing else" reads as "nothing else with a runtime shape". Type
+> declarations (`@types/node`, `@types/ws`, `vite/client`) are added under ADR-037, because the checker cannot see
+> the standard library without them. The first measurement on the real tree was 127 errors, so the hook shipped with
+> `npm test` alone and T8a2 owns a green baseline.
+
 **Why a typechecker, and why not the two things already here.** Tests run TypeScript by *stripping* the types
 (Node 24) and Vite transpiles it the same way (esbuild): both delete the annotations without ever reading them, so a
 wrong type is invisible until the line runs, and a renamed field is invisible until it is `undefined` at runtime. The
@@ -897,4 +905,28 @@ red the hook ships with `npm test` alone, the errors are recorded, and a green b
 (ADR-035). `husky` — it is a dependency that installs a shell script; `core.hooksPath` is a git setting and the hook
 is a file in the repo. `lint-staged` — the suites are small enough that running both whole is under the budget, and
 a partial run is a way to miss the thing that broke.
+
+## ADR-037 — Type declarations for what is already installed are not dependencies
+
+> **Amends ADR-035** and **ADR-036**: `@types/node`, `@types/ws` and the `vite/client` type entry are permitted,
+> dev-only, and do not count against either list.
+
+**Decision.** The typechecker added in ADR-036 may be given the compiler's description of what the app already
+imports: `@types/node` for `node:http`/`node:fs`/`node:crypto`, `@types/ws` for `ws` (ADR-012), and `vite/client` for
+`import.meta.env` (ADR-012). `@types/node` tracks the runtime's major version, not the package manager's latest.
+
+**Why these are not the thing ADR-035 refused.** A `@types/*` package emits no code: it is `.d.ts` files read only by
+the checker, and `npm ls --omit=dev` does not change. ADR-035's argument is about what the app ships and what a
+person has to audit; a declaration adds neither. Refusing them would have meant refusing to let the checker see the
+standard library.
+
+**Why not the cheaper answers.** Excluding the tests from `tsconfig.json` and leaving the sources alone was the other
+option: 79 of the 127 errors measured on 2026-11-21 are `Cannot find name 'node:…'`, which no amount of narrowing
+makes correct. Adding `// @ts-nocheck` to the files that import `node:` is the same move with extra steps, and it
+turns a check into decoration — which is what ADR-036 exists to avoid.
+
+**What this does not decide.** Whether the genuine strict-mode errors (about 30, measured on 2026-11-21: `possibly
+null`, a `.unref` on a number, implicit `any` in tests) are fixed or suppressed. They are T8a2. Suppression is
+allowed only as one line at the site with a reason next to it; a project-wide relaxation, or a `strict: false`, is
+not.
 
