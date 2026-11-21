@@ -104,6 +104,7 @@ The docs are honest about where they are thin:
 | What is unproven | `docs/open-questions.md` |
 | What to do next, and how to test it | `docs/handoff.md` |
 | Prior art, numbers, links | `docs/research.md` |
+| How to test by hand, and the two-window gate | `docs/testing-manual.md` |
 | Vocabulary | `docs/glossary.md` |
 
 ## Definition of v1
