@@ -751,6 +751,9 @@
         event: playbackEvent,
         t: typeof body.t === 'number' ? body.t : 0,
         wasPlaying: body.wasPlaying === true,
+        // T15: the bridge says whether its own write caused this, so §6.6's
+        // decision does not lean on a report that may be half a second old.
+        caused: body.caused === true,
       }
       // §6.6 and ADR-030: ours is dropped, the controller's is a command, and a
       // guest's is corrected back rather than sent to a room that would refuse.
@@ -827,10 +830,12 @@
    */
   function postToSite(plan: PagePlan | null): void {
     if (plan === null || host === null) return
-    siteEchoes.expect(
-      { source: plan.command.source, id: plan.command.id },
-      echoEntries(plan, performance.now()),
-    )
+    const target = { source: plan.command.source, id: plan.command.id }
+    // T15: this command supersedes whatever the element still owes, so a hold's
+    // predicted `play` is dropped here rather than left to swallow a person's
+    // next one inside the echo window.
+    siteEchoes.clear(target)
+    siteEchoes.expect(target, echoEntries(plan, performance.now()))
     postToHost({ kind: 'siteCommand', payload: plan.command })
   }
 

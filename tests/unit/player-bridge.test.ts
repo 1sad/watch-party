@@ -87,8 +87,9 @@ type Posted = Record<string, unknown>
 function harness(videos: FakeVideo[]) {
   const posted: Posted[] = []
   const intervals: Array<() => void> = []
-  const timers: Array<() => void> = []
+  const timers: Array<{ id: number; run: () => void; live: boolean }> = []
   const hostListeners: Array<(event: { data?: unknown }) => void> = []
+  let nextTimer = 1
   let clock = 1_000_000
 
   const document = {
@@ -109,14 +110,16 @@ function harness(videos: FakeVideo[]) {
     },
   }
 
-  // The six names the bridge reads from its surroundings are parameters, so a
-  // fake document, a fake clock and a fake timer queue replace the browser's own.
+  // The seven names the bridge reads from its surroundings are parameters, so a
+  // fake document, a fake clock, a fake timer queue and its `clearTimeout`
+  // replace the browser's own.
   const run = new Function(
     'window',
     'document',
     'location',
     'setInterval',
     'setTimeout',
+    'clearTimeout',
     'Date',
     source,
   )
@@ -125,7 +128,17 @@ function harness(videos: FakeVideo[]) {
     document,
     { href: HREF },
     (tick: () => void) => intervals.push(tick),
-    (timer: () => void) => timers.push(timer),
+    (timer: () => void) => {
+      const id = nextTimer
+      nextTimer += 1
+      timers.push({ id, run: timer, live: true })
+      return id
+    },
+    (id: number) => {
+      for (const timer of timers) {
+        if (timer.id === id) timer.live = false
+      }
+    },
     { now: () => clock },
   )
 
@@ -140,9 +153,12 @@ function harness(videos: FakeVideo[]) {
     tick() {
       for (const interval of intervals) interval()
     },
-    /** Run the bridge's pending `setTimeout` beats. */
+    /** Run the bridge's pending `setTimeout` beats; a cancelled one does not run. */
     flush() {
-      while (timers.length > 0) timers.shift()?.()
+      while (timers.length > 0) {
+        const timer = timers.shift()
+        if (timer?.live) timer.run()
+      }
     },
     advance(ms: number) {
       clock += ms
@@ -365,3 +381,141 @@ test('play, pause and seeked are posted with the element id, and seeked says wha
   assert.equal(seeked.t, 50)
   assert.equal(seeked.wasPlaying, true, 'the element was playing when the seek began (§5)')
 })
+
+// ---- T15: provenance, and a hold a later command can cancel ----
+
+test('a hold\'s pause says the bridge caused it, and a person\'s pause says it did not', () => {
+  const held = video({ paused: false, currentTime: 300 })
+  const bridge = harness([held])
+  bridge.command({
+    kind: 'playerCommand',
+    href: HREF,
+    id: 1,
+    reason: 'play',
+    action: 'play',
+    leadMs: 1500,
+    revision: 20,
+  })
+  assert.equal(held.paused, true, 'the scheduled start holds a playing element')
+  held.listeners.get('pause')?.[0]?.({ type: 'pause' })
+  assert.equal(eventOf(bridge.posted, 'pause').caused, true, 'ours: the app must not read it as a person')
+
+  // The same event on an element nothing here touched is a person's, untagged
+  // by this frame, so §6.6's rule still sees it.
+  const pressed = video({ paused: false })
+  const person = harness([pressed])
+  pressed.listeners.get('pause')?.[0]?.({ type: 'pause' })
+  assert.equal(eventOf(person.posted, 'pause').caused, false)
+})
+
+test('a play the bridge started, and a seek it made, both say they were caused', () => {
+  const started = video({ paused: true, currentTime: 10 })
+  const playBridge = harness([started])
+  playBridge.command({ kind: 'playerCommand', href: HREF, id: 1, reason: 'play', action: 'play', revision: 21 })
+  started.listeners.get('play')?.[0]?.({ type: 'play' })
+  assert.equal(eventOf(playBridge.posted, 'play').caused, true)
+
+  const moved = video({ paused: true, currentTime: 10 })
+  const seekBridge = harness([moved])
+  seekBridge.command({
+    kind: 'playerCommand',
+    href: HREF,
+    id: 1,
+    reason: 'seek',
+    action: 'seek',
+    target: 50,
+    revision: 22,
+  })
+  moved.listeners.get('seeked')?.[0]?.({ type: 'seeked' })
+  assert.equal(eventOf(seekBridge.posted, 'seeked').caused, true)
+})
+
+test('a rate the bridge did not make is posted, and says it was not caused', () => {
+  const element = video()
+  const bridge = harness([element])
+  element.listeners.get('ratechange')?.[0]?.({ type: 'ratechange' })
+
+  const rate = eventOf(bridge.posted, 'rate')
+  assert.equal(rate.id, 1)
+  assert.equal(rate.caused, false, 'no write of ours, so no provenance to claim')
+})
+
+test('a pause arriving during the hold is applied and the hold is cancelled', () => {
+  const element = video({ paused: false, currentTime: 300 })
+  const bridge = harness([element])
+  bridge.command({
+    kind: 'playerCommand',
+    href: HREF,
+    id: 1,
+    reason: 'play',
+    action: 'play',
+    leadMs: 1500,
+    revision: 23,
+  })
+  assert.equal(element.played, 0, 'the beat has not come yet')
+
+  bridge.command({ kind: 'playerCommand', href: HREF, id: 1, reason: 'pause', action: 'pause', revision: 24 })
+
+  assert.equal(element.paused, true, 'a room pause inside the lead still reaches the element')
+  bridge.flush()
+  assert.equal(element.played, 0, 'and the cancelled beat does not start it again')
+  assert.equal(element.paused, true, 'the window stays where the room is (§6.4 already paid for the beat)')
+})
+
+test('a seek arriving during the hold is applied and the hold is cancelled', () => {
+  const element = video({ paused: false, currentTime: 300 })
+  const bridge = harness([element])
+  bridge.command({
+    kind: 'playerCommand',
+    href: HREF,
+    id: 1,
+    reason: 'play',
+    action: 'play',
+    leadMs: 1500,
+    revision: 25,
+  })
+
+  bridge.command({
+    kind: 'playerCommand',
+    href: HREF,
+    id: 1,
+    reason: 'seek',
+    action: 'seek',
+    target: 42,
+    revision: 26,
+  })
+
+  assert.equal(element.currentTime, 42, 'the paused snap moved the playhead')
+  bridge.flush()
+  assert.equal(element.played, 0, 'the old beat cannot play the element behind the seek')
+})
+
+test('a second scheduled play replaces the first beat: one play, at the newer one', () => {
+  const element = video({ paused: true, currentTime: 0 })
+  const bridge = harness([element])
+  bridge.command({
+    kind: 'playerCommand',
+    href: HREF,
+    id: 1,
+    reason: 'play',
+    action: 'play',
+    target: 100,
+    leadMs: 1500,
+    revision: 27,
+  })
+  bridge.command({
+    kind: 'playerCommand',
+    href: HREF,
+    id: 1,
+    reason: 'play',
+    action: 'play',
+    target: 200,
+    leadMs: 900,
+    revision: 28,
+  })
+
+  assert.equal(element.currentTime, 200, 'the newer room position wins')
+  bridge.flush()
+  assert.equal(element.played, 1, 'the superseded beat did not play it a second time')
+})
+

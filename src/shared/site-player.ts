@@ -41,6 +41,12 @@ export interface SiteEchoes {
   expect(target: PlayerTarget, entries: readonly EchoEntry[]): void
   /** True and consumed when this event is one of ours; false means it is real. */
   consume(target: PlayerTarget, kind: EchoKind, atMs: number): boolean
+  /**
+   * Forget what `target` still owes (T15). One plan is in flight per element and
+   * a newer command supersedes it, so a cancelled hold's predicted `play` cannot
+   * sit here and swallow the person's next real one.
+   */
+  clear(target: PlayerTarget): void
 }
 
 /** One event a command will cause, and the instant it is expected. */
@@ -64,6 +70,9 @@ export function createSiteEchoes(): SiteEchoes {
     consume(target, kind, atMs) {
       const set = sets.get(keyOf(target))
       return set === undefined ? false : set.consume(kind, atMs)
+    },
+    clear(target) {
+      sets.delete(keyOf(target))
     },
   }
 }
@@ -195,11 +204,21 @@ export function planFromState(
 
 /** A `play`/`pause`/`seeked` the page actually fired, as the bridge posts it. */
 export interface PlayerActionEvent extends PlayerTarget {
-  event: 'play' | 'pause' | 'seeked'
+  /**
+   * `play`, `pause`, `seeked` — and `rate`, which is a kind the bridge's flag
+   * covers but the room has no command for (§6.3's rate is the ladder's own).
+   */
+  event: EchoKind | 'rate'
   /** The element's `currentTime` at the event. */
   t: number
   /** For `seeked`: whether the element was playing when the seek began (§5's `wasPlaying`). */
   wasPlaying?: boolean
+  /**
+   * T15: `true` when the bridge's own write caused this event, `false` or absent
+   * when a person or the page did. This is the frame's own provenance, and it
+   * decides before anything predicted from a report.
+   */
+  caused?: boolean
 }
 
 export type PageDecision =
@@ -213,11 +232,11 @@ export type PageDecision =
 /**
  * §6.6, at the one place a page event can become a room command. An event whose
  * `(source, id)` is not the elected player is ignored — an ad playing in a
- * neighbouring frame is not somebody's pause. A matching echo entry means the
- * room caused it, so it is dropped. Everything else is a person: the
- * controller's becomes a `play`/`pause`/`seek`, and anybody else's is answered
- * by re-applying the room (ADR-030: one writer, and a follower that drifted is
- * corrected rather than obeyed).
+ * neighbouring frame is not somebody's pause. An event the bridge says it caused
+ * is the room's, so it is dropped; one no echo entry and no flag accounts for is
+ * a person: the controller's becomes a `play`/`pause`/`seek`, and anybody else's
+ * is answered by re-applying the room (ADR-030: one writer, and a follower that
+ * drifted is corrected rather than obeyed).
  */
 export function decidePageEvent(
   event: PlayerActionEvent,
@@ -229,9 +248,17 @@ export function decidePageEvent(
   if (elected === null || elected.source !== event.source || elected.id !== event.id) {
     return { kind: 'ignore' }
   }
-  if (echoes.consume({ source: event.source, id: event.id }, event.event, nowMs)) {
-    return { kind: 'echo' }
-  }
+  const target = { source: event.source, id: event.id }
+  // T15: the bridge's own provenance is asked first, because it was measured on
+  // the element by the frame that moved it — right even when the report the plan
+  // was built from is half a second old. That is the play press whose hold is
+  // the app's pause, not a second person's. The set is still spent, so an entry
+  // this event has just made good cannot sit here and swallow a person's next.
+  const predicted = event.event === 'rate' ? false : echoes.consume(target, event.event, nowMs)
+  if (event.caused === true || predicted) return { kind: 'echo' }
+  // A rate is not a room command: §6.3's rate is the ladder's own, and ADR-030
+  // keeps a personal speed in this window. Only `caused` has anything to say.
+  if (event.event === 'rate') return { kind: 'ignore' }
   if (!canControl) return { kind: 'correct' }
   if (event.event === 'seeked') {
     return {

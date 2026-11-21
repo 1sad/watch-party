@@ -290,3 +290,90 @@ test('a drift line is written at most once a second', () => {
   assert.equal(driftLogDue(100_000, 100_000 + PLAYER_DRIFT_LOG_INTERVAL_MS - 1), false)
   assert.equal(driftLogDue(100_000, 100_000 + PLAYER_DRIFT_LOG_INTERVAL_MS), true)
 })
+
+// ---- T15: the bridge's provenance, and the stale report it replaces ----
+
+test('a scheduled play whose element is already playing produces no outbound room frame', () => {
+  // The report the plan is built from is up to 500 ms old and says the element
+  // is paused, because a person pressed play on the site's own player a moment
+  // ago. The element is in fact playing, so the hold pauses it.
+  const echoes = createSiteEchoes()
+  const elected = player({ t: 600, paused: true })
+  const startAt = 110_000
+  const plan = planFromState(
+    { playing: true, position: 600, updatedAt: startAt, rate: 1, startAt },
+    30,
+    'play',
+    elected,
+    startAt - 1500,
+  )
+  assert.ok(plan)
+  assert.deepEqual(plan.echoes, ['play'], 'predicted from the stale report: no pause was expected')
+  echoes.expect({ source: elected.source, id: elected.id }, echoEntries(plan, startAt - 1500))
+
+  // The hold's pause arrives, tagged by the frame that made it.
+  const held: PlayerActionEvent = { source: SOURCE, id: 1, event: 'pause', t: 600.2, caused: true }
+  assert.deepEqual(
+    decidePageEvent(held, elected, echoes, startAt - 1400, true),
+    { kind: 'echo' },
+    'the play sticks: the hold is the app\'s pause, not a second person\'s',
+  )
+})
+
+test('the bridge\'s caused-event flag reaches the decision for play, pause, seeked and rate', () => {
+  const elected = player()
+  const kinds = ['play', 'pause', 'seeked', 'rate'] as const
+  for (const kind of kinds) {
+    const event: PlayerActionEvent = { source: SOURCE, id: 1, event: kind, t: 12, caused: true }
+    assert.deepEqual(
+      decidePageEvent(event, elected, createSiteEchoes(), 100_000, true),
+      { kind: 'echo' },
+      `a ${kind} the bridge caused is dropped with no room frame`,
+    )
+  }
+
+  // And the same four without the flag are people, not echoes: the flag is what
+  // makes the difference, so it cannot be confused with the prediction.
+  const person = (kind: (typeof kinds)[number], t = 12): PlayerActionEvent => ({
+    source: SOURCE, id: 1, event: kind, t, caused: false,
+  })
+  assert.deepEqual(decidePageEvent(person('play'), elected, createSiteEchoes(), 100_000, true), {
+    kind: 'send',
+    command: { type: 'play', position: 12 },
+  })
+  assert.deepEqual(decidePageEvent(person('pause'), elected, createSiteEchoes(), 100_000, true), {
+    kind: 'send',
+    command: { type: 'pause', position: 12 },
+  })
+  assert.deepEqual(decidePageEvent(person('seeked', 40), elected, createSiteEchoes(), 100_000, true), {
+    kind: 'send',
+    command: { type: 'seek', position: 40, wasPlaying: false },
+  })
+  assert.deepEqual(
+    decidePageEvent(person('rate'), elected, createSiteEchoes(), 100_000, true),
+    { kind: 'ignore' },
+    'a rate has no room command: §6.3\'s rate is the ladder\'s own',
+  )
+})
+
+test('the flag needs no prediction: a caused event is dropped with an empty set', () => {
+  const echoes = createSiteEchoes()
+  const elected = player()
+  const event: PlayerActionEvent = { source: SOURCE, id: 1, event: 'play', t: 600, caused: true }
+  assert.deepEqual(decidePageEvent(event, elected, echoes, 100_000, true), { kind: 'echo' })
+})
+
+test('a newer plan clears the predictions a superseded one left', () => {
+  const echoes = createSiteEchoes()
+  const target = { source: SOURCE, id: 1 }
+  echoes.expect(target, [{ kind: 'play', atMs: 2_500 }])
+  echoes.clear(target)
+
+  // A cancelled hold's `play` must not swallow the person's next one.
+  const person: PlayerActionEvent = { source: SOURCE, id: 1, event: 'play', t: 601, caused: false }
+  assert.deepEqual(decidePageEvent(person, player(), echoes, 2_500, true), {
+    kind: 'send',
+    command: { type: 'play', position: 601 },
+  })
+})
+

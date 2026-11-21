@@ -22,7 +22,9 @@
  * §6.6's echo suppression is **not** here: the events this script posts include
  * our own commands' effects, and the app view drops them using the one echo set
  * in `shared/echo.ts`, recorded before the command is posted. That keeps the
- * rule in one place, and this file only has to say what happened.
+ * rule in one place, and this file only has to say what happened — plus, since
+ * T15, whether this frame caused it (`caused` on every `play`/`pause`/`seeked`/
+ * `rate`), so the decision never has to infer it from a stale report.
  *
  * Read from disk by `tests/unit/player-bridge.test.ts` and served to the host at
  * `/bridge.js`; there is one copy of these bytes.
@@ -44,6 +46,11 @@
   var PLAYBACK_POLL_MS = 500
   // `emptied` and `loadstart` arrive back to back for one reload; one is enough.
   var EVENT_GAP_MS = 100
+  // T15: how long an unclaimed "we are about to cause this" entry is believed.
+  // The same second `echo.ts` allows, and for the same reason: a write the
+  // browser refused, or a value it did not change, must not tag a person's
+  // event a moment later.
+  var CAUSED_EXPIRY_MS = 1000
 
   var host = window.chrome && window.chrome.webview
   if (!host || typeof host.postMessage !== 'function') return
@@ -54,6 +61,12 @@
   var listened = new WeakSet()
   var eventAt = {}
   var seeking = {}
+  // T15: id -> kind -> instants. Armed immediately before a write this frame
+  // makes, spent by the event that write causes.
+  var caused = {}
+  // T15: id -> the pending `setTimeout` of a scheduled start, so a later command
+  // can cancel the beat instead of being undone by it.
+  var holds = {}
   var seq = 0
   var lastSentAt = 0
   var lastShape = null
@@ -122,8 +135,49 @@
     post({ kind: EVENT, event: kind, id: id, t: number(element.currentTime) })
   }
 
+  /** Record, before the write, that this frame is about to make the element do `kind`. */
+  function arm(element, kind) {
+    var id = idOf(element)
+    var box = caused[id] || (caused[id] = {})
+    var list = box[kind] || (box[kind] = [])
+    list.push(Date.now())
+  }
+
+  /** Drop one kind's unspent entries: the write they describe is not going to happen. */
+  function disarm(element, kind) {
+    var box = caused[idOf(element)]
+    if (box && box[kind]) box[kind].length = 0
+  }
+
+  /**
+   * True when this event is one of the writes `arm` recorded, one entry spent.
+   * This is T15's provenance: the answer comes from this frame's own hands, not
+   * from a report the app view holds that may be half a second old.
+   */
+  function takeCaused(element, kind) {
+    var box = caused[idOf(element)]
+    if (!box || !box[kind] || box[kind].length === 0) return false
+    var now = Date.now()
+    var live = []
+    for (var i = 0; i < box[kind].length; i += 1) {
+      if (now - box[kind][i] < CAUSED_EXPIRY_MS) live.push(box[kind][i])
+    }
+    box[kind] = live
+    if (live.length === 0) return false
+    live.shift()
+    return true
+  }
+
   function onPlayback(element, kind) {
-    post({ kind: EVENT, event: kind, id: idOf(element), t: number(element.currentTime) })
+    post({
+      kind: EVENT,
+      event: kind,
+      id: idOf(element),
+      t: number(element.currentTime),
+      // T15: `true` when this frame caused it. The app view drops our own
+      // events on this, so §6.6's prediction cannot misjudge a hold.
+      caused: takeCaused(element, kind),
+    })
   }
 
   function watch(element) {
@@ -150,7 +204,19 @@
       var id = idOf(element)
       var wasPlaying = seeking[id] === true
       delete seeking[id]
-      post({ kind: EVENT, event: 'seeked', id: id, t: number(element.currentTime), wasPlaying: wasPlaying })
+      post({
+        kind: EVENT,
+        event: 'seeked',
+        id: id,
+        t: number(element.currentTime),
+        wasPlaying: wasPlaying,
+        caused: takeCaused(element, 'seeked'),
+      })
+    })
+    // T15: a rate this frame re-rates is ours too, and says so. Nothing reads it
+    // yet (§6.3's rate is the ladder's), but the flag is the same flag.
+    element.addEventListener('ratechange', function () {
+      onPlayback(element, 'rate')
     })
   }
 
@@ -213,21 +279,48 @@
   }
 
   function startPlay(element) {
+    // Arm before the write; a refusal disarms, so the entry cannot tag a
+    // person's play a moment later.
+    var armed = element.paused !== false
+    if (armed) arm(element, 'play')
     try {
       var playing = element.play()
       // A refused autoplay is the site's own business, not a reason to throw here.
-      if (playing && typeof playing.catch === 'function') playing.catch(function () {})
+      if (playing && typeof playing.catch === 'function') {
+        playing.catch(function () {
+          if (armed) disarm(element, 'play')
+        })
+      }
     } catch (error) {
       // Same: the element not starting is reported by the next report.
+      if (armed) disarm(element, 'play')
     }
   }
 
   function setTime(element, target) {
+    var moved = Math.abs(number(element.currentTime) - target) > 0.001
+    if (moved) arm(element, 'seeked')
     try {
       element.currentTime = target
     } catch (error) {
       // An element with no duration yet refuses the write; the next state tries again.
+      if (moved) disarm(element, 'seeked')
     }
+  }
+
+  /**
+   * T15 item 2: a hold belongs to the element, and any later command for that
+   * element supersedes it. The beat it was waiting for would otherwise start the
+   * element behind the command's back - a pause during the lead that plays again
+   * 1.5 s later, which is the jump R8 forbids.
+   */
+  function cancelHold(element) {
+    var id = idOf(element)
+    var hold = holds[id]
+    if (hold === undefined) return
+    clearTimeout(hold)
+    delete holds[id]
+    disarm(element, 'play')
   }
 
   /**
@@ -256,8 +349,17 @@
 
     if (action !== 'pause' && action !== 'play' && action !== 'seek') return
 
+    // T15 item 2: this command is newer than any beat still waiting, so the
+    // waiting beat is cancelled before this one is carried out.
+    cancelHold(element)
+
     try {
-      if (action === 'pause' || (scheduled && element.paused === false)) element.pause()
+      if (action === 'pause' || (scheduled && element.paused === false)) {
+        // Only a write that will really fire `pause` is armed; pausing an
+        // already-paused element fires nothing.
+        if (element.paused === false) arm(element, 'pause')
+        element.pause()
+      }
     } catch (error) {
       // A page that broke `pause` still gets the line below, which says so.
     }
@@ -269,7 +371,9 @@
     } else if (action === 'seek' && payload.resume !== true) {
       // A paused snap: the playhead moved and the element stays paused.
     } else if (scheduled) {
-      setTimeout(function () {
+      var id = idOf(element)
+      holds[id] = setTimeout(function () {
+        delete holds[id]
         startPlay(element)
       }, lead)
     } else {
