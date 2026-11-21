@@ -49,6 +49,13 @@ public sealed class MainForm : Form
     /// page has the dev log lines to forward, so only that window asks for them.
     /// </summary>
     private bool _measuring;
+
+    /// <summary>
+    /// E10: the address this window opens <em>instead of</em> the app page, when
+    /// <c>WATCHPARTY_SPIKE_URL</c> names one. Null in every normal run, which is
+    /// what keeps the spike unreachable: no variable, no injection, no hand-off.
+    /// </summary>
+    private string? _spikeUrl;
 #endif
 
     public MainForm(string[]? launchArgs)
@@ -110,6 +117,7 @@ public sealed class MainForm : Form
         InstallFilePicker();
 #if DEBUG
         InstallPageConsole();
+        await InstallSpikeAsync();
 #endif
         _page.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
         StartSidecar();
@@ -336,6 +344,95 @@ public sealed class MainForm : Form
 
         return string.Empty;
     }
+
+    /// <summary>
+    /// E10: the one Debug-only hand-off. With <c>WATCHPARTY_SPIKE_URL</c> unset
+    /// this returns before it reads the probe, so a normal run — Debug or not —
+    /// never injects a script and never navigates anywhere but the app page.
+    ///
+    /// The probe is registered before the first navigation, which is the order
+    /// the engine requires: the documentation says an added script applies to
+    /// "all future top level document and child frame navigations". Whether it
+    /// really reaches a cross-origin child frame is what the spike measures.
+    /// </summary>
+    private async Task InstallSpikeAsync()
+    {
+        string? url = Environment.GetEnvironmentVariable("WATCHPARTY_SPIKE_URL");
+        if (string.IsNullOrWhiteSpace(url)) return;
+
+        try
+        {
+            string probe = ReadSpikeProbe();
+            await _page.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(probe);
+            // The engine's own documentation says `CoreWebView2.WebMessageReceived`
+            // is raised for the top-level document, and that an iframe's message
+            // arrives on that frame's event instead. Subscribing here is what
+            // lets a cross-origin player frame be heard at all; a frame that
+            // already existed would be missed, and before the first navigation
+            // there is none.
+            _page.CoreWebView2.FrameCreated += OnSpikeFrameCreated;
+            _spikeUrl = url;
+            HostLog.Write($"spike: probe registered for every document; the window will open {url}");
+        }
+        catch (Exception error)
+        {
+            // A broken spike is a log line, not a window that fails to open.
+            HostLog.Write($"spike: probe not registered: {error.Message}");
+        }
+    }
+
+    /// <summary>One frame's message, on that frame's own event (see InstallSpikeAsync).</summary>
+    private void OnSpikeFrameCreated(object? sender, CoreWebView2FrameCreatedEventArgs e)
+    {
+        CoreWebView2Frame frame = e.Frame;
+        frame.WebMessageReceived += LogSpikeMessage;
+        HostLog.Write($"spike: child frame created, name=\"{frame.Name}\"");
+    }
+
+    /// <summary>The probe's text, embedded in this host (WatchParty.Host.csproj).</summary>
+    private static string ReadSpikeProbe()
+    {
+        using Stream? stream = typeof(MainForm).Assembly
+            .GetManifestResourceStream("WatchParty.Host.spike.probe.js");
+        if (stream is null) throw new InvalidOperationException("the spike probe is not embedded in this host");
+        using StreamReader reader = new(stream);
+        return reader.ReadToEnd();
+    }
+
+    /// <summary>
+    /// One spike message, as one <c>site:</c> line: the frame's URL from
+    /// <c>e.Source</c> (the whole point of the spike), then every field the probe
+    /// sent, written as it arrived.
+    /// </summary>
+    private static void LogSpikeMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        string fields;
+        try
+        {
+            using JsonDocument payload = JsonDocument.Parse(e.WebMessageAsJson);
+            fields = string.Join(" ", SpikeFields.Select(
+                name => $"{name}={SpikeFieldText(payload.RootElement, name)}"));
+        }
+        catch (JsonException)
+        {
+            fields = "unreadable payload";
+        }
+
+        HostLog.Write($"site: source={e.Source} {fields}");
+    }
+
+    private static readonly string[] SpikeFields = ["href", "count", "w", "h", "readyState", "duration", "t"];
+
+    private static string SpikeFieldText(JsonElement root, string name)
+    {
+        if (!root.TryGetProperty(name, out JsonElement value)) return "-";
+        return value.ValueKind switch
+        {
+            JsonValueKind.Null or JsonValueKind.Undefined => "-",
+            JsonValueKind.String => value.GetString() ?? "-",
+            _ => value.GetRawText(),
+        };
+    }
 #endif
 
     private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -375,6 +472,11 @@ public sealed class MainForm : Form
             case "probeDone":
                 ConcealPickedFile();
                 break;
+#if DEBUG
+            case "spike":
+                LogSpikeMessage(null, e);
+                break;
+#endif
         }
     }
 
@@ -538,7 +640,22 @@ public sealed class MainForm : Form
         // The page's own URL, plus `?join=` carrying the launched link whole and
         // encoded. This line is the record of where the window went (T2b check 2).
         string url = LaunchLink.PageUrl($"http://127.0.0.1:{port}/", _launchArgs);
+#if DEBUG
+        // E10: the spike window replaces the app page rather than adding a
+        // second one; with the variable unset `_spikeUrl` is null and nothing
+        // below changes.
+        if (_spikeUrl is not null)
+        {
+            url = _spikeUrl;
+            HostLog.Write($"spike: navigating to {url} instead of the app page");
+        }
+        else
+        {
+            HostLog.Write($"parsed sidecar PORT {port}; navigating to {url}");
+        }
+#else
         HostLog.Write($"parsed sidecar PORT {port}; navigating to {url}");
+#endif
         _navigated = true;
         _page.CoreWebView2.Navigate(url);
     }

@@ -17,6 +17,12 @@
     <!-- The window's engine: the one source of the request filter, fullscreen,
          permission and script hooks ADR-034 depends on (ADR-035). -->
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+    <!-- E10's spike probe travels inside the executable so the host injects it
+         without depending on a path next to a bin folder. Read only by a Debug
+         build with WATCHPARTY_SPIKE_URL set (MainForm.InstallSpikeAsync), and not
+         embedded at all outside Debug: the shipped window carries no probe. -->
+    <EmbeddedResource Include="spike\probe.js" LogicalName="WatchParty.Host.spike.probe.js"
+                      Condition="'$(Configuration)' == 'Debug'" />
   </ItemGroup>
 
 </Project>
