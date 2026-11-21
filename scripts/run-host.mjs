@@ -8,6 +8,26 @@ import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
+// `--cdp-port <n>` is what `npm run dev:debug` passes (T8c): the host then opens
+// its DevTools endpoint on loopback, which is how a shell drives the window.
+// Without the switch the host opens no endpoint at all — the normal build must
+// not carry a listening port, and `npm run dev` passes nothing.
+const cdpPort = readCdpPort(process.argv.slice(2))
+
+function readCdpPort(args) {
+  const flag = args.find((arg) => arg === '--cdp-port' || arg.startsWith('--cdp-port='))
+  if (flag === undefined) return null
+
+  const value = flag.includes('=') ? flag.slice('--cdp-port='.length) : args[args.indexOf(flag) + 1]
+  const port = Number(value)
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    console.error(`watch-party: --cdp-port needs a port number, got ${value === undefined ? 'nothing' : `"${value}"`}.`)
+    process.exit(2)
+  }
+
+  return port
+}
+
 const candidates = [
   process.env.WATCHPARTY_DOTNET,
   process.env.DOTNET_ROOT && join(process.env.DOTNET_ROOT, 'dotnet.exe'),
@@ -27,7 +47,11 @@ if (!dotnet) {
 const child = spawn(
   dotnet,
   ['run', '--project', join('host', 'WatchParty.Host', 'WatchParty.Host.csproj'), '-c', 'Debug', '--nologo'],
-  { cwd: root, stdio: 'inherit' },
+  {
+    cwd: root,
+    stdio: 'inherit',
+    env: cdpPort === null ? process.env : { ...process.env, WATCHPARTY_CDP_PORT: String(cdpPort) },
+  },
 )
 
 child.on('exit', (code) => process.exit(code ?? 0))

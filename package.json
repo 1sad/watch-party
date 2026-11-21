@@ -7,6 +7,7 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "dev": "npm run build && node scripts/run-host.mjs",
+    "dev:debug": "npm run build:dev && node scripts/run-host.mjs --cdp-port 9222",
     "test": "node --test \"tests/unit/*.test.ts\"",
     "test:integration": "node --test \"tests/integration/*.test.ts\"",
     "check": "svelte-check --tsconfig ./tsconfig.json"
