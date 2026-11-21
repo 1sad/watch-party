@@ -224,36 +224,52 @@ test('two members sending in the same millisecond see the same order and ids, se
   }
 })
 
-test('a join, a leave and a seek make exactly three system entries and nothing else', async () => {
+test('joins, a leave and a seek make exactly the system entries and nothing else', async () => {
   const fixture = await openRoom()
   const owner = connect(fixture.port)
+  const guest = connect(fixture.port)
   try {
     await owner.ready
     await owner.hello(CODE, 'sam')
     const joinLine = await owner.next((frame) => frame.type === 'chat')
     assert.equal(joinLine.text, 'sam joined')
 
+    // F4: the leaver has to be a guest. An owner's close now ends the room
+    // unconditionally, and a dead room admits nobody to read the tail.
+    await guest.ready
+    await guest.hello(CODE, 'alex')
+    const guestJoin = await guest.next((frame) => frame.type === 'chat')
+    assert.equal(guestJoin.text, 'alex joined')
+
     owner.send({ type: 'seek', position: 12.34, wasPlaying: false })
-    const seekLine = await owner.next((frame) => frame.type === 'chat')
+    const seekLine = await owner.next(
+      (frame) => frame.type === 'chat' && frame.text.startsWith('sam seeked'),
+    )
     assert.equal(seekLine.text, 'sam seeked to 0:12')
     assert.equal(seekLine.kind, 'system')
     assert.equal(seekLine.memberId, undefined)
 
-    const closed = new Promise<void>((resolve) => owner.socket.once('close', () => resolve()))
-    owner.socket.close()
+    const closed = new Promise<void>((resolve) => guest.socket.once('close', () => resolve()))
+    guest.socket.close()
     await closed
+    await owner.next((frame) => frame.type === 'chat' && frame.text === 'alex left')
 
     const late = connect(fixture.port)
     try {
       await late.ready
-      const welcome = await late.hello(CODE, 'alex')
-      assert.equal(welcome.chatTail.length, 3, 'joined, seeked, left — and nothing else')
+      const welcome = await late.hello(CODE, 'robin')
+      assert.equal(
+        welcome.chatTail.length,
+        4,
+        'two joins, a seek and a leave — and nothing else',
+      )
       assert.deepEqual(
         welcome.chatTail.map((entry: Frame) => [entry.kind, entry.text]),
         [
           ['system', 'sam joined'],
+          ['system', 'alex joined'],
           ['system', 'sam seeked to 0:12'],
-          ['system', 'sam left'],
+          ['system', 'alex left'],
         ],
       )
       assert.deepEqual(

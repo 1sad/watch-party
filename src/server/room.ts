@@ -29,6 +29,11 @@ export type RoomMedia = Media & { path: string }
 export interface RoomState {
   code: string
   createdAt: number
+  /**
+   * F4: once a room has been discarded it can never take another member. The
+   * code is deliberately left alone; the flag is what `joinMember()` checks.
+   */
+  closed: boolean
   /** The window's own member; `null` until it joins. A guest can never be it. */
   owner: string | null
   authority: { memberId: string; epoch: number }
@@ -49,6 +54,7 @@ export function createRoom(code: string, now: () => number = Date.now): RoomStat
   return {
     code,
     createdAt: now(),
+    closed: false,
     owner: null,
     authority: { memberId: '', epoch: 0 },
     controllers: [],
@@ -181,6 +187,9 @@ export function markOffline(
  * anything still held a reference: no owner means nobody may pick or control.
  */
 export function discardRoom(room: RoomState, now: () => number = Date.now): void {
+  // The end is final: a hello that arrives after this is refused by
+  // `joinMember()` before it can compare the (unchanged) code.
+  room.closed = true
   room.owner = null
   room.authority = { memberId: '', epoch: room.authority.epoch }
   room.controllers = []

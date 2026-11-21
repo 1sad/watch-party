@@ -147,6 +147,13 @@ export function attachRoomSocket(
 
   const joinMember = (socket: PeerSocket, frame: ClientFrame, remoteAddress: string | undefined): void => {
     if (frame.type !== 'hello') return
+    // F4: the end is final. The code is left in place, so this has to be asked
+    // first — without it a late hello would match, and a loopback client would
+    // be seated as a fresh owner of a room the spec says cannot exist.
+    if (room.closed) {
+      fail(socket, 'bad_room')
+      return
+    }
     if (frame.code !== room.code) {
       // The socket stays open: the page shows one sentence and lets them retype.
       fail(socket, 'bad_room')
@@ -417,20 +424,30 @@ export function attachRoomSocket(
       lastCorrectionAt.delete(member.id)
 
       // §14's "owner leaves in file mode: room ends, everyone told plainly, no
-      // pretend recovery", and ADR-024's reason: the owner holds the only copy of
-      // the bytes. So this close is the room's last moment.
-      if (room.owner === member.id && room.media !== null) {
+      // pretend recovery" (ADR-024). Unconditional: a room with no owner can
+      // neither be controlled nor given bytes, whether or not a file was picked.
+      // So this close is the room's last moment.
+      if (room.owner === member.id) {
         // One system line, not "sam left" plus a second line: the room's end is
         // the one fact worth telling, and chat carries it exactly once (§4.6).
         broadcastChat(postChat(room, { kind: 'system', name: label, text: ROOM_OVER_SENTENCE }, now))
         const over = JSON.stringify({ type: 'roomOver', reason: 'owner_left' } satisfies ServerFrame)
-        for (const remaining of sockets.keys()) {
+        // Every client, not only `sockets`: `wss.close()` stops new upgrades but
+        // leaves existing clients open, and a socket that connected without a
+        // `hello` never entered `sockets`. It must not survive to try one.
+        for (const remaining of wss.clients) {
           remaining.send(over)
-          // `close()`, not `terminate()`: the frame above must leave before the
-          // socket does, and `ws` flushes what is queued before the close frame.
-          remaining.close()
+          if (sockets.has(remaining)) {
+            // `close()`, not `terminate()`: the frame above must leave before the
+            // socket does, and `ws` flushes what is queued before the close frame.
+            remaining.close()
+          } else {
+            remaining.terminate()
+          }
         }
         sockets.clear()
+        budgets.clear()
+        lastCorrectionAt.clear()
         // §4.4: the replica is discarded when its last connection fails. The
         // file's path goes with it (so `/media/<id>` is a 404 from here), and the
         // endpoint closes, so a window that tries to rejoin finds no room at all.

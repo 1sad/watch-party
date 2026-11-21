@@ -13,7 +13,9 @@
 
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { WebSocket } from 'ws'
 
+import type { ClientFrame, ServerFrame } from '../../src/shared/protocol.ts'
 import { createRoom, type RoomState } from '../../src/server/room.ts'
 import { attachRoomSocket } from '../../src/server/socket.ts'
 import { ScriptedClient, type ClientOptions } from '../support/client.ts'
@@ -122,6 +124,42 @@ export async function waitFor<T>(
 
 /** A short quiet spell, for "and then nothing else happened". */
 export const settle = (ms = 150): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** F4: a client that is connected and has not said `hello` — the raw case. */
+export interface SilentClient {
+  socket: WebSocket
+  /** Every frame the authority sent it, in arrival order. */
+  frames: ServerFrame[]
+  closed: Promise<void>
+  send(frame: ClientFrame | Record<string, unknown>): void
+}
+
+/**
+ * F4: connects and says nothing. The authority knows it only through
+ * `wss.clients`, not through its `sockets` map, which is exactly the client a
+ * room's end must not leave able to join afterwards.
+ */
+export async function connectSilently(port: number): Promise<SilentClient> {
+  const socket = new WebSocket(`ws://127.0.0.1:${port}/`)
+  const frames: ServerFrame[] = []
+  socket.on('message', (data: unknown) => {
+    frames.push(JSON.parse(String(data)) as ServerFrame)
+  })
+  const closed = new Promise<void>((resolve) => socket.once('close', () => resolve()))
+  await new Promise<void>((resolve, reject) => {
+    socket.once('open', () => resolve())
+    socket.once('error', reject)
+  })
+  socket.on('error', () => {
+    // A send after the room's end is the test's business, not a crash.
+  })
+  return {
+    socket,
+    frames,
+    closed,
+    send: (frame) => socket.send(JSON.stringify(frame)),
+  }
+}
 
 /** Millis every frame this client is told about lands late (network lag). */
 export function injectDelay(client: ScriptedClient, ms: number): void {

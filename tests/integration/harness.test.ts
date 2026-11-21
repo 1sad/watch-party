@@ -3,11 +3,21 @@ import assert from 'node:assert/strict'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import type { ChatMessage, ErrorFrame, NudgeFrame, StateFrame } from '../../src/shared/protocol.ts'
+import { WebSocket } from 'ws'
+
+import type {
+  ChatMessage,
+  ErrorFrame,
+  NudgeFrame,
+  RoomOverFrame,
+  StateFrame,
+} from '../../src/shared/protocol.ts'
+import { discardRoom } from '../../src/server/room.ts'
 import { expected } from '../../src/shared/timing.ts'
 import { ScriptedClient } from '../support/client.ts'
 import {
   CODE,
+  connectSilently,
   injectSkew,
   injectStall,
   settle,
@@ -649,6 +659,90 @@ test('R6: a seek to the media duration lands at duration − 0.25, never at the 
       )
     }
     assert.equal(harness.room.playback.position, 59.75, 'the room stored the clamped target')
+  } finally {
+    await harness.close()
+  }
+})
+
+// F4, docs/spec.md:417 and §14/ADR-024: file mode has no room without its
+// owner. The end does not wait for a pick — a room with no owner could neither
+// be given bytes nor controlled — and everyone still here is told plainly.
+test('F4: the owner closing before any pick still ends the room, and the guest is told', async () => {
+  const harness = await startHarness({ clients: 2 })
+  try {
+    assert.equal(harness.room.media, null, 'nothing was picked: this is the hole the case covers')
+    const guest = harness.guests[0] as ScriptedClient
+    const guestClosed = new Promise<void>((resolve) => guest.socket.once('close', () => resolve()))
+
+    await harness.owner.close()
+
+    const over = await guest.next((frame) => frame.type === 'roomOver')
+    assert.equal((over.frame as RoomOverFrame).reason, 'owner_left')
+    await guestClosed
+
+    // §4.4 / T9b check 3: discarded, not kept as an ownerless tombstone.
+    assert.equal(harness.room.owner, null, 'the dead room keeps no owner seat')
+    assert.equal(harness.room.members.size, 0, 'and no members')
+  } finally {
+    await harness.close()
+  }
+})
+
+// F4: `wss.close()` only stops new upgrades; a socket that connected but never
+// sent `hello` is in `wss.clients` and not in `sockets`. The end must reach it
+// too, and a late `hello` must never receive `welcome`.
+test('F4: a client that never said hello does not outlive the room or join it afterwards', async () => {
+  const harness = await startHarness({ clients: 2 })
+  try {
+    const raw = await connectSilently(harness.port)
+    assert.equal(raw.socket.readyState, WebSocket.OPEN, 'the raw client is connected')
+
+    await harness.owner.close()
+
+    // The end closes every client, joined or not, so this socket cannot keep
+    // listening to the discarded room.
+    await waitFor(
+      () => raw.socket.readyState !== WebSocket.OPEN,
+      2000,
+      'the room’s end reached the un-joined socket',
+    )
+    assert.equal(
+      raw.frames.some((frame) => frame.type === 'welcome'),
+      false,
+      'a silent socket was never welcomed',
+    )
+
+    // Sending the hello it withheld arrives too late: no welcome can follow.
+    raw.send({ type: 'hello', code: CODE })
+    await settle(150)
+    assert.equal(
+      raw.frames.some((frame) => frame.type === 'welcome'),
+      false,
+      'a hello after the room’s end is never accepted',
+    )
+  } finally {
+    await harness.close()
+  }
+})
+
+// F4: the join path itself refuses a discarded room. Without the guard,
+// `room.code` still matches, the client is loopback, `room.owner` is null, and
+// `joinRoom()` seats it as a fresh owner — a room the spec says cannot exist.
+test('F4: after a discard, a loopback hello is refused and no owner is re-seated', async () => {
+  const harness = await startHarness({ clients: 1 })
+  try {
+    discardRoom(harness.room)
+    assert.equal(harness.room.owner, null, 'the room was discarded')
+
+    const outcome = await ScriptedClient.attempt(harness.port, CODE, 'late')
+    if (outcome.ok) {
+      await outcome.client.close()
+      assert.fail('a discarded room accepted a loopback hello')
+    }
+    assert.equal(outcome.error.type, 'error')
+    assert.equal(outcome.error.code, 'bad_room')
+    assert.equal(harness.room.owner, null, 'the loopback hello did not re-seat an owner')
+    assert.equal(harness.room.members.size, 0, 'and it added no member')
   } finally {
     await harness.close()
   }
