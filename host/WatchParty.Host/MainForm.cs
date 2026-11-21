@@ -298,6 +298,18 @@ public sealed class MainForm : Form
         bool grant = AutoplayGranted;
         _page.CoreWebView2.PermissionRequested += (_, e) =>
         {
+            // T03b: R29's visible Paste button reads the clipboard from this
+            // page. It is the app view's own grant, never the site's - the site
+            // has no bridge and no button of ours.
+            if (e.PermissionKind == CoreWebView2PermissionKind.ClipboardRead)
+            {
+                e.Handled = true;
+                e.SavesInProfile = false;
+                e.State = CoreWebView2PermissionState.Allow;
+                HostLog.Write($"clipboard read permission for {e.Uri}: allowed");
+                return;
+            }
+
             if (e.PermissionKind != CoreWebView2PermissionKind.Autoplay) return;
 
             // Not handled would mean a prompt this window has no way to show.

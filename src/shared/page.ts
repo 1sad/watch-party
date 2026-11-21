@@ -9,6 +9,8 @@
  * previews one (03b). If this rule is ever needed twice, one copy is wrong.
  */
 
+import type { SetPageFrame } from './protocol.ts'
+
 /** An explicit scheme, as RFC 3986 writes one: `https:`, `ftp:`, `javascript:`. */
 const EXPLICIT_SCHEME = /^[a-z][a-z0-9+.-]*:/i
 
@@ -41,6 +43,14 @@ export function canonicalPage(raw: string): string | null {
   const trimmed = raw.trim()
   if (trimmed.length === 0) return null
 
+  // Chromium's URL parser and Node's disagree about whitespace in the host:
+  // the page's engine turns `https://not a url` into `https://not%20a%20url/`
+  // while Node throws. This function is the one answer both halves must give
+  // (ticket 03 drops an unshareable address silently, 03b refuses it out
+  // loud), so whitespace is refused here, before either parser sees it.
+  // "not a url" is a sentence, not a link.
+  if (/\s/.test(trimmed)) return null
+
   if (EXPLICIT_SCHEME.test(trimmed) && !WEB_SCHEME.test(trimmed) && !HOST_AND_PORT.test(trimmed)) {
     return null
   }
@@ -59,4 +69,20 @@ export function canonicalPage(raw: string): string | null {
   // Built field by field rather than by clearing `search`/`hash` on `url.href`:
   // what is not named here cannot travel, which is the point of the function.
   return `${url.protocol}//${url.host}${url.pathname}`
+}
+
+/**
+ * The one thing Enter in the address bar sends (03b), or `null` when nothing
+ * may leave this window at all.
+ *
+ * The authority drops an unshareable address silently (ticket 03), so a page
+ * that sent one would show no refusal and send a frame nobody acts on. The
+ * decision belongs here, with `canonicalPage`, where a unit test can hold it:
+ * blank and unusable both mean "no frame", which is a fact about this function
+ * and not about the event handler that calls it.
+ */
+export function setPageFrame(raw: string, epoch: number): SetPageFrame | null {
+  const page = canonicalPage(raw)
+  if (page === null) return null
+  return { type: 'setPage', page, epoch }
 }

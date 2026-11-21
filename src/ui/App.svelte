@@ -24,6 +24,7 @@
     mediaUrl,
     type LoadRefusal,
   } from '../shared/media.ts'
+  import { setPageFrame } from '../shared/page.ts'
   import { readClockSkew } from './dev-clock.ts'
   import { readDevPlay } from './dev-drift.ts'
   import Player from './Player.svelte'
@@ -87,6 +88,11 @@
   let joinText = $state('')
   let nameDraft = $state('')
 
+  // T03b: §5's address bar. `pageNotice` is the bar's one line: what the field
+  // could not use, or why the clipboard was unreadable.
+  let pageDraft = $state('')
+  let pageNotice = $state<string | null>(null)
+
   // §4.1's `playback` as the room last said it, and `revision` beside it (§4.3
   // invariant 2). Only a `welcome` or a `state` writes these; the player is the
   // only reader, and it applies them through `expected()` (invariant 9).
@@ -124,6 +130,13 @@
   let ownerOrigin = $state<string | null>(null)
   /** Where the player loads the room's file from, or `null` while the room has none. */
   const playerSrc = $derived(ownerOrigin === null ? null : mediaUrl(ownerOrigin, media))
+
+  /**
+   * T03b: §5's address bar follows §4.2 — a room is a site or a file, never both.
+   * With a file the bar is gone, so a file room keeps M1's picture, picker and
+   * all; with no file it is the way a room becomes a site.
+   */
+  const showAddressBar = $derived(selfId !== null && media === null)
 
   /**
    * §14: a file room ends with its owner's app (ADR-024), because the owner's app
@@ -593,6 +606,56 @@
     connect(target.host, target.port, target.code)
   }
 
+  /**
+   * T03b: Enter in the address bar. `setPageFrame` is the whole decision — a
+   * blank field or an unusable address yields no frame, so nothing leaves this
+   * window (the authority would otherwise drop it silently, ticket 03).
+   */
+  function submitPage(event: SubmitEvent): void {
+    event.preventDefault()
+    if (pageDraft.trim().length === 0) {
+      pageNotice = null
+      return
+    }
+
+    const frame = setPageFrame(pageDraft, epoch)
+    if (frame === null) {
+      pageNotice = 'That is not a web address — paste a page link like example.com/watch.'
+      if (dev) console.info(`[page] refused as unusable: ${pageDraft.trim()}`)
+      return
+    }
+    if (socket === null || selfId === null) {
+      pageNotice = 'This window is not in the room, so the address was not sent.'
+      return
+    }
+
+    socket.send(JSON.stringify(frame))
+    pageNotice = null
+    // T03b's live check reads this line's absence for a bad address, so the
+    // success is as explicit as the refusal above.
+    if (dev) console.info(`[page] setPage ${frame.page}`)
+  }
+
+  /**
+   * T03b: the visible Paste button. WebView2's own clipboard grant does the
+   * reading (the host allows `ClipboardRead` for this one view), and Ctrl+V and
+   * the right-click menu are the engine's, so neither passes through here.
+   */
+  async function pasteAddress(): Promise<void> {
+    pageNotice = null
+    try {
+      const text = await navigator.clipboard.readText()
+      if (text.trim().length === 0) {
+        pageNotice = 'The clipboard has nothing to paste.'
+        return
+      }
+      pageDraft = text.trim()
+    } catch (error) {
+      pageNotice = 'This window could not read the clipboard — press Ctrl+V in the field instead.'
+      if (dev) console.info(`[page] clipboard read failed: ${String(error)}`)
+    }
+  }
+
   function submitRename(event: SubmitEvent): void {
     event.preventDefault()
     if (socket === null || selfId === null) return
@@ -684,6 +747,29 @@
     }
   })
 </script>
+
+{#if showAddressBar}
+  <!-- T03b: R29's address bar, inside the 48 px the host reserves across the
+       top. HTML, drawn by this page (ADR-038), so the right-click menu, Ctrl+V
+       and a visible Paste button are the engine's own behaviour. The host owns
+       the strip's height and nothing else. -->
+  <header class="address-bar">
+    <form onsubmit={submitPage}>
+      <input
+        type="text"
+        aria-label="Page address"
+        placeholder="Paste a page address"
+        autocomplete="off"
+        spellcheck="false"
+        bind:value={pageDraft}
+      />
+      <button type="button" class="paste" onclick={() => void pasteAddress()}>Paste</button>
+    </form>
+    {#if pageNotice !== null}
+      <p class="bar-notice" role="status">{pageNotice}</p>
+    {/if}
+  </header>
+{/if}
 
 <main>
   <h1>Watch Party</h1>
@@ -869,6 +955,43 @@
   main {
     padding: 2.5rem 3rem;
     max-width: 52rem;
+  }
+
+  /* T03b: the 48 px the host reserves across the top, drawn inside the app
+     view. Sticky so the address stays reachable while the room scrolls. */
+  .address-bar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    box-sizing: border-box;
+    min-height: 48px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.2rem;
+    padding: 0.2rem 0.75rem;
+    background: #14151a;
+    border-bottom: 1px solid #2c2d36;
+  }
+
+  .address-bar form {
+    align-items: center;
+  }
+
+  .address-bar input {
+    padding: 0.35rem 0.5rem;
+  }
+
+  .address-bar .paste {
+    flex: 0 0 auto;
+    padding: 0.35rem 0.7rem;
+  }
+
+  .bar-notice {
+    margin: 0;
+    font-size: 0.8rem;
+    line-height: 1.25;
+    color: #ffb3a7;
   }
 
   h1 {

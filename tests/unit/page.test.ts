@@ -12,7 +12,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { canonicalPage } from '../../src/shared/page.ts'
+import { canonicalPage, setPageFrame } from '../../src/shared/page.ts'
 import type { Member } from '../../src/shared/protocol.ts'
 import {
   PAGE_STAGE_MS,
@@ -256,4 +256,39 @@ test('T03: a file pick replaces a pending page instead of being wiped by it', ()
   assert.equal(commitDuePage(room, now), null)
   assert.equal(room.page, null)
   assert.notEqual(room.media, null, 'the file the owner picked is still the room’s')
+})
+
+// ---- 03b: what Enter in the address bar may send -------------------------------
+
+test('T03b: an unusable address sends no setPage', () => {
+  // The authority drops such an address silently (ticket 03), so a page that
+  // sent one would leave the person with no sentence and the room unchanged.
+  for (const raw of ['not a url', 'ftp://example.com/watch', 'javascript:alert(1)']) {
+    assert.equal(setPageFrame(raw, 4), null, `setPageFrame(${JSON.stringify(raw)})`)
+  }
+})
+
+// The live check found this one: Chromium's parser accepts a space in the host
+// and percent-encodes it, while Node's throws, so the page used to send a
+// setPage the authority dropped silently. The rule is in `canonicalPage`, so
+// both halves refuse it; this case is here to keep the rule from being removed.
+test('T03b: whitespace is refused before either URL parser sees it', () => {
+  for (const raw of ['not a url', 'https://not a url', 'exa mple.com/watch', 'example.com/a b']) {
+    assert.equal(canonicalPage(raw), null, `canonicalPage(${JSON.stringify(raw)})`)
+    assert.equal(setPageFrame(raw, 4), null, `setPageFrame(${JSON.stringify(raw)})`)
+  }
+})
+
+test('T03b: Enter with an empty field sends nothing', () => {
+  assert.equal(setPageFrame('', 4), null)
+  assert.equal(setPageFrame('   ', 4), null)
+})
+
+test('T03b: a usable address sends one canonical setPage carrying the room’s epoch', () => {
+  const frame = setPageFrame('  EXAMPLE.com/watch?token=secret  ', 7)
+  assert.deepEqual(frame, {
+    type: 'setPage',
+    page: 'https://example.com/watch',
+    epoch: 7,
+  })
 })
