@@ -36,10 +36,16 @@ The SDK is **not on PATH** in a fresh shell: add `%LOCALAPPDATA%\Microsoft\dotne
 
 | Command | What it does |
 | --- | --- |
-| `npm run dev` | builds the page, starts the sidecar, opens the window. The normal way to run the app. |
+| `npm run dev` | builds the page, starts the sidecar, opens the window. The normal way to run the app. **This build is production: the dev-only log lines are compiled out**, so a run for measuring is `dev:debug`. |
+| `npm run dev:debug` | the measuring build: the development page plus the window with its DevTools endpoint open on `127.0.0.1:9222` (loopback only, Debug host only); `npm run dev` opens no endpoint. A second window: `node scripts/run-host.mjs --cdp-port 9223`. |
+| `node scripts/cdp.mjs <targets\|eval\|shot>` | drives a window `dev:debug` opened, with no mouse and no screen: `targets` lists its page as JSON, `eval <id\|index> <expression>` prints one value, `shot <id\|index> <file.png>` saves a picture and prints its path. `--port <n>` or `WP_DEBUG_PORT` picks the window. Nothing listening = one line on stderr, exit 1. |
+| `npm run check` | the typecheck (`svelte-check`, ADR-036). **Red as of 2026-11-21** — 137 errors, mostly the missing `@types/*` packages T8a2 owns; the pre-commit hook runs it only once it is green. |
 | `npm test` | **the test command.** The timing maths — expected position, clock offset, the drift ladder, offset signs, scheduled start — under `node --test`. No framework, no watch mode; the exit code is the result. |
 | `npm run test:integration` | two scripted clients and one authority over real sockets on localhost, one client deliberately slowed. |
 | `dotnet build host/WatchParty.Host` | the window host alone. |
+
+A pre-commit hook runs `npm test` (`.githooks/pre-commit`, ADR-036). It is the only automated guardrail — there is no
+CI and no remote — so **do not commit with `--no-verify`**. If the hook itself is wrong, fix the hook.
 
 ```
 host/            the .NET window: window and WebView2 lifetime, request filtering, fullscreen
