@@ -16,6 +16,25 @@ public sealed class MainForm : Form
     // gives the filter something to cancel until T30 owns the real list.
     private static readonly string[] BlockedHosts = ["blocked.invalid"];
 
+#if DEBUG
+    /// <summary>
+    /// E10's filter evidence, and only that: while <c>WATCHPARTY_SPIKE_URL</c> is
+    /// set the filter also cancels one host the spike's page really requests, so
+    /// "the filter sees a site it did not serve" is a measured number rather than
+    /// a claim about <c>blocked.invalid</c>, which no real site asks for. Compiled
+    /// out of the shipped build and inert with the variable unset, so the
+    /// temporary list above is still the only one a normal window uses; T30 owns
+    /// the real list.
+    ///
+    /// The host is the ad script `animex.one` loads (`/script/aclib.js`), read
+    /// from that page's own HTML on 2026-11-21.
+    /// </summary>
+    private static readonly bool SpikeFilterArmed =
+        !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WATCHPARTY_SPIKE_URL"));
+
+    private static readonly string[] SpikeBlockedHosts = ["acscdn.com"];
+#endif
+
     /// <summary>
     /// §14's autoplay grant, and the one Debug switch that withholds it so the
     /// "click to join playback" overlay can be seen and tested. A released
@@ -56,6 +75,15 @@ public sealed class MainForm : Form
     /// what keeps the spike unreachable: no variable, no injection, no hand-off.
     /// </summary>
     private string? _spikeUrl;
+
+    /// <summary>
+    /// E10's return half: every child frame the engine has created, so a command
+    /// arrives on one as a web message (<c>CoreWebView2.WebMessageReceived</c>
+    /// never sees a frame's message, and <c>CoreWebView2Frame</c> is the only
+    /// handle that posts back). Only frames created while the spike is armed are
+    /// added, and the spike is armed only by `WATCHPARTY_SPIKE_URL`.
+    /// </summary>
+    private readonly List<CoreWebView2Frame> _spikeFrames = [];
 #endif
 
     public MainForm(string[]? launchArgs)
@@ -386,6 +414,10 @@ public sealed class MainForm : Form
     {
         CoreWebView2Frame frame = e.Frame;
         frame.WebMessageReceived += LogSpikeMessage;
+        // Destroyed is the engine's own notice that this handle can no longer be
+        // posted to; without it a command would be sent to a dead iframe.
+        frame.Destroyed += (_, _) => _spikeFrames.Remove(frame);
+        _spikeFrames.Add(frame);
         HostLog.Write($"spike: child frame created, name=\"{frame.Name}\"");
     }
 
@@ -433,6 +465,73 @@ public sealed class MainForm : Form
             _ => value.GetRawText(),
         };
     }
+
+    /// <summary>
+    /// E10's command path, asked for through the Debug DevTools endpoint: a
+    /// <c>spikeSetTime</c> message on the top document is forwarded to every
+    /// child frame with <c>CoreWebView2Frame.PostWebMessageAsJson</c>, which the
+    /// engine documents as posting to that iframe's own <c>window.chrome.webview</c>
+    /// message event. The probe in the frame sets <c>currentTime</c> on the
+    /// largest video it sees. Inert unless the spike armed: <c>_spikeUrl</c> is
+    /// null in every normal run.
+    ///
+    /// A frame that refuses the post is a log line carrying the engine's error
+    /// code, never a thrown window: the command exists to be measured.
+    /// </summary>
+    private void ForwardSpikeSetTime(CoreWebView2WebMessageReceivedEventArgs message)
+    {
+        if (_spikeUrl is null) return;
+        double t;
+        try
+        {
+            using JsonDocument parsed = JsonDocument.Parse(message.WebMessageAsJson);
+            JsonElement root = parsed.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("t", out JsonElement value)
+                || value.ValueKind != JsonValueKind.Number
+                || !value.TryGetDouble(out t))
+            {
+                HostLog.Write("spike: command ignored — no numeric t");
+                return;
+            }
+        }
+        catch (JsonException)
+        {
+            HostLog.Write("spike: command ignored — unreadable payload");
+            return;
+        }
+
+        string payload = JsonSerializer.Serialize(new { kind = "spikeSetTime", t });
+        int posted = 0;
+        foreach (CoreWebView2Frame frame in _spikeFrames.ToArray())
+        {
+            try
+            {
+                frame.PostWebMessageAsJson(payload);
+                posted++;
+            }
+            catch (Exception error)
+            {
+                HostLog.Write(
+                    $"spike: command to frame failed: {error.Message} (HRESULT 0x{error.HResult:X8})");
+            }
+        }
+
+        // The top document too: a site whose player lives on its own page (4 of
+        // E2's 11) needs the same command, and its probe ignores a document with
+        // no video.
+        try
+        {
+            _page.CoreWebView2.PostWebMessageAsJson(payload);
+            HostLog.Write($"spike: command posted to {posted} child frame(s) and the top document for t={t}");
+        }
+        catch (Exception error)
+        {
+            HostLog.Write(
+                $"spike: command to the top document failed: {error.Message} (HRESULT 0x{error.HResult:X8}); "
+                + $"{posted} child frame(s) posted");
+        }
+    }
 #endif
 
     private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -475,6 +574,9 @@ public sealed class MainForm : Form
 #if DEBUG
             case "spike":
                 LogSpikeMessage(null, e);
+                break;
+            case "spikeSetTime":
+                ForwardSpikeSetTime(e);
                 break;
 #endif
         }
@@ -572,6 +674,16 @@ public sealed class MainForm : Form
         {
             if (string.Equals(parsed.Host, host, StringComparison.OrdinalIgnoreCase)) return true;
         }
+
+#if DEBUG
+        if (SpikeFilterArmed)
+        {
+            foreach (string host in SpikeBlockedHosts)
+            {
+                if (string.Equals(parsed.Host, host, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+        }
+#endif
 
         return false;
     }
