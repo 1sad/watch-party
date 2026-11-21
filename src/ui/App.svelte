@@ -93,6 +93,12 @@
   let playback = $state<Playback | null>(null)
   let revision = $state(0)
   /**
+   * The authority epoch this window's room view is stamped with (§4.3 invariant
+   * 6): `welcome` says which era the replica belongs to, and every
+   * authority-bearing frame this page sends carries it (§5).
+   */
+  let epoch = $state(0)
+  /**
    * A nudge for the player when the room refused this window's command or a
    * `welcome` replaced the room: both mean "put the element back on the room",
    * and neither is a `state` frame of its own.
@@ -341,6 +347,8 @@
       // a reconnect, a different room).
       playback = frame.room.playback
       revision = frame.room.revision
+      // §5: `welcome` carries the epoch, and `setMedia` sends it back.
+      epoch = frame.epoch
       // §4.2 + invariant 9: the snapshot also says which file; a window landing
       // here plays it and realigns below, so a late joiner or a reload arrives
       // where the room is (T9a3).
@@ -531,6 +539,7 @@
       title: mediaTitle(path),
       duration: outcome.duration,
       path,
+      epoch,
     }
     socket.send(JSON.stringify(frame))
     picking = false

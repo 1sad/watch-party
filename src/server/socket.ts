@@ -347,7 +347,9 @@ export function attachRoomSocket(
             typeof frame.title !== 'string' ||
             typeof frame.duration !== 'number' ||
             !Number.isFinite(frame.duration) ||
-            typeof frame.path !== 'string'
+            typeof frame.path !== 'string' ||
+            typeof frame.epoch !== 'number' ||
+            !Number.isFinite(frame.epoch)
           ) {
             return
           }

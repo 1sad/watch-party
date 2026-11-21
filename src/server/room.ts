@@ -108,6 +108,8 @@ export interface MediaRegistration {
   duration: number
   /** Absolute, on the owner's own disk; the sidecar streams it, nobody else sees it. */
   path: string
+  /** The authority epoch the sender held (§4.3 invariant 6); `setMedia` checks it. */
+  epoch: number
 }
 
 export type SetMediaResult = { ok: true } | { ok: false; code: ErrorCode }
@@ -128,6 +130,11 @@ export function setMedia(
   pathExists: (path: string) => boolean,
 ): SetMediaResult {
   if (!room.controllers.includes(memberId)) return { ok: false, code: 'not_controller' }
+
+  // §5 + §4.3 invariant 6: a pick stamped with an epoch the room has moved past
+  // is refused, not applied — the difference between "you are out of date" and
+  // two apps writing the room at once.
+  if (file.epoch !== room.authority.epoch) return { ok: false, code: 'stale_host' }
 
   // ADR-035's map decides playability here, once; `/media/<id>` serves the
   // content type this line stored rather than deriving a second answer.

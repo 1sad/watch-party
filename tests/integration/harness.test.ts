@@ -501,6 +501,54 @@ test('R8/R9: a slowed, stalled client is nudged before a seek and converges unde
   }
 })
 
+// F1: §5's epoch rule and §4.3 invariant 6 — an authority-bearing frame carries
+// the epoch; a stale one is refused with `stale_host` rather than applied.
+test('R11: a setMedia carrying a stale epoch is refused and registers nothing', async () => {
+  const registered: string[] = []
+  const harness = await startHarness({ clients: 1, log: (line) => registered.push(line) })
+  const fixture = fileURLToPath(new URL('../fixtures/fixture.mp4', import.meta.url))
+  try {
+    const held = harness.owner.welcome.epoch
+    assert.equal(held, harness.room.authority.epoch, 'the welcome carries the room’s epoch')
+
+    // §4.4: authority moved after this window's `welcome`, so the epoch it still
+    // holds is one behind the room's.
+    harness.room.authority = { memberId: harness.room.authority.memberId, epoch: held + 1 }
+
+    harness.owner.send({
+      type: 'setMedia',
+      id: 'f1',
+      title: 'Fixture',
+      duration: 60,
+      path: fixture,
+      epoch: held,
+    })
+    const refusal = (await harness.owner.next((frame) => frame.type === 'error')).frame as ErrorFrame
+    assert.equal(refusal.code, 'stale_host')
+    assert.equal(harness.room.media, null, 'a stale pick puts no file in the room')
+    // T9a2's line is written only after an accepted pick, so its absence here is
+    // the proof that nothing was registered.
+    await settle(100)
+    assert.deepEqual(registered, [], 'no file was registered for a stale pick')
+
+    // The epoch the room holds now is accepted: one file, one line.
+    harness.owner.send({
+      type: 'setMedia',
+      id: 'f1',
+      title: 'Fixture',
+      duration: 60,
+      path: fixture,
+      epoch: harness.room.authority.epoch,
+    })
+    const set = await waitFor(() => harness.room.media, 2000, 'the owner set the room’s media')
+    assert.equal(set.id, 'f1')
+    assert.equal(registered.length, 1, 'the accepted pick is the only registration')
+    assert.match(registered[0] ?? '', /^\[media\] registered id=f1 /)
+  } finally {
+    await harness.close()
+  }
+})
+
 // T9a1: file mode's wire half. The bytes are served by `/media/<id>`; this
 // assertion is the door — who may name the file, and whether a refusal moves
 // anything.
@@ -513,12 +561,26 @@ test('R11: only the owner may set the room\'s media, and a refusal leaves the ro
 
     // ADR-030 / §5: a guest naming a path on someone else's disk is refused,
     // and the refusal happens before anything is assigned.
-    guest.send({ type: 'setMedia', id: 'guest', title: 'not mine', duration: 1, path: fixture })
+    guest.send({
+      type: 'setMedia',
+      id: 'guest',
+      title: 'not mine',
+      duration: 1,
+      path: fixture,
+      epoch: harness.owner.welcome.epoch,
+    })
     const refusal = (await guest.next((frame) => frame.type === 'error')).frame as ErrorFrame
     assert.equal(refusal.code, 'not_controller')
     assert.equal(harness.room.media, null, 'a guest cannot put a file in the room')
 
-    harness.owner.send({ type: 'setMedia', id: 'f1', title: 'Fixture', duration: 60, path: fixture })
+    harness.owner.send({
+      type: 'setMedia',
+      id: 'f1',
+      title: 'Fixture',
+      duration: 60,
+      path: fixture,
+      epoch: harness.owner.welcome.epoch,
+    })
     const set = await waitFor(() => harness.room.media, 2000, 'the owner set the room’s media')
     assert.equal(set.id, 'f1')
     assert.equal(set.contentType, 'video/mp4', 'the content type comes from ADR-035’s map')
@@ -530,6 +592,7 @@ test('R11: only the owner may set the room\'s media, and a refusal leaves the ro
       title: 'Missing',
       duration: 60,
       path: join(dirname(fixture), 'missing.mp4'),
+      epoch: harness.owner.welcome.epoch,
     })
     const missing = (await harness.owner.next((frame) => frame.type === 'error')).frame as ErrorFrame
     assert.equal(missing.code, 'bad_media')

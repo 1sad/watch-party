@@ -107,6 +107,7 @@ export type ErrorCode =
   | 'not_controller'
   | 'bad_media'
   | 'unsupported_media'
+  | 'stale_host'
   | ChatRefusalCode
 
 /** One sentence per code, shown as written (§5: "a refusal is explicit"). */
@@ -116,6 +117,7 @@ export const ERROR_SENTENCES: Record<ErrorCode, string> = {
   not_controller: 'Only the person who started the room can change this.',
   bad_media: 'That file cannot be played — it is missing from this machine, or its path is not absolute.',
   unsupported_media: 'File mode plays MP4, M4V, WebM and MOV files only.',
+  stale_host: 'This window is out of date — it no longer leads the room, so its pick was not used.',
   chat_too_long: 'A chat message can be at most 2000 characters.',
   chat_rate_limited: 'That is too many messages in a row — wait a few seconds.',
   chat_byte_limit:
@@ -193,6 +195,9 @@ export type CommandFrame = PlayFrame | PauseFrame | SeekFrame
  * m→a: the owner names the one file the room plays (§7.2, R11). The path is an
  * absolute path on the owner's own machine and is never sent back out: guests
  * only ever see `Media.id` and fetch `/media/<id>` from this sidecar.
+ *
+ * §5's rule for every authority-bearing frame: it carries the epoch the sender
+ * holds, and a stale one is refused rather than applied (§4.3 invariant 6).
  */
 export interface SetMediaFrame {
   type: 'setMedia'
@@ -200,6 +205,7 @@ export interface SetMediaFrame {
   title: string
   duration: number
   path: string
+  epoch: number
 }
 
 /** m→a: what the member typed. The authority supplies everything else (§5). */

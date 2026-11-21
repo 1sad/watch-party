@@ -31,6 +31,8 @@ export interface HarnessOptions {
   duration?: number
   /** The authority's dev log, so a test can read the ladder's decisions. */
   debug?: (line: string) => void
+  /** The sidecar's own log lines, so a test can read what was registered. */
+  log?: (line: string) => void
 }
 
 export interface Harness {
@@ -55,6 +57,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const wss = attachRoomSocket(server, room, {
     ...(now === undefined ? {} : { now }),
     ...(options.debug === undefined ? {} : { debug: options.debug }),
+    ...(options.log === undefined ? {} : { log: options.log }),
   })
 
   await new Promise<void>((resolve, reject) => {

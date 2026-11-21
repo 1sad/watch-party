@@ -97,7 +97,14 @@ test('T9b: the owner leaving a file room ends it — one system line, one roomOv
   const harness = await openRoom(2)
   try {
     const [owner, guest] = harness.clients as [ScriptedClient, ScriptedClient]
-    owner.send({ type: 'setMedia', id: 'f1', title: 'Fixture', duration: 60, path: FIXTURE })
+    owner.send({
+      type: 'setMedia',
+      id: 'f1',
+      title: 'Fixture',
+      duration: 60,
+      path: FIXTURE,
+      epoch: owner.welcome.epoch,
+    })
     await guest.next((frame) => frame.type === 'media' && frame.media !== null)
     assert.ok(harness.room.media !== null, 'this is a file room')
 
@@ -132,7 +139,14 @@ test('T9b: a guest leaving a file room does not end it', async () => {
   const harness = await openRoom(2)
   try {
     const [owner, guest] = harness.clients as [ScriptedClient, ScriptedClient]
-    owner.send({ type: 'setMedia', id: 'f1', title: 'Fixture', duration: 60, path: FIXTURE })
+    owner.send({
+      type: 'setMedia',
+      id: 'f1',
+      title: 'Fixture',
+      duration: 60,
+      path: FIXTURE,
+      epoch: owner.welcome.epoch,
+    })
     await guest.next((frame) => frame.type === 'media' && frame.media !== null)
 
     await guest.close()
