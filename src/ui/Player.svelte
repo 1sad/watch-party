@@ -4,6 +4,7 @@
     CORRECTION_DEADBAND_SECONDS,
     REPORT_INTERVAL_MS,
     SEEK_SKIP_SECONDS,
+    clampToMedia,
     expected,
     nudgeRateAt,
     type NudgeHold,
@@ -211,6 +212,23 @@
   }
 
   /**
+   * The upper bound `clampToMedia` uses (§4.5). It is the room's duration —
+   * the owner measured it once, and the room has one answer — except when the
+   * element itself reports something shorter, which is the only case where
+   * trusting the room would place the playhead past the media. With no
+   * duration known yet there is no upper bound to apply.
+   */
+  function seekBound(): number {
+    const element = video
+    const measured =
+      element !== null && Number.isFinite(element.duration) && element.duration > 0
+        ? element.duration
+        : 0
+    if (duration <= 0) return measured > 0 ? measured : Number.POSITIVE_INFINITY
+    return measured > 0 ? Math.min(duration, measured) : duration
+  }
+
+  /**
    * §4.3 invariant 9's one move: put the element where the room says, and no
    * other place. A target within §5's 0.3 s window is the second arrival of a
    * move that already happened, so it is skipped — that is what keeps the
@@ -219,8 +237,7 @@
   function seekTo(seconds: number): void {
     const element = video
     if (element === null) return
-    const last = Number.isFinite(element.duration) && element.duration > 0 ? element.duration : seconds
-    const target = Math.max(0, Math.min(seconds, last))
+    const target = clampToMedia(seconds, seekBound())
     if (element.readyState < 1) return
     if (Math.abs(element.currentTime - target) <= SEEK_SKIP_SECONDS) return
     echoes.expect('seeked', performance.now())
@@ -445,8 +462,13 @@
     if (element === null) return
     // No `expect()`: a person moved the playhead, so the `seeked` event this
     // causes is the command. One release, one seek, one `state` — a hard drag
-    // is a burst of `input` events and still exactly one of these.
-    element.currentTime = Number((event.currentTarget as HTMLInputElement).value)
+    // is a burst of `input` events and still exactly one of these. §4.5's bound
+    // applies here too: the bar's far end is the exact end of the media, which
+    // no seek may take (§4.5; the room would clamp it anyway).
+    element.currentTime = clampToMedia(
+      Number((event.currentTarget as HTMLInputElement).value),
+      seekBound(),
+    )
   }
 
   /**

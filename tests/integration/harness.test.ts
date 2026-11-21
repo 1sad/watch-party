@@ -615,3 +615,41 @@ test('R11: only the owner may set the room\'s media, and a refusal leaves the ro
     await harness.close()
   }
 })
+
+// F2 / `docs/spec.md:315` and phase slice §6's `clampToMedia` row: every seek
+// lands in `[0, duration − 0.25]`. The room is where that rule is enforced now,
+// so the wire is the layer that proves it: a controller dragging the bar to the
+// very end is stored, and broadcast, a quarter second short of it.
+test('R6: a seek to the media duration lands at duration − 0.25, never at the exact end', async () => {
+  const harness = await startHarness({ clients: 2 })
+  const fixture = fileURLToPath(new URL('../fixtures/fixture.mp4', import.meta.url))
+  try {
+    harness.owner.send({
+      type: 'setMedia',
+      id: 'f2',
+      title: 'Fixture',
+      duration: 60,
+      path: fixture,
+      epoch: harness.owner.welcome.epoch,
+    })
+    const media = await waitFor(() => harness.room.media, 2000, 'the room holds the fixture')
+    assert.equal(media.duration, 60, 'the fixture is the 60 s clip')
+
+    const hearing = harness.clients.map((client) => client.next((frame) => frame.type === 'state'))
+    harness.owner.send({ type: 'seek', position: media.duration, wasPlaying: false })
+    const heard = await Promise.all(hearing)
+
+    for (const [index, record] of heard.entries()) {
+      const state = record.frame as StateFrame
+      assert.equal(state.reason, 'seek')
+      assert.equal(
+        state.playback.position,
+        59.75,
+        `${harness.clients[index]!.name} is told 59.75, not ${media.duration}`,
+      )
+    }
+    assert.equal(harness.room.playback.position, 59.75, 'the room stored the clamped target')
+  } finally {
+    await harness.close()
+  }
+})

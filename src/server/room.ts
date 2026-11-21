@@ -14,7 +14,7 @@ import type {
 import { ANONYMOUS, displayNames } from '../shared/names.ts'
 import { pushChat } from '../shared/chat.ts'
 import { contentTypeFor } from '../shared/media.ts'
-import { expected, scheduledStartAt, seekIsDuplicate } from '../shared/timing.ts'
+import { clampToMedia, expected, scheduledStartAt, seekIsDuplicate } from '../shared/timing.ts'
 
 /** §12: five people is a constraint of the design, not a setting. */
 export const MAX_MEMBERS = 5
@@ -236,10 +236,17 @@ export function applyCommand(
   const reported = frame.position
   // No usable position is not "0": the room's own expectation is the playhead
   // the sender was looking at, and it comes from the one function that owns it.
-  const target =
+  const wanted =
     typeof reported === 'number' && Number.isFinite(reported)
       ? reported
       : expected(room.playback, at)
+  // §4.5 (`docs/spec.md:315`) and phase slice §6's `clampToMedia` row: every
+  // seek lands in `[0, duration − 0.25]`. The clamp is here, once, before §5's
+  // idempotency checks compare anything and before the assignments below, so a
+  // refused or duplicate command still writes nothing. File mode is the only
+  // mode that knows a duration; a website room has none to clamp to.
+  const media = room.media
+  const target = media === null ? wanted : clampToMedia(wanted, media.duration)
 
   if (frame.type === 'play' && room.playback.playing) return { ok: true, applied: false }
   if (frame.type === 'pause' && !room.playback.playing) return { ok: true, applied: false }
