@@ -410,7 +410,9 @@ as **member → authority** and **authority → members** so it survives that ch
 | m→a | `grantControl` | `{memberId, allow, epoch}` | controller or owner; roster shows the result; survives reconnect (ADR-033) |
 | m→a | `claimControl` | `{}` | allowed only when no online member holds control; first to arrive wins |
 | m→a | `setMedia` | `{media, epoch}` | file mode; owner only, since they serve the bytes |
+| a→m | `media` | `{media}` | the room's media, to every window including the owner's; the only way a window already in the room learns of a pick |
 | a→m | `authorityChanged` | `{epoch, memberId, reason}` | see §4.4 |
+| a→m | `roomOver` | `{reason}` | file mode: the owner's close ends the room (`owner_left`) — §14, ADR-024. No reconnect, no recovery; the page also prints the sentence locally when the authority's process is gone |
 | m→a | `play` | `{position}` | controller (ADR-030) |
 | m→a | `pause` | `{position}` | controller |
 | m→a | `seek` | `{position, wasPlaying}` | controller; may trigger ready gate |
