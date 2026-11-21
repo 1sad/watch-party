@@ -13,8 +13,10 @@ namespace WatchParty.Host;
 /// </summary>
 public sealed class MainForm : Form
 {
-    // TEMPORARY (T1): the dev page requests https://blocked.invalid/p.png, which
-    // gives the filter something to cancel until T30 owns the real list.
+    // The app view's list, unchanged since T1: the dev page requests
+    // https://blocked.invalid/p.png, which gives the app view's filter something to
+    // cancel. The site view uses the bundled ad list instead (T04, AdHosts); this
+    // one stays so the app view keeps exactly the filtering it had.
     private static readonly string[] BlockedHosts = ["blocked.invalid"];
 
     /// <summary>
@@ -72,6 +74,21 @@ public sealed class MainForm : Form
 
     /// <summary>The <c>seq</c> every site event carries: one count, so one order.</summary>
     private long _siteSeq;
+
+    /// <summary>
+    /// T04: the site view's list, read once at startup from <c>data/ad-hosts.txt</c>.
+    /// The app view never consults it — its filtering is T1's, so the file-mode
+    /// probe keeps working.
+    /// </summary>
+    private HashSet<string> _adHosts = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// T04: what the site view has cancelled since the current navigation started —
+    /// the count, and the first three distinct hostnames — so the log has one
+    /// <c>site:</c> line per navigation that says what the filter did.
+    /// </summary>
+    private int _siteCancelled;
+    private readonly List<string> _siteCancelledHosts = new();
 #if DEBUG
     /// <summary>
     /// T8d: whether this window is the measuring one — the window <c>dev:debug</c>
@@ -155,6 +172,11 @@ public sealed class MainForm : Form
 
         HostLog.Write($"host started; program folder {_root}");
 
+        // R20's list, before either view can ask for a request (T04). The file is
+        // data that ships beside the program; an unreadable one is a log line and
+        // an empty set, so the window still opens.
+        _adHosts = AdHosts.Load(_root);
+
         // One registry key, for this user only; failure is a log line, never a
         // dialog and never a reason to stop (T2b item 3).
         if (ProtocolRegistration.TryRegister(out string command))
@@ -181,8 +203,8 @@ public sealed class MainForm : Form
         // Both views: the app view's copy is what serves the picked file's one
         // measurement to our page, and the site view's is where a blocked host is
         // cancelled once the page in the room is a real site (ADR-038, T30).
-        InstallRequestFilter(_page, "app");
-        InstallRequestFilter(_site, "site");
+        InstallRequestFilter(_page, "app", $"temporary list has {BlockedHosts.Length} host(s)");
+        InstallRequestFilter(_site, "site", $"ad list has {_adHosts.Count} host(s) from {AdHosts.RelativePath}");
         InstallAutoplayGrant();
         InstallFilePicker();
         InstallAppOriginLock();
@@ -193,6 +215,7 @@ public sealed class MainForm : Form
         ArmRelaySelfTest();
 #endif
         _page.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
+        _site.CoreWebView2.NavigationStarting += OnSiteNavigationStarting;
         _site.CoreWebView2.NavigationCompleted += OnSiteNavigationCompleted;
         StartSidecar();
         _portTimeout.Start();
@@ -239,7 +262,7 @@ public sealed class MainForm : Form
         await _site.EnsureCoreWebView2Async(environment);
     }
 
-    private void InstallRequestFilter(WebView2 view, string name)
+    private void InstallRequestFilter(WebView2 view, string name, string listNote)
     {
         CoreWebView2 core = view.CoreWebView2;
 
@@ -252,8 +275,7 @@ public sealed class MainForm : Form
             CoreWebView2WebResourceRequestSourceKinds.All);
         core.WebResourceRequested += OnWebResourceRequested;
 
-        HostLog.Write(
-            $"request filter installed on the {name} view; temporary list has {BlockedHosts.Length} host(s)");
+        HostLog.Write($"request filter installed on the {name} view; {listNote}");
     }
 
     private void OnWebResourceRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
@@ -263,6 +285,7 @@ public sealed class MainForm : Form
         // exists so a blocked host is cancelled wherever it is asked for.
         CoreWebView2 core = (CoreWebView2)sender!;
         string uri = e.Request.Uri;
+        bool siteView = ReferenceEquals(core, _site.CoreWebView2);
 
         // T9a2: the page measuring the file it just picked. Only the one path the
         // dialog returned, and only while the measurement is in flight.
@@ -273,13 +296,50 @@ public sealed class MainForm : Form
             return;
         }
 
-        if (!IsBlocked(uri)) return;
+        // T04: two lists, one per view. The app view keeps T1's, so the file-mode
+        // probe and the dev page's own blocked request behave exactly as before;
+        // the site view gets the bundled ad list.
+        bool blocked = siteView ? IsAdHost(uri) : IsBlocked(uri);
+        if (!blocked) return;
 
         // An empty 403 replaces the response, which cancels the request: the page
         // never receives bytes from the blocked host.
         e.Response = core.Environment.CreateWebResourceResponse(
             new MemoryStream(Array.Empty<byte>()), 403, "Blocked", "Content-Type: text/plain");
-        HostLog.Write($"blocked {uri}");
+
+        if (siteView)
+        {
+            NoteSiteCancelled(uri);
+        }
+        else
+        {
+            HostLog.Write($"blocked {uri}");
+        }
+    }
+
+    /// <summary>
+    /// T04: one cancellation on the site view, for the navigation's tally. Nothing
+    /// is logged per request: the navigation's own line carries the count and the
+    /// first three hostnames, and a per-request line in every window's log would
+    /// bury the rest of it. The measuring build is the exception — its log is the
+    /// one a person reads while asking "did this host get caught", so there a host
+    /// line per cancellation is what is wanted.
+    /// </summary>
+    private void NoteSiteCancelled(string uri)
+    {
+        _siteCancelled++;
+
+        string host = Uri.TryCreate(uri, UriKind.Absolute, out Uri? parsed) ? parsed.Host : uri;
+        if (_siteCancelledHosts.Count < 3 && !_siteCancelledHosts.Contains(host))
+        {
+            _siteCancelledHosts.Add(host);
+        }
+#if DEBUG
+        if (_measuring)
+        {
+            HostLog.Write($"site: cancelled {host}: {uri}");
+        }
+#endif
     }
 
     /// <summary>
@@ -850,7 +910,7 @@ public sealed class MainForm : Form
         _page.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(message));
     }
 
-    /// <summary>Matches a request URL's host against the temporary block list.</summary>
+    /// <summary>Matches a request URL's host against the app view's block list.</summary>
     internal static bool IsBlocked(string uri)
     {
         if (!Uri.TryCreate(uri, UriKind.Absolute, out Uri? parsed)) return false;
@@ -861,6 +921,13 @@ public sealed class MainForm : Form
         }
 
         return false;
+    }
+
+    /// <summary>Matches a request URL's host against the site view's bundled list.</summary>
+    private bool IsAdHost(string uri)
+    {
+        return Uri.TryCreate(uri, UriKind.Absolute, out Uri? parsed)
+            && AdHosts.Matches(_adHosts, parsed.Host);
     }
 
     private void StartSidecar()
@@ -974,11 +1041,25 @@ public sealed class MainForm : Form
 #endif
     }
 
+    private void OnSiteNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
+    {
+        // T04: a navigation is the unit the count is reported in, so the tally
+        // restarts here, before the new document asks for anything.
+        _siteCancelled = 0;
+        _siteCancelledHosts.Clear();
+    }
+
     private void OnSiteNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
     {
         HostLog.Write(
             $"site navigation completed {_site.CoreWebView2.Source} success={e.IsSuccess} " +
             $"status={e.HttpStatusCode} error={e.WebErrorStatus}");
+
+        // T04: the one line per navigation that says what the filter did. The
+        // first three distinct hostnames, because a page can ask one ad host for
+        // dozens of things and the names are the useful part, not the total.
+        string hosts = _siteCancelledHosts.Count == 0 ? "none" : string.Join(",", _siteCancelledHosts);
+        HostLog.Write($"site: navigation cancelled={_siteCancelled} host(s)={hosts}");
 #if DEBUG
         _siteLoaded = true;
         MaybeRunRelaySelfTest();
