@@ -12,3 +12,6 @@ obj/
 *.log
 *.tmp
 Thumbs.db
+
+# Live-check logs: rig scripts and output, never committed (testing-manual 7)
+logs/
