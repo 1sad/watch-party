@@ -6,9 +6,10 @@ using Microsoft.Web.WebView2.WinForms;
 namespace WatchParty.Host;
 
 /// <summary>
-/// The window: one WebView2 control filling it, the request filter, and the
-/// sidecar's lifetime in both directions. It holds no room state and imports
-/// nothing from the sidecar's product code (ADR-034).
+/// The window: two WebView2 controls — our page as a fixed sidebar on the right,
+/// the site filling the lower left — the request filter, and the sidecar's
+/// lifetime in both directions. It holds no room state and imports nothing from
+/// the sidecar's product code (ADR-034, ADR-038).
 /// </summary>
 public sealed class MainForm : Form
 {
@@ -47,7 +48,19 @@ public sealed class MainForm : Form
     private const bool AutoplayGranted = true;
 #endif
 
+    /// <summary>
+    /// ADR-038's layout, in pixels: the sidebar is a fixed width so a resize
+    /// never reflows the site, and the top strip is the height the host reserves.
+    /// The strip's contents are our page's own, drawn inside the app view (03b);
+    /// the strip over the site is empty until then.
+    /// </summary>
+    private const int SidebarWidth = 380;
+    private const int TopStripHeight = 48;
+
     private readonly WebView2 _page = new() { Dock = DockStyle.Fill };
+    private readonly WebView2 _site = new() { Dock = DockStyle.Fill };
+    private readonly Panel _siteColumn = new() { Dock = DockStyle.Fill };
+    private readonly Panel _topStrip = new() { Dock = DockStyle.Top };
     private readonly System.Windows.Forms.Timer _portTimeout = new() { Interval = 20_000 };
 
     // Command-line arguments, untouched: when the app was opened from a clicked
@@ -58,6 +71,12 @@ public sealed class MainForm : Form
     private string _root = string.Empty;
     private bool _closing;
     private bool _navigated;
+    /// <summary>
+    /// The port the sidecar reported, which together with <c>127.0.0.1</c> is the
+    /// only origin the app view may navigate to (ADR-038). Null until the PORT
+    /// line arrives, which is before the app view's first navigation.
+    /// </summary>
+    private int? _appPort;
     /// <summary>T9a2: one dialog at a time, and the file it last returned.</summary>
     private bool _pickOpen;
     private string? _pickedPath;
@@ -70,9 +89,10 @@ public sealed class MainForm : Form
     private bool _measuring;
 
     /// <summary>
-    /// E10: the address this window opens <em>instead of</em> the app page, when
-    /// <c>WATCHPARTY_SPIKE_URL</c> names one. Null in every normal run, which is
-    /// what keeps the spike unreachable: no variable, no injection, no hand-off.
+    /// E10: the address the measuring build's <em>site view</em> opens, when
+    /// <c>WATCHPARTY_SPIKE_URL</c> names one — it stands in for "the room has a
+    /// page" until 03 sets a real one. Null in every normal run, which is what
+    /// keeps the spike unreachable, and leaves the window in file mode.
     /// </summary>
     private string? _spikeUrl;
 
@@ -94,7 +114,24 @@ public sealed class MainForm : Form
         ClientSize = new Size(1100, 720);
         MinimumSize = new Size(640, 420);
         StartPosition = FormStartPosition.CenterScreen;
+
+        // Docking runs from the last child added, so each Fill control goes in
+        // before the control that takes space off it: the sidebar takes its
+        // width from the right, the site column takes the rest, and the strip
+        // takes its height off the top of the site column.
+        _topStrip.Height = TopStripHeight;
+        // The same dark chrome as our page's own body, so the reserved strip is
+        // an empty row rather than a glare next to a dark window (03b fills it).
+        _topStrip.BackColor = Color.FromArgb(0x14, 0x15, 0x1A);
+        _siteColumn.Controls.Add(_site);
+        _siteColumn.Controls.Add(_topStrip);
+        Controls.Add(_siteColumn);
         Controls.Add(_page);
+
+        // ADR-038: with no page there is no site view. A window opens with no
+        // room, so this is file mode until something sets a page (03), and the
+        // app view fills the window exactly as in M1.
+        _siteColumn.Visible = false;
 
         Load += OnLoad;
         FormClosed += OnFormClosed;
@@ -131,7 +168,7 @@ public sealed class MainForm : Form
 
         try
         {
-            await EnsurePageAsync();
+            await EnsureViewsAsync();
         }
         catch (Exception error)
         {
@@ -140,25 +177,30 @@ public sealed class MainForm : Form
             return;
         }
 
-        InstallRequestFilter();
+        // Both views: the app view's copy is what serves the picked file's one
+        // measurement to our page, and the site view's is where a blocked host is
+        // cancelled once the page in the room is a real site (ADR-038, T30).
+        InstallRequestFilter(_page, "app");
+        InstallRequestFilter(_site, "site");
         InstallAutoplayGrant();
         InstallFilePicker();
+        InstallAppOriginLock();
 #if DEBUG
         InstallPageConsole();
         await InstallSpikeAsync();
 #endif
         _page.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
+        _site.CoreWebView2.NavigationCompleted += OnSiteNavigationCompleted;
         StartSidecar();
         _portTimeout.Start();
     }
 
     /// <summary>
-    /// The window's one WebView2 control, created with the environment §14 needs
-    /// — and, in a Debug build only, a loopback CDP port so the checks that need
-    /// to read the page (the applied position, `paused`, the overlay) do not need
-    /// a person clicking. The environment variable is what arms it.
+    /// Both of the window's WebView2 controls, created against one environment so
+    /// they share a browser process: §14's autoplay policy is process-wide, and in
+    /// a Debug build one loopback CDP port then lists both views as targets.
     /// </summary>
-    private async Task EnsurePageAsync()
+    private async Task EnsureViewsAsync()
     {
         // §14's grant. ADR-034 names `PermissionRequested` as the Autoplay
         // lever, but the engine only raises that request in a policy mode it
@@ -184,17 +226,19 @@ public sealed class MainForm : Form
                 new CoreWebView2EnvironmentOptions(
                     $"{autoplayPolicy} --remote-debugging-port={debugPort}".Trim()));
             await _page.EnsureCoreWebView2Async(debugEnvironment);
+            await _site.EnsureCoreWebView2Async(debugEnvironment);
             return;
         }
 #endif
         CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(
             null, null, new CoreWebView2EnvironmentOptions(autoplayPolicy));
         await _page.EnsureCoreWebView2Async(environment);
+        await _site.EnsureCoreWebView2Async(environment);
     }
 
-    private void InstallRequestFilter()
+    private void InstallRequestFilter(WebView2 view, string name)
     {
-        CoreWebView2 core = _page.CoreWebView2;
+        CoreWebView2 core = view.CoreWebView2;
 
         // The three-argument form: the two-argument one is documented not to
         // behave as expected for iframes, and cross-origin player frames are the
@@ -205,11 +249,16 @@ public sealed class MainForm : Form
             CoreWebView2WebResourceRequestSourceKinds.All);
         core.WebResourceRequested += OnWebResourceRequested;
 
-        HostLog.Write($"request filter installed; temporary list has {BlockedHosts.Length} host(s)");
+        HostLog.Write(
+            $"request filter installed on the {name} view; temporary list has {BlockedHosts.Length} host(s)");
     }
 
     private void OnWebResourceRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
     {
+        // The view the request came from, whose environment must build the
+        // response: the app view serves the picked file, the site view's copy
+        // exists so a blocked host is cancelled wherever it is asked for.
+        CoreWebView2 core = (CoreWebView2)sender!;
         string uri = e.Request.Uri;
 
         // T9a2: the page measuring the file it just picked. Only the one path the
@@ -217,7 +266,7 @@ public sealed class MainForm : Form
         if (Uri.TryCreate(uri, UriKind.Absolute, out Uri? probe)
             && string.Equals(probe.Host, FilePick.MediaHost, StringComparison.OrdinalIgnoreCase))
         {
-            e.Response = ProbeResponse(probe);
+            e.Response = ProbeResponse(core.Environment, probe);
             return;
         }
 
@@ -225,7 +274,7 @@ public sealed class MainForm : Form
 
         // An empty 403 replaces the response, which cancels the request: the page
         // never receives bytes from the blocked host.
-        e.Response = _page.CoreWebView2.Environment.CreateWebResourceResponse(
+        e.Response = core.Environment.CreateWebResourceResponse(
             new MemoryStream(Array.Empty<byte>()), 403, "Blocked", "Content-Type: text/plain");
         HostLog.Write($"blocked {uri}");
     }
@@ -270,6 +319,38 @@ public sealed class MainForm : Form
     {
         _page.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
         HostLog.Write("file picker bridge installed");
+    }
+
+    /// <summary>
+    /// ADR-038: the app view is the room's only client and may not navigate. A
+    /// document that is not the sidecar's own origin is cancelled here, so a
+    /// third-party page never gets the picker bridge's messages. The host's own
+    /// failure page arrives as <c>about:blank</c> and stays allowed.
+    /// </summary>
+    private void InstallAppOriginLock()
+    {
+        _page.CoreWebView2.NavigationStarting += OnAppViewNavigationStarting;
+        HostLog.Write("app view: navigation lock installed; only the sidecar's own origin is allowed");
+    }
+
+    private void OnAppViewNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
+    {
+        if (IsAppOrigin(e.Uri)) return;
+
+        e.Cancel = true;
+        HostLog.Write($"app view blocked a navigation to {e.Uri}");
+    }
+
+    /// <summary>The sidecar's own origin, or the failure page the host writes itself.</summary>
+    private bool IsAppOrigin(string uri)
+    {
+        if (!Uri.TryCreate(uri, UriKind.Absolute, out Uri? target)) return false;
+        if (target.Scheme == "about") return true;
+
+        return _appPort is int port
+            && target.Scheme == Uri.UriSchemeHttp
+            && string.Equals(target.Host, "127.0.0.1", StringComparison.Ordinal)
+            && target.Port == port;
     }
 
 #if DEBUG
@@ -376,7 +457,10 @@ public sealed class MainForm : Form
     /// <summary>
     /// E10: the one Debug-only hand-off. With <c>WATCHPARTY_SPIKE_URL</c> unset
     /// this returns before it reads the probe, so a normal run — Debug or not —
-    /// never injects a script and never navigates anywhere but the app page.
+    /// never injects a script and never navigates the site view anywhere at all.
+    ///
+    /// It hangs on the site view, because that view is where the page in the room
+    /// loads (ADR-038); the app view keeps the picker's messages alone.
     ///
     /// The probe is registered before the first navigation, which is the order
     /// the engine requires: the documentation says an added script applies to
@@ -391,16 +475,17 @@ public sealed class MainForm : Form
         try
         {
             string probe = ReadSpikeProbe();
-            await _page.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(probe);
+            await _site.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(probe);
             // The engine's own documentation says `CoreWebView2.WebMessageReceived`
             // is raised for the top-level document, and that an iframe's message
             // arrives on that frame's event instead. Subscribing here is what
             // lets a cross-origin player frame be heard at all; a frame that
             // already existed would be missed, and before the first navigation
             // there is none.
-            _page.CoreWebView2.FrameCreated += OnSpikeFrameCreated;
+            _site.CoreWebView2.FrameCreated += OnSpikeFrameCreated;
+            _site.CoreWebView2.WebMessageReceived += OnSpikeWebMessageReceived;
             _spikeUrl = url;
-            HostLog.Write($"spike: probe registered for every document; the window will open {url}");
+            HostLog.Write($"spike: probe registered for every document; the site view will open {url}");
         }
         catch (Exception error)
         {
@@ -522,7 +607,7 @@ public sealed class MainForm : Form
         // no video.
         try
         {
-            _page.CoreWebView2.PostWebMessageAsJson(payload);
+            _site.CoreWebView2.PostWebMessageAsJson(payload);
             HostLog.Write($"spike: command posted to {posted} child frame(s) and the top document for t={t}");
         }
         catch (Exception error)
@@ -532,22 +617,33 @@ public sealed class MainForm : Form
                 + $"{posted} child frame(s) posted");
         }
     }
+
+    /// <summary>
+    /// E10's top-document half, on the site view: the probe in the page the room
+    /// opened posts here, and the shell's command arrives here too. The app view
+    /// keeps only the picker's own messages.
+    /// </summary>
+    private void OnSpikeWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        switch (MessageKind(e.WebMessageAsJson))
+        {
+            case "spike":
+                LogSpikeMessage(null, e);
+                break;
+            case "spikeSetTime":
+                ForwardSpikeSetTime(e);
+                break;
+        }
+    }
 #endif
 
     private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
-        string? kind = null;
+        string? kind = MessageKind(e.WebMessageAsJson);
         string? contentType = null;
         try
         {
             using JsonDocument message = JsonDocument.Parse(e.WebMessageAsJson);
-            if (message.RootElement.ValueKind == JsonValueKind.Object
-                && message.RootElement.TryGetProperty("kind", out JsonElement value)
-                && value.ValueKind == JsonValueKind.String)
-            {
-                kind = value.GetString();
-            }
-
             if (message.RootElement.ValueKind == JsonValueKind.Object
                 && message.RootElement.TryGetProperty("type", out JsonElement type)
                 && type.ValueKind == JsonValueKind.String)
@@ -571,15 +667,28 @@ public sealed class MainForm : Form
             case "probeDone":
                 ConcealPickedFile();
                 break;
-#if DEBUG
-            case "spike":
-                LogSpikeMessage(null, e);
-                break;
-            case "spikeSetTime":
-                ForwardSpikeSetTime(e);
-                break;
-#endif
         }
+    }
+
+    /// <summary>A message's <c>kind</c>, or null for anything not one of ours.</summary>
+    private static string? MessageKind(string json)
+    {
+        try
+        {
+            using JsonDocument message = JsonDocument.Parse(json);
+            if (message.RootElement.ValueKind == JsonValueKind.Object
+                && message.RootElement.TryGetProperty("kind", out JsonElement value)
+                && value.ValueKind == JsonValueKind.String)
+            {
+                return value.GetString();
+            }
+        }
+        catch (JsonException)
+        {
+            // Not one of ours: ignored, the same rule §5 keeps for unknown frames.
+        }
+
+        return null;
     }
 
     private void AskForFile()
@@ -628,9 +737,9 @@ public sealed class MainForm : Form
     /// is already loaded may not see it without a reload, and a reload would lose
     /// the room this window is in.
     /// </summary>
-    private CoreWebView2WebResourceResponse ProbeResponse(Uri uri)
+    private CoreWebView2WebResourceResponse ProbeResponse(
+        CoreWebView2Environment environment, Uri uri)
     {
-        CoreWebView2Environment environment = _page.CoreWebView2.Environment;
         string? path = _pickedPath;
 
         if (path is null || !File.Exists(path))
@@ -749,33 +858,56 @@ public sealed class MainForm : Form
         if (_closing || _navigated) return;
 
         _portTimeout.Stop();
-        // The page's own URL, plus `?join=` carrying the launched link whole and
-        // encoded. This line is the record of where the window went (T2b check 2).
+        // The app view's own URL, plus `?join=` carrying the launched link whole
+        // and encoded. This line is the record of where the window went (T2b
+        // check 2). The port is the app view's whole origin: its navigation lock
+        // allows this address and nothing else (ADR-038).
+        _appPort = port;
         string url = LaunchLink.PageUrl($"http://127.0.0.1:{port}/", _launchArgs);
-#if DEBUG
-        // E10: the spike window replaces the app page rather than adding a
-        // second one; with the variable unset `_spikeUrl` is null and nothing
-        // below changes.
-        if (_spikeUrl is not null)
-        {
-            url = _spikeUrl;
-            HostLog.Write($"spike: navigating to {url} instead of the app page");
-        }
-        else
-        {
-            HostLog.Write($"parsed sidecar PORT {port}; navigating to {url}");
-        }
-#else
         HostLog.Write($"parsed sidecar PORT {port}; navigating to {url}");
-#endif
         _navigated = true;
         _page.CoreWebView2.Navigate(url);
+#if DEBUG
+        // E10's stand-in for "the room has a page": the measuring build's site
+        // view opens the address the variable names, and file mode is what every
+        // run without it shows.
+        if (_spikeUrl is not null)
+        {
+            ShowSiteView();
+            HostLog.Write($"spike: the site view is navigating to {_spikeUrl}");
+            _site.CoreWebView2.Navigate(_spikeUrl);
+        }
+#endif
+    }
+
+    /// <summary>
+    /// ADR-038's page mode: the app view becomes a fixed sidebar on the right and
+    /// the site column takes the rest, with the top strip reserved above the site.
+    /// Called only when the room has a page — until 03 sets one, that is the
+    /// measuring build's <c>WATCHPARTY_SPIKE_URL</c> alone.
+    /// </summary>
+    private void ShowSiteView()
+    {
+        if (_siteColumn.Visible) return;
+
+        _page.Dock = DockStyle.Right;
+        _page.Width = SidebarWidth;
+        _siteColumn.Visible = true;
+        HostLog.Write(
+            $"layout: page mode — site view left of a {SidebarWidth} px app view, top strip {TopStripHeight} px");
     }
 
     private void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
     {
         HostLog.Write(
             $"navigation completed {_page.CoreWebView2.Source} success={e.IsSuccess} " +
+            $"status={e.HttpStatusCode} error={e.WebErrorStatus}");
+    }
+
+    private void OnSiteNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+    {
+        HostLog.Write(
+            $"site navigation completed {_site.CoreWebView2.Source} success={e.IsSuccess} " +
             $"status={e.HttpStatusCode} error={e.WebErrorStatus}");
     }
 
