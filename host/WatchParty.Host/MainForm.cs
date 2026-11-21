@@ -235,6 +235,7 @@ public sealed class MainForm : Form
         InstallAppOriginLock();
         InstallPopupRefusal();
         InstallRelay();
+        InstallFullscreenIntercept();
 #if DEBUG
         InstallPageConsole();
         ArmSpikeUrl();
@@ -1414,6 +1415,43 @@ public sealed class MainForm : Form
         _siteColumn.Visible = true;
         HostLog.Write(
             $"layout: page mode — site view left of a {SidebarWidth} px app view, top strip {TopStripHeight} px");
+    }
+
+    /// <summary>
+    /// ADR-028: fullscreen is a layout decision and the app owns it (T08). The
+    /// engine already keeps a page's fullscreen request inside the control it came
+    /// from — <c>ContainsFullScreenElement</c> means "an HTML element inside the
+    /// WebView entered fullscreen <em>to the size of the WebView</em>" (the SDK's
+    /// own words) — so nothing has to be refused and no window is opened. What the
+    /// host adds is the rest of the window: the reserved top strip goes, which
+    /// gives the site view the column's whole height, while the app view keeps its
+    /// fixed column on the right and stays visible.
+    /// </summary>
+    private void InstallFullscreenIntercept()
+    {
+        // The site view alone (ADR-038): the app view's own page is ours, and it
+        // can no more go fullscreen than it can navigate.
+        _site.CoreWebView2.ContainsFullScreenElementChanged += OnSiteFullScreenChanged;
+        HostLog.Write("site: fullscreen intercept installed; the app owns the layout, no window, no window state");
+    }
+
+    /// <summary>
+    /// One line per transition (T08), so the live check can be read from the log
+    /// instead of the screen: the sizes are the site view's own, which is what the
+    /// press is judged by. Hiding the strip is the whole of the enter and showing
+    /// it again is the whole of the exit, so the layout comes back exactly as it
+    /// was — the strip is only ever hidden here.
+    /// </summary>
+    private void OnSiteFullScreenChanged(object? sender, object e)
+    {
+        bool full = _site.CoreWebView2.ContainsFullScreenElement;
+
+        _topStrip.Visible = !full;
+
+        // The dock layout has already run by the time Visible returns, so this
+        // reads the size the site view has for the state being logged.
+        HostLog.Write(
+            $"site: fullscreen={(full ? "enter" : "exit")} w={_site.Width} h={_site.Height}");
     }
 
     private void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
