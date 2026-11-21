@@ -1,0 +1,373 @@
+C:\Users\<user>\AppData\Local\Microsoft\dotnet\sdk\10.0.404\Microsoft.Common.CurrentVersion.targets(2453,5): warning MSB3277: Found conflicts between different versions of "WindowsBase" that could not be resolved. [C:\dev\Code\misc\watch-party\host\WatchParty.Host\WatchParty.Host.csproj]
+C:\Users\<user>\AppData\Local\Microsoft\dotnet\sdk\10.0.404\Microsoft.Common.CurrentVersion.targets(2453,5): warning MSB3277: There was a conflict between "WindowsBase, Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35" and "WindowsBase, Version=5.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35". [C:\dev\Code\misc\watch-party\host\WatchParty.Host\WatchParty.Host.csproj]
+C:\Users\<user>\AppData\Local\Microsoft\dotnet\sdk\10.0.404\Microsoft.Common.CurrentVersion.targets(2453,5): warning MSB3277:     "WindowsBase, Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35" was chosen because it was primary and "WindowsBase, Version=5.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35" was not. [C:\dev\Code\misc\watch-party\host\WatchParty.Host\WatchParty.Host.csproj]
+C:\Users\<user>\AppData\Local\Microsoft\dotnet\sdk\10.0.404\Microsoft.Common.CurrentVersion.targets(2453,5): warning MSB3277:     References which depend on "WindowsBase, Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35" [C:\Users\<user>\AppData\Local\Microsoft\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.15\ref\net10.0\WindowsBase.dll]. [C:\dev\Code\misc\watch-party\host\WatchParty.Host\WatchParty.Host.csproj]
+C:\Users\<user>\AppData\Local\Microsoft\dotnet\sdk\10.0.404\Microsoft.Common.CurrentVersion.targets(2453,5): warning MSB3277:         C:\Users\<user>\AppData\Local\Microsoft\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.15\ref\net10.0\WindowsBase.dll [C:\dev\Code\misc\watch-party\host\WatchParty.Host\WatchParty.Host.csproj]
+C:\Users\<user>\AppData\Local\Microsoft\dotnet\sdk\10.0.404\Microsoft.Common.CurrentVersion.targets(2453,5): warning MSB3277:           Project file item includes which caused reference "C:\Users\<user>\AppData\Local\Microsoft\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.15\ref\net10.0\WindowsBase.dll". [C:\dev\Code\misc\watch-party\host\WatchParty.Host\WatchParty.Host.csproj]
+C:\Users\<user>\AppData\Local\Microsoft\dotnet\sdk\10.0.404\Microsoft.Common.CurrentVersion.targets(2453,5): warning MSB3277:             C:\Users\<user>\AppData\Local\Microsoft\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.15\ref/net10.0/WindowsBase.dll [C:\dev\Code\misc\watch-party\host\WatchParty.Host\WatchParty.Host.csproj]
+C:\Users\<user>\AppData\Local\Microsoft\dotnet\sdk\10.0.404\Microsoft.Common.CurrentVersion.targets(2453,5): warning MSB3277:     References which depend on or have been unified to "WindowsBase, Version=5.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35" []. [C:\dev\Code\misc\watch-party\host\WatchParty.Host\WatchParty.Host.csproj]
+C:\Users\<user>\AppData\Local\Microsoft\dotnet\sdk\10.0.404\Microsoft.Common.CurrentVersion.targets(2453,5): warning MSB3277:         C:\Users\<user>\.nuget\packages\microsoft.web.webview2\1.0.4314.35\lib_manual\net5.0-windows10.0.17763.0\Microsoft.Web.WebView2.Wpf.dll [C:\dev\Code\misc\watch-party\host\WatchParty.Host\WatchParty.Host.csproj]
+C:\Users\<user>\AppData\Local\Microsoft\dotnet\sdk\10.0.404\Microsoft.Common.CurrentVersion.targets(2453,5): warning MSB3277:           Project file item includes which caused reference "C:\Users\<user>\.nuget\packages\microsoft.web.webview2\1.0.4314.35\lib_manual\net5.0-windows10.0.17763.0\Microsoft.Web.WebView2.Wpf.dll". [C:\dev\Code\misc\watch-party\host\WatchParty.Host\WatchParty.Host.csproj]
+C:\Users\<user>\AppData\Local\Microsoft\dotnet\sdk\10.0.404\Microsoft.Common.CurrentVersion.targets(2453,5): warning MSB3277:             C:\Users\<user>\.nuget\packages\microsoft.web.webview2\1.0.4314.35\buildTransitive\..\\lib_manual\net5.0-windows10.0.17763.0\Microsoft.Web.WebView2.Wpf.dll [C:\dev\Code\misc\watch-party\host\WatchParty.Host\WatchParty.Host.csproj]
+C:\dev\Code\misc\watch-party\logs\host-20261121-220309-763-23784.log
+[host 22:03:09.772] host started; program folder C:\dev\Code\misc\watch-party
+[host 22:03:09.800] site: ad list 43021 host(s) from data/ad-hosts.txt
+[host 22:03:09.804] watchparty:// registered for this user: "C:\dev\Code\misc\watch-party\host\WatchParty.Host\bin\Debug\net10.0-windows\WatchParty.Host.exe" "%1"
+[host 22:03:09.806] dev: remote debugging on 127.0.0.1:9223 (Debug build only)
+[host 22:03:10.258] request filter installed on the app view; temporary list has 1 host(s)
+[host 22:03:10.260] request filter installed on the site view; ad list has 43021 host(s) from data/ad-hosts.txt
+[host 22:03:10.263] autoplay permission handler installed; grant=True
+[host 22:03:10.265] file picker bridge installed
+[host 22:03:10.267] app view: navigation lock installed; only the sidecar's own origin is allowed
+[host 22:03:10.269] site view: popups cancelled; a second window is never opened
+[host 22:03:10.272] relay installed: site events (top document and every frame) to the app view, commands to the site view
+[host 22:03:10.280] page console forwarded into this log (Debug build only)
+[host 22:03:10.301] sidecar started, pid 14340
+[host 22:03:10.732] sidecar: PORT 59903
+[host 22:03:10.735] sidecar: [media] none set - the room opens with no file
+[host 22:03:10.738] parsed sidecar PORT 59903; navigating to http://127.0.0.1:59903/
+[host 22:03:10.836] bridge: /bridge.js injected into every frame of the site view (16188 chars)
+[host 22:03:10.854] blocked https://blocked.invalid/p.png
+[host 22:03:10.891] navigation completed http://127.0.0.1:59903/ success=True status=200 error=Unknown
+[host 22:03:10.914] page: [ws] hello
+[host 22:03:18.745] sidecar: [dev] discovery: mapped address none
+[host 22:03:18.746] sidecar: [dev] discovery: address class unknown
+[host 22:03:18.746] sidecar: [dev] discovery: verdict timeout
+[host 22:03:22.651] sidecar: [room] over reason=owner_left id=84a2dbf1-b6db-4cab-9138-3f9fcadf9ed6
+[host 22:03:22.657] blocked https://blocked.invalid/p.png
+[host 22:03:22.671] navigation completed http://127.0.0.1:59903/?join=http%3A%2F%2F192.168.10.44%3A54415%2Fjoin%3Fc%3D7HPZ6U success=True status=200 error=Unknown
+[host 22:03:22.674] page: [ws] hello
+[host 22:03:39.530] layout: page mode — site view left of a 380 px app view, top strip 48 px
+[host 22:03:39.531] site: navigate http://127.0.0.1:8099/ep1
+[host 22:03:39.532] page: [page] pageCommitted page=http://127.0.0.1:8099/ep1 previewed=false
+[host 22:03:39.535] page: [page] site view -> http://127.0.0.1:8099/ep1
+[host 22:03:39.568] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=1 count=0 [none]
+[host 22:03:39.601] site navigation completed http://127.0.0.1:8099/ep1 success=True status=200 error=Unknown
+[host 22:03:39.602] site: navigation cancelled=0 host(s)=none
+[host 22:03:40.092] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=2 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:40.098] player: frame http://127.0.0.1:8099/ep1 640x360 duration=60.0 reason=appeared
+[host 22:03:41.570] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=3 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:41.573] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:43.071] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=4 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:43.072] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:44.080] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=5 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:44.081] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:45.573] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=6 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:45.575] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:47.074] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=7 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:47.080] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:48.576] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=8 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:48.578] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:50.076] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=9 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:50.078] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:51.081] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=10 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:51.082] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:52.574] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=11 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:52.575] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:53.580] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=12 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:53.581] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:55.073] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=13 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:55.075] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:56.076] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=14 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:56.077] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:57.578] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=15 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:57.580] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:59.074] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=16 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:59.075] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:04:00.075] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=17 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:04:00.076] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:04:01.074] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=18 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:04:02.075] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=19 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:04:02.077] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:04:03.578] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=20 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:04:03.580] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:04:04.580] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=21 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:04:04.582] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:04:05.583] site: bridge event frame=http://127.0.0.1:8099/ep1 seq=22 event=applied
+[host 22:04:05.586] player: applied reason=play target=0.000 from=0.000
+[host 22:04:06.067] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=23 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:04:06.068] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:04:07.075] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=24 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:04:07.086] player: drift expected=0.006 actual=0.000 delta=-6
+[host 22:04:07.095] site: bridge event frame=http://127.0.0.1:8099/ep1 seq=25 event=play
+[host 22:04:07.577] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=26 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=0.4]
+[host 22:04:08.077] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=27 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=0.9]
+[host 22:04:09.081] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=28 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=1.9]
+[host 22:04:09.082] player: drift expected=2.003 actual=1.883 delta=-121
+[host 22:04:10.066] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=29 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=2.9]
+[host 22:04:10.567] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=30 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=3.4]
+[host 22:04:10.569] player: drift expected=3.490 actual=3.369 delta=-122
+[host 22:04:11.077] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=31 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=3.9]
+[host 22:04:11.576] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=32 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=4.4]
+[host 22:04:11.578] player: drift expected=4.499 actual=4.378 delta=-121
+[host 22:04:12.076] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=33 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=4.9]
+[host 22:04:13.066] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=34 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=5.9]
+[host 22:04:13.069] player: drift expected=5.990 actual=5.868 delta=-123
+[host 22:04:13.567] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=35 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=6.4]
+[host 22:04:14.569] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=36 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=7.4]
+[host 22:04:14.571] player: drift expected=7.491 actual=7.371 delta=-121
+[host 22:04:15.568] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=37 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=8.4]
+[host 22:04:16.076] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=38 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=8.9]
+[host 22:04:16.077] player: drift expected=8.998 actual=8.877 delta=-121
+[host 22:04:16.580] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=39 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=9.4]
+[host 22:04:17.579] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=40 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=10.4]
+[host 22:04:17.582] player: drift expected=10.502 actual=10.381 delta=-121
+[host 22:04:18.081] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=41 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=10.9]
+[host 22:04:19.074] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=42 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=11.9]
+[host 22:04:19.075] player: drift expected=11.996 actual=11.875 delta=-121
+[host 22:04:20.069] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=43 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=12.9]
+[host 22:04:20.079] player: drift expected=12.999 actual=12.871 delta=-128
+[host 22:04:20.572] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=44 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=13.4]
+[host 22:04:21.074] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=45 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=13.9]
+[host 22:04:21.579] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=46 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=14.4]
+[host 22:04:21.589] player: drift expected=14.510 actual=14.381 delta=-129
+[host 22:04:22.569] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=47 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=15.4]
+[host 22:04:23.069] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=48 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=15.9]
+[host 22:04:23.070] player: drift expected=15.991 actual=15.871 delta=-121
+[host 22:04:23.569] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=49 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=16.4]
+[host 22:04:24.072] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=50 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=16.9]
+[host 22:04:24.073] player: drift expected=16.994 actual=16.874 delta=-121
+[host 22:04:24.575] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=51 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=17.4]
+[host 22:04:25.576] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=52 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=18.4]
+[host 22:04:25.577] player: drift expected=18.498 actual=18.378 delta=-120
+[host 22:04:26.076] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=53 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=18.9]
+[host 22:04:26.577] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=54 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=19.4]
+[host 22:04:26.579] player: drift expected=19.500 actual=19.378 delta=-122
+[host 22:04:27.077] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=55 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=19.9]
+[host 22:04:27.580] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=56 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=20.4]
+[host 22:04:27.590] player: drift expected=20.511 actual=20.382 delta=-130
+[host 22:04:28.571] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=57 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=21.4]
+[host 22:04:29.072] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=58 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=21.9]
+[host 22:04:29.074] player: drift expected=21.995 actual=21.874 delta=-121
+[host 22:04:29.578] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=59 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=22.4]
+[host 22:04:30.079] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=60 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=22.9]
+[host 22:04:30.088] player: drift expected=23.009 actual=22.879 delta=-130
+[host 22:04:31.072] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=61 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=23.9]
+[host 22:04:32.071] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=62 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=24.9]
+[host 22:04:32.073] player: drift expected=24.994 actual=24.873 delta=-122
+[host 22:04:32.573] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=63 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=25.4]
+[host 22:04:32.777] site: bridge event frame=http://127.0.0.1:8099/ep1 seq=64 event=applied
+[host 22:04:32.778] site: bridge event frame=http://127.0.0.1:8099/ep1 seq=65 event=pause
+[host 22:04:32.779] player: applied reason=pause target=25.578 from=25.578
+[host 22:04:33.076] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=66 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:33.078] player: drift expected=25.615 actual=25.578 delta=-37
+[host 22:04:34.582] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=67 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:34.585] player: drift expected=25.615 actual=25.578 delta=-37
+[host 22:04:36.074] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=68 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:36.075] player: drift expected=25.615 actual=25.578 delta=-37
+[host 22:04:37.081] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=69 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:37.082] player: drift expected=25.615 actual=25.578 delta=-37
+[host 22:04:38.578] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=70 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:38.579] player: drift expected=25.615 actual=25.578 delta=-37
+[host 22:04:39.580] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=71 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:39.583] player: drift expected=25.615 actual=25.578 delta=-37
+[host 22:04:40.586] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=72 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:40.596] player: drift expected=25.615 actual=25.578 delta=-37
+[host 22:04:42.071] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=73 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:42.072] player: drift expected=25.615 actual=25.578 delta=-37
+[host 22:04:43.073] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=74 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:43.082] player: drift expected=25.615 actual=25.578 delta=-37
+[host 22:04:44.575] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=75 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:44.577] player: drift expected=25.615 actual=25.578 delta=-37
+[host 22:04:46.070] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=76 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:46.071] player: drift expected=25.615 actual=25.578 delta=-37
+[host 22:04:47.581] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=77 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:47.590] player: drift expected=25.615 actual=25.578 delta=-37
+[host 22:04:49.067] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=78 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:49.076] player: drift expected=25.615 actual=25.578 delta=-37
+[host 22:04:50.075] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=79 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:50.077] player: drift expected=25.615 actual=25.578 delta=-37
+[host 22:04:51.077] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=80 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:51.079] player: drift expected=25.615 actual=25.578 delta=-37
+[host 22:04:52.566] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=81 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:52.569] player: drift expected=25.615 actual=25.578 delta=-37
+[host 22:04:53.579] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=82 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:53.580] player: drift expected=25.615 actual=25.578 delta=-37
+[host 22:04:54.581] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=83 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:54.583] player: drift expected=25.615 actual=25.578 delta=-37
+[host 22:04:56.077] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=84 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:56.078] player: drift expected=25.615 actual=25.578 delta=-37
+[host 22:04:57.081] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=85 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:57.082] player: drift expected=25.615 actual=25.578 delta=-37
+[host 22:04:58.541] site: navigate http://127.0.0.1:8099/ep2
+[host 22:04:58.549] page: [page] pageCommitted page=http://127.0.0.1:8099/ep2 previewed=false
+[host 22:04:58.555] page: [page] site view -> http://127.0.0.1:8099/ep2
+[host 22:04:58.568] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=86 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:58.570] player: frame http://127.0.0.1:8099/ep1 640x360 duration=60.0 reason=appeared
+[host 22:04:58.588] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=1 count=0 [none]
+[host 22:04:58.591] site navigation completed http://127.0.0.1:8099/ep2 success=True status=200 error=Unknown
+[host 22:04:58.594] site: navigation cancelled=0 host(s)=none
+[host 22:04:59.099] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=2 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:00.601] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=3 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:02.088] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=4 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:03.089] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=5 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:04.091] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=6 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:04.092] player: frame http://127.0.0.1:8099/ep2 640x360 duration=60.0 reason=removed
+[host 22:05:05.105] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=7 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:05.106] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:06.596] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=8 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:06.597] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:08.094] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=9 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:08.095] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:09.602] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=10 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:09.604] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:11.092] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=11 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:11.093] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:12.093] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=12 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:12.104] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:13.595] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=13 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:13.597] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:15.091] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=14 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:15.101] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:16.091] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=15 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:17.600] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=16 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:17.610] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:19.089] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=17 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:19.090] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:20.095] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=18 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:20.097] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:21.597] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=19 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:21.607] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:22.599] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=20 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:23.600] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=21 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:23.601] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:24.600] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=22 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:24.609] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:26.097] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=23 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:26.098] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:27.446] site: bridge event frame=http://127.0.0.1:8099/ep2 seq=24 event=applied
+[host 22:05:27.447] player: applied reason=play target=0.000 from=0.000
+[host 22:05:27.591] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=25 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:27.593] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:28.593] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=26 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:28.595] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:28.954] site: bridge event frame=http://127.0.0.1:8099/ep2 seq=27 event=play
+[host 22:05:29.093] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=28 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=0.1]
+[host 22:05:30.094] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=29 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=1.1]
+[host 22:05:30.096] player: drift expected=1.153 actual=1.051 delta=-101
+[host 22:05:30.601] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=30 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=1.6]
+[host 22:05:31.600] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=31 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=2.6]
+[host 22:05:31.601] player: drift expected=2.659 actual=2.556 delta=-102
+[host 22:05:32.102] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=32 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=3.1]
+[host 22:05:33.090] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=33 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=4.0]
+[host 22:05:33.091] player: drift expected=4.149 actual=4.047 delta=-102
+[host 22:05:33.597] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=34 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=4.6]
+[host 22:05:34.594] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=35 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=5.6]
+[host 22:05:34.595] player: drift expected=5.653 actual=5.551 delta=-102
+[host 22:05:35.104] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=36 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=6.1]
+[host 22:05:36.095] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=37 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=7.1]
+[host 22:05:36.096] player: drift expected=7.154 actual=7.052 delta=-102
+[host 22:05:36.597] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=38 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=7.6]
+[host 22:05:37.099] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=39 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=8.1]
+[host 22:05:37.101] player: drift expected=8.159 actual=8.056 delta=-102
+[host 22:05:37.603] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=40 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=8.6]
+[host 22:05:38.591] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=41 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=9.5]
+[host 22:05:38.592] player: drift expected=9.650 actual=9.547 delta=-103
+[host 22:05:39.596] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=42 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=10.6]
+[host 22:05:39.598] player: drift expected=10.656 actual=10.553 delta=-103
+[host 22:05:40.596] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=43 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=11.6]
+[host 22:05:40.599] player: drift expected=11.657 actual=11.552 delta=-104
+[host 22:05:41.099] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=44 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=12.1]
+[host 22:05:41.600] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=45 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=12.6]
+[host 22:05:41.601] player: drift expected=12.659 actual=12.556 delta=-102
+[host 22:05:42.102] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=46 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=13.1]
+[host 22:05:43.090] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=47 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=14.0]
+[host 22:05:43.091] player: drift expected=14.149 actual=14.046 delta=-102
+[host 22:05:43.592] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=48 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=14.5]
+[host 22:05:44.095] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=49 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=15.0]
+[host 22:05:44.141] player: drift expected=15.155 actual=15.050 delta=-105
+[host 22:05:44.594] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=50 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=15.6]
+[host 22:05:45.589] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=51 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=16.5]
+[host 22:05:45.591] player: drift expected=16.648 actual=16.546 delta=-102
+[host 22:05:46.089] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=52 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=17.0]
+[host 22:05:46.591] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=53 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=17.5]
+[host 22:05:46.592] player: drift expected=17.650 actual=17.547 delta=-103
+[host 22:05:47.090] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=54 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=18.0]
+[host 22:05:47.596] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=55 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=18.6]
+[host 22:05:47.598] player: drift expected=18.655 actual=18.552 delta=-103
+[host 22:05:48.098] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=56 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=19.1]
+[host 22:05:48.603] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=57 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=19.6]
+[host 22:05:48.605] player: drift expected=19.663 actual=19.560 delta=-103
+[host 22:05:49.595] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=58 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=20.6]
+[host 22:05:50.099] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=59 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=21.1]
+[host 22:05:50.100] player: drift expected=21.157 actual=21.054 delta=-102
+[host 22:05:51.094] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=60 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=22.0]
+[host 22:05:52.089] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=61 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=23.0]
+[host 22:05:52.091] player: drift expected=23.148 actual=23.045 delta=-103
+[host 22:05:52.601] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=62 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=23.6]
+[host 22:05:53.591] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=63 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=24.5]
+[host 22:05:53.593] player: drift expected=24.650 actual=24.546 delta=-104
+[host 22:05:54.099] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=64 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=25.1]
+[host 22:05:55.090] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=65 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=26.0]
+[host 22:05:55.092] player: drift expected=26.149 actual=26.045 delta=-103
+[host 22:05:55.601] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=66 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=26.6]
+[host 22:05:56.593] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=67 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=27.5]
+[host 22:05:56.596] player: drift expected=27.653 actual=27.549 delta=-103
+[host 22:05:57.595] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=68 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=28.6]
+[host 22:05:57.597] player: drift expected=28.655 actual=28.551 delta=-104
+[host 22:05:58.102] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=69 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=29.1]
+[host 22:05:59.100] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=70 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=30.1]
+[host 22:05:59.102] player: drift expected=30.160 actual=30.056 delta=-104
+[host 22:06:00.096] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=71 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=31.1]
+[host 22:06:01.090] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=72 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=32.0]
+[host 22:06:01.099] player: drift expected=32.157 actual=32.046 delta=-111
+[host 22:06:02.104] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=73 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=33.1]
+[host 22:06:02.105] player: drift expected=33.163 actual=33.059 delta=-103
+[host 22:06:03.102] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=74 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=34.1]
+[host 22:06:04.097] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=75 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=35.1]
+[host 22:06:04.105] player: drift expected=35.162 actual=35.053 delta=-109
+[host 22:06:04.596] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=76 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=35.6]
+[host 22:06:05.591] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=77 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=36.5]
+[host 22:06:05.600] player: drift expected=36.658 actual=36.547 delta=-111
+[host 22:06:06.589] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=78 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=37.5]
+[host 22:06:07.090] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=79 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=38.0]
+[host 22:06:07.100] player: drift expected=38.158 actual=38.046 delta=-111
+[host 22:06:08.104] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=80 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=39.1]
+[host 22:06:08.106] player: drift expected=39.163 actual=39.060 delta=-102
+[host 22:06:09.101] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=81 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=40.1]
+[host 22:06:10.098] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=82 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=41.1]
+[host 22:06:10.099] player: drift expected=41.157 actual=41.054 delta=-102
+[host 22:06:10.600] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=83 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=41.6]
+[host 22:06:11.595] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=84 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=42.6]
+[host 22:06:11.598] player: drift expected=42.656 actual=42.551 delta=-104
+[host 22:06:12.095] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=85 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=43.1]
+[host 22:06:13.093] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=86 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=44.0]
+[host 22:06:13.095] player: drift expected=44.153 actual=44.049 delta=-104
+[host 22:06:13.594] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=87 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=44.5]
+[host 22:06:14.098] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=88 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=45.1]
+[host 22:06:14.099] player: drift expected=45.157 actual=45.053 delta=-104
+[host 22:06:15.097] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=89 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=46.1]
+[host 22:06:16.099] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=90 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=47.1]
+[host 22:06:16.101] player: drift expected=47.159 actual=47.055 delta=-104
+[host 22:06:16.601] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=91 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=47.6]
+[host 22:06:17.591] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=92 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=48.5]
+[host 22:06:17.592] player: drift expected=48.650 actual=48.546 delta=-104
+[host 22:06:18.092] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=93 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=49.0]
+[host 22:06:19.103] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=94 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=50.0]
+[host 22:06:19.105] player: drift expected=50.163 actual=50.005 delta=-158
+[host 22:06:20.097] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=95 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=51.0]
+[host 22:06:20.599] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=96 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=51.5]
+[host 22:06:20.608] player: drift expected=51.666 actual=51.500 delta=-166
+[host 22:06:21.594] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=97 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=52.5]
+[host 22:06:22.592] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=98 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=53.5]
+[host 22:06:22.602] player: drift expected=53.660 actual=53.493 delta=-167
+[host 22:06:23.103] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=99 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=54.0]
+[host 22:06:23.605] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=100 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=54.5]
+[host 22:06:23.607] player: drift expected=54.665 actual=54.505 delta=-160
+[host 22:06:24.601] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=101 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=55.5]
+[host 22:06:25.101] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=102 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=56.0]
+[host 22:06:25.102] player: drift expected=56.160 actual=56.001 delta=-158
+[host 22:06:26.099] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=103 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=57.0]
+[host 22:06:26.107] player: drift expected=57.165 actual=56.999 delta=-166
+[host 22:06:27.099] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=104 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=58.0]
+[host 22:06:28.099] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=105 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=59.0]
+[host 22:06:28.101] player: drift expected=59.158 actual=59.000 delta=-158
+[host 22:06:29.096] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=106 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=60.0]
+[host 22:06:29.114] site: bridge event frame=http://127.0.0.1:8099/ep2 seq=107 event=pause
+[host 22:06:29.252] site: bridge event frame=http://127.0.0.1:8099/ep2 seq=108 event=applied
+[host 22:06:29.255] player: applied reason=pause target=60.000 from=60.000
+[host 22:06:29.595] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=109 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=60.0]
+[host 22:06:29.603] player: drift expected=60.000 actual=60.000 delta=0
+[host 22:06:31.092] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=110 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=60.0]
+[host 22:06:31.102] player: drift expected=60.000 actual=60.000 delta=0
+[host 22:06:31.502] closing: killing sidecar pid 14340

@@ -5,8 +5,8 @@ carries its own browser window, everyone lands on the same streaming page, playb
 the same connection. No accounts, no server to rent, no paid services. There is also a deliberately small "watch my
 own file" mode, which exists mainly to test sync without a website in the way.
 
-**Status: Phase 1 (M1, "a room that syncs") is being built.** No milestone is complete and nothing has shipped. The
-only status line kept current is `.scratch/phase-1-m1/spec.md` → `## Status`; read it before believing any claim
+**Status: Phase 2 (M2a, "the room and the page") is being built** and M1 "a room that syncs" is closed. Nothing has
+shipped. The only status line kept current is `.scratch/phase-2-m2a/spec.md` → `## Status`; read it before believing any claim
 about what works.
 
 **Rebuilt on 2026-11-16** around ADR-022 … ADR-027. **ADR-034** (the window is a .NET host around WebView2, the room

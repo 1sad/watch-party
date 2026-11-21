@@ -1,0 +1,812 @@
+C:\Users\<user>\AppData\Local\Microsoft\dotnet\sdk\10.0.404\Microsoft.Common.CurrentVersion.targets(2453,5): warning MSB3277: Found conflicts between different versions of "WindowsBase" that could not be resolved. [C:\dev\Code\misc\watch-party\host\WatchParty.Host\WatchParty.Host.csproj]
+C:\Users\<user>\AppData\Local\Microsoft\dotnet\sdk\10.0.404\Microsoft.Common.CurrentVersion.targets(2453,5): warning MSB3277: There was a conflict between "WindowsBase, Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35" and "WindowsBase, Version=5.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35". [C:\dev\Code\misc\watch-party\host\WatchParty.Host\WatchParty.Host.csproj]
+C:\Users\<user>\AppData\Local\Microsoft\dotnet\sdk\10.0.404\Microsoft.Common.CurrentVersion.targets(2453,5): warning MSB3277:     "WindowsBase, Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35" was chosen because it was primary and "WindowsBase, Version=5.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35" was not. [C:\dev\Code\misc\watch-party\host\WatchParty.Host\WatchParty.Host.csproj]
+C:\Users\<user>\AppData\Local\Microsoft\dotnet\sdk\10.0.404\Microsoft.Common.CurrentVersion.targets(2453,5): warning MSB3277:     References which depend on "WindowsBase, Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35" [C:\Users\<user>\AppData\Local\Microsoft\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.15\ref\net10.0\WindowsBase.dll]. [C:\dev\Code\misc\watch-party\host\WatchParty.Host\WatchParty.Host.csproj]
+C:\Users\<user>\AppData\Local\Microsoft\dotnet\sdk\10.0.404\Microsoft.Common.CurrentVersion.targets(2453,5): warning MSB3277:         C:\Users\<user>\AppData\Local\Microsoft\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.15\ref\net10.0\WindowsBase.dll [C:\dev\Code\misc\watch-party\host\WatchParty.Host\WatchParty.Host.csproj]
+C:\Users\<user>\AppData\Local\Microsoft\dotnet\sdk\10.0.404\Microsoft.Common.CurrentVersion.targets(2453,5): warning MSB3277:           Project file item includes which caused reference "C:\Users\<user>\AppData\Local\Microsoft\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.15\ref\net10.0\WindowsBase.dll". [C:\dev\Code\misc\watch-party\host\WatchParty.Host\WatchParty.Host.csproj]
+C:\Users\<user>\AppData\Local\Microsoft\dotnet\sdk\10.0.404\Microsoft.Common.CurrentVersion.targets(2453,5): warning MSB3277:             C:\Users\<user>\AppData\Local\Microsoft\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.15\ref/net10.0/WindowsBase.dll [C:\dev\Code\misc\watch-party\host\WatchParty.Host\WatchParty.Host.csproj]
+C:\Users\<user>\AppData\Local\Microsoft\dotnet\sdk\10.0.404\Microsoft.Common.CurrentVersion.targets(2453,5): warning MSB3277:     References which depend on or have been unified to "WindowsBase, Version=5.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35" []. [C:\dev\Code\misc\watch-party\host\WatchParty.Host\WatchParty.Host.csproj]
+C:\Users\<user>\AppData\Local\Microsoft\dotnet\sdk\10.0.404\Microsoft.Common.CurrentVersion.targets(2453,5): warning MSB3277:         C:\Users\<user>\.nuget\packages\microsoft.web.webview2\1.0.4314.35\lib_manual\net5.0-windows10.0.17763.0\Microsoft.Web.WebView2.Wpf.dll [C:\dev\Code\misc\watch-party\host\WatchParty.Host\WatchParty.Host.csproj]
+C:\Users\<user>\AppData\Local\Microsoft\dotnet\sdk\10.0.404\Microsoft.Common.CurrentVersion.targets(2453,5): warning MSB3277:           Project file item includes which caused reference "C:\Users\<user>\.nuget\packages\microsoft.web.webview2\1.0.4314.35\lib_manual\net5.0-windows10.0.17763.0\Microsoft.Web.WebView2.Wpf.dll". [C:\dev\Code\misc\watch-party\host\WatchParty.Host\WatchParty.Host.csproj]
+C:\Users\<user>\AppData\Local\Microsoft\dotnet\sdk\10.0.404\Microsoft.Common.CurrentVersion.targets(2453,5): warning MSB3277:             C:\Users\<user>\.nuget\packages\microsoft.web.webview2\1.0.4314.35\buildTransitive\..\\lib_manual\net5.0-windows10.0.17763.0\Microsoft.Web.WebView2.Wpf.dll [C:\dev\Code\misc\watch-party\host\WatchParty.Host\WatchParty.Host.csproj]
+C:\dev\Code\misc\watch-party\logs\host-20261121-220301-122-4972.log
+[host 22:03:01.140] host started; program folder C:\dev\Code\misc\watch-party
+[host 22:03:01.176] site: ad list 43021 host(s) from data/ad-hosts.txt
+[host 22:03:01.182] watchparty:// registered for this user: "C:\dev\Code\misc\watch-party\host\WatchParty.Host\bin\Debug\net10.0-windows\WatchParty.Host.exe" "%1"
+[host 22:03:01.185] dev: remote debugging on 127.0.0.1:9222 (Debug build only)
+[host 22:03:01.748] request filter installed on the app view; temporary list has 1 host(s)
+[host 22:03:01.749] request filter installed on the site view; ad list has 43021 host(s) from data/ad-hosts.txt
+[host 22:03:01.754] autoplay permission handler installed; grant=True
+[host 22:03:01.756] file picker bridge installed
+[host 22:03:01.758] app view: navigation lock installed; only the sidecar's own origin is allowed
+[host 22:03:01.761] site view: popups cancelled; a second window is never opened
+[host 22:03:01.764] relay installed: site events (top document and every frame) to the app view, commands to the site view
+[host 22:03:01.778] page console forwarded into this log (Debug build only)
+[host 22:03:01.803] sidecar started, pid 25620
+[host 22:03:02.535] sidecar: PORT 54415
+[host 22:03:02.537] sidecar: [media] none set - the room opens with no file
+[host 22:03:02.539] parsed sidecar PORT 54415; navigating to http://127.0.0.1:54415/
+[host 22:03:02.609] blocked https://blocked.invalid/p.png
+[host 22:03:02.645] bridge: /bridge.js injected into every frame of the site view (16188 chars)
+[host 22:03:02.657] navigation completed http://127.0.0.1:54415/ success=True status=200 error=Unknown
+[host 22:03:02.684] page: [ws] hello
+[host 22:03:02.751] sidecar: [dev] discovery: mapped address 10.0.33.122
+[host 22:03:02.752] sidecar: [dev] discovery: address class private
+[host 22:03:02.753] sidecar: [dev] discovery: verdict cgnat
+[host 22:03:37.472] layout: page mode — site view left of a 380 px app view, top strip 48 px
+[host 22:03:37.473] site: navigate http://127.0.0.1:8099/ep1
+[host 22:03:37.474] page: [page] site view -> http://127.0.0.1:8099/ep1
+[host 22:03:37.475] page: [page] setPage http://127.0.0.1:8099/ep1
+[host 22:03:37.502] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=1 count=0 [none]
+[host 22:03:37.526] site navigation completed http://127.0.0.1:8099/ep1 success=True status=200 error=Unknown
+[host 22:03:37.527] site: navigation cancelled=0 host(s)=none
+[host 22:03:38.004] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=2 count=1 [id=1 640x360 readyState=1 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:38.014] player: frame http://127.0.0.1:8099/ep1 640x360 duration=60.0 reason=appeared
+[host 22:03:38.504] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=3 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:39.449] sidecar: [page] committed page=http://127.0.0.1:8099/ep1 by=c6728d90-5000-4ade-919f-182d5eb489c0 at=1795295019447
+[host 22:03:39.458] page: [page] pageCommitted page=http://127.0.0.1:8099/ep1 previewed=true
+[host 22:03:39.512] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=4 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:39.515] player: frame http://127.0.0.1:8099/ep1 640x360 duration=60.0 reason=appeared
+[host 22:03:41.003] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=5 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:41.006] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:41.006] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:41.572] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:42.008] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=6 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:42.010] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:42.010] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:43.013] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=7 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:43.015] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:43.015] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:43.073] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:44.082] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:44.501] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=8 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:44.503] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:44.503] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:45.512] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=9 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:45.513] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:45.514] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:45.575] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:47.005] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=10 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:47.007] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:47.007] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:47.080] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:48.513] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=11 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:48.517] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:48.517] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:48.579] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:50.013] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=12 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:50.015] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:50.015] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:50.079] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:51.082] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:51.507] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=13 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:51.509] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:51.509] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:52.512] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=14 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:52.513] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:52.513] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:52.576] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:53.582] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:54.003] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=15 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:54.004] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:54.004] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:55.007] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=16 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:55.009] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:55.009] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:55.075] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:56.012] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=17 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:56.021] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:56.021] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:56.077] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:57.514] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=18 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:57.515] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:57.515] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:57.580] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:59.011] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=19 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:03:59.012] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:03:59.012] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:03:59.075] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:00.011] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=20 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:04:00.013] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:04:00.013] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:00.077] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:01.012] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=21 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:04:01.014] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:04:01.014] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:01.076] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:02.014] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=22 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:04:02.015] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:04:02.016] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:02.077] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:03.515] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=23 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:04:03.516] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:04:03.516] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:03.580] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:04.516] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=24 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:04:04.517] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:04:04.517] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:04.582] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:05.569] site: bridge event frame=http://127.0.0.1:8099/ep1 seq=25 event=play
+[host 22:04:05.579] sidecar: [dev] scheduled-start startAt=1795295047078 maxRtt=1 leadMs=1500 reason=play
+[host 22:04:05.580] sidecar: [dev] state rev=4 reason=play playing=true position=0.000 startAt=1795295047078 by=c6728d90-5000-4ade-919f-182d5eb489c0
+[host 22:04:05.585] site: bridge event frame=http://127.0.0.1:8099/ep1 seq=26 event=applied
+[host 22:04:05.587] player: applied reason=play target=0.000 from=0.000
+[host 22:04:05.588] site: bridge event frame=http://127.0.0.1:8099/ep1 seq=27 event=pause
+[host 22:04:06.003] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=28 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:04:06.014] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:06.014] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:04:06.068] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:06.514] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=29 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:04:06.524] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:07.086] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.007 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:07.092] site: bridge event frame=http://127.0.0.1:8099/ep1 seq=30 event=play
+[host 22:04:07.501] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=31 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=0.3]
+[host 22:04:07.503] player: drift expected=0.423 actual=0.345 delta=-78
+[host 22:04:07.503] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.079 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:07.580] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.122 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:08.013] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=32 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=0.9]
+[host 22:04:08.023] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.086 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:08.079] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.121 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:09.001] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=33 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=1.8]
+[host 22:04:09.003] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.079 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:09.003] player: drift expected=1.923 actual=1.845 delta=-78
+[host 22:04:09.082] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.121 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:09.502] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=34 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=2.3]
+[host 22:04:09.504] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.079 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:10.077] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.129 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:10.501] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=35 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=3.3]
+[host 22:04:10.504] player: drift expected=3.425 actual=3.346 delta=-80
+[host 22:04:10.504] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.079 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:10.570] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.122 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:11.015] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=36 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=3.9]
+[host 22:04:11.020] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.082 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:11.079] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.122 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:11.514] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=37 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=4.4]
+[host 22:04:11.516] player: drift expected=4.436 actual=4.359 delta=-78
+[host 22:04:11.516] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.078 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:11.578] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.121 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:12.087] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.130 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:12.510] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=38 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=5.4]
+[host 22:04:12.512] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.079 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:13.069] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.123 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:13.500] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=39 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=6.3]
+[host 22:04:13.510] player: drift expected=6.431 actual=6.345 delta=-87
+[host 22:04:13.511] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.087 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:13.570] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.121 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:14.002] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=40 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=6.8]
+[host 22:04:14.011] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.086 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:14.515] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=41 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=7.4]
+[host 22:04:14.524] player: drift expected=7.445 actual=7.359 delta=-87
+[host 22:04:14.524] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.087 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:14.571] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.121 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:15.501] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=42 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=8.3]
+[host 22:04:15.511] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.086 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:15.570] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.122 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:16.015] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=43 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=8.9]
+[host 22:04:16.024] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.086 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:16.024] player: drift expected=8.945 actual=8.859 delta=-87
+[host 22:04:16.078] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.122 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:16.589] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.129 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:17.013] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=44 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=9.9]
+[host 22:04:17.015] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.079 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:17.582] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.122 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:18.004] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=45 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=10.8]
+[host 22:04:18.006] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.080 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:18.007] player: drift expected=10.927 actual=10.848 delta=-80
+[host 22:04:18.083] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.123 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:18.505] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=46 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=11.3]
+[host 22:04:18.508] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.080 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:19.009] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=47 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=11.9]
+[host 22:04:19.011] player: drift expected=11.931 actual=11.853 delta=-78
+[host 22:04:19.011] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.079 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:19.075] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.121 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:19.509] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=48 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=12.4]
+[host 22:04:19.519] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.087 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:20.079] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.129 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:20.508] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=49 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=13.4]
+[host 22:04:20.518] player: drift expected=13.438 actual=13.352 delta=-86
+[host 22:04:20.518] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.087 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:20.574] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.122 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:21.010] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=50 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=13.9]
+[host 22:04:21.020] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.087 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:21.075] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.121 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:21.589] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.130 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:22.007] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=51 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=14.9]
+[host 22:04:22.016] player: drift expected=14.937 actual=14.851 delta=-86
+[host 22:04:22.017] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.087 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:22.571] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.122 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:23.006] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=52 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=15.9]
+[host 22:04:23.017] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.088 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:23.071] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.121 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:23.506] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=53 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=16.4]
+[host 22:04:23.516] player: drift expected=16.437 actual=16.350 delta=-87
+[host 22:04:23.516] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.087 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:23.571] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.123 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:24.010] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=54 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=16.9]
+[host 22:04:24.020] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.087 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:24.073] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.121 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:24.512] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=55 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=17.4]
+[host 22:04:24.522] player: drift expected=17.443 actual=17.357 delta=-87
+[host 22:04:24.522] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.086 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:24.577] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.121 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:25.513] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=56 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=18.4]
+[host 22:04:25.523] player: drift expected=18.443 actual=18.358 delta=-85
+[host 22:04:25.523] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.086 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:25.578] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.121 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:26.013] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=57 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=18.9]
+[host 22:04:26.024] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.087 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:26.078] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.121 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:26.580] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.123 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:27.014] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=58 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=19.9]
+[host 22:04:27.023] player: drift expected=19.944 actual=19.858 delta=-87
+[host 22:04:27.024] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.087 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:27.079] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.121 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:27.591] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.130 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:28.003] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=59 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=20.8]
+[host 22:04:28.005] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.080 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:28.580] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.130 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:29.008] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=60 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=21.9]
+[host 22:04:29.018] player: drift expected=21.939 actual=21.853 delta=-87
+[host 22:04:29.019] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.087 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:29.074] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.121 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:29.515] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=61 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=22.4]
+[host 22:04:29.525] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.087 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:29.580] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.122 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:30.088] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.131 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:30.514] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=62 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=23.4]
+[host 22:04:30.523] player: drift expected=23.444 actual=23.358 delta=-87
+[host 22:04:30.523] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.087 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:31.082] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.130 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:31.507] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=63 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=24.4]
+[host 22:04:31.509] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.079 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:32.010] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=64 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=24.9]
+[host 22:04:32.012] player: drift expected=24.933 actual=24.855 delta=-79
+[host 22:04:32.012] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.078 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:32.074] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.122 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:32.583] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.130 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:32.773] site: bridge event frame=http://127.0.0.1:8099/ep1 seq=65 event=pause
+[host 22:04:32.775] sidecar: [dev] state rev=5 reason=pause playing=false position=25.615 startAt=none by=c6728d90-5000-4ade-919f-182d5eb489c0
+[host 22:04:32.777] site: bridge event frame=http://127.0.0.1:8099/ep1 seq=66 event=applied
+[host 22:04:32.778] player: applied reason=pause target=25.615 from=25.615
+[host 22:04:33.011] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=67 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:04:33.020] player: frame http://127.0.0.1:8099/ep1 640x360 duration=60.0 reason=removed
+[host 22:04:33.021] site: bridge event frame=http://127.0.0.1:8099/ep1 seq=68 event=applied
+[host 22:04:33.022] player: applied reason=pause target=25.615 from=0.000
+[host 22:04:33.078] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.037 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:33.380] site: bridge event frame=http://127.0.0.1:8099/ep1 seq=69 event=seeked
+[host 22:04:34.003] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=70 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:34.012] player: drift expected=25.615 actual=25.615 delta=0
+[host 22:04:34.012] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:34.505] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=71 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:34.515] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:34.585] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.037 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:35.503] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=72 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:35.513] player: drift expected=25.615 actual=25.615 delta=0
+[host 22:04:35.513] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:36.011] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=73 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:36.020] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:36.075] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.037 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:37.006] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=74 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:37.008] player: drift expected=25.615 actual=25.615 delta=0
+[host 22:04:37.008] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:37.083] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.037 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:37.513] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=75 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:37.515] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:38.514] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=76 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:38.524] player: drift expected=25.615 actual=25.615 delta=0
+[host 22:04:38.524] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:38.579] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.037 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:39.506] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=77 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:39.516] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:39.583] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.037 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:40.013] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=78 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:40.022] player: drift expected=25.615 actual=25.615 delta=0
+[host 22:04:40.022] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:40.597] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.037 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:41.010] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=79 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:41.020] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:42.009] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=80 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:42.018] player: drift expected=25.615 actual=25.615 delta=0
+[host 22:04:42.018] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:42.072] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.037 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:42.509] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=81 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:42.511] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:43.082] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.037 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:43.509] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=82 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:43.511] player: drift expected=25.615 actual=25.615 delta=0
+[host 22:04:43.511] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:44.508] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=83 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:44.510] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:44.577] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.037 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:45.503] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=84 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:45.504] player: drift expected=25.615 actual=25.615 delta=0
+[host 22:04:45.504] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:46.010] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=85 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:46.020] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:46.072] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.037 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:47.005] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=86 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:47.007] player: drift expected=25.615 actual=25.615 delta=0
+[host 22:04:47.007] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:47.590] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.037 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:48.004] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=87 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:48.008] player: drift expected=25.615 actual=25.615 delta=0
+[host 22:04:48.009] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:48.506] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=88 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:48.508] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:49.076] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.037 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:49.501] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=89 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:49.511] player: drift expected=25.615 actual=25.615 delta=0
+[host 22:04:49.511] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:50.012] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=90 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:50.021] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:50.077] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.037 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:51.014] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=91 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:51.024] player: drift expected=25.615 actual=25.615 delta=0
+[host 22:04:51.024] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:51.079] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.037 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:51.514] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=92 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:51.524] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:52.503] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=93 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:52.505] player: drift expected=25.615 actual=25.615 delta=0
+[host 22:04:52.505] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:52.568] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.037 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:53.502] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=94 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:53.511] player: drift expected=25.615 actual=25.615 delta=0
+[host 22:04:53.512] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:53.581] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.037 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:54.005] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=95 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:54.016] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:54.583] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.037 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:55.000] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=96 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:55.009] player: drift expected=25.615 actual=25.615 delta=0
+[host 22:04:55.009] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:55.514] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=97 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:55.524] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:56.014] site: bridge report frame=http://127.0.0.1:8099/ep1 seq=98 count=1 [id=2 640x360 readyState=4 src=1 playing=0 duration=60.0 t=25.6]
+[host 22:04:56.023] player: drift expected=25.615 actual=25.615 delta=0
+[host 22:04:56.023] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:56.078] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.037 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:56.535] site: navigate http://127.0.0.1:8099/ep2
+[host 22:04:56.537] page: [page] site view -> http://127.0.0.1:8099/ep2
+[host 22:04:56.537] page: [page] setPage http://127.0.0.1:8099/ep2
+[host 22:04:56.564] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=1 count=0 [none]
+[host 22:04:56.566] site navigation completed http://127.0.0.1:8099/ep2 success=True status=200 error=Unknown
+[host 22:04:56.566] site: navigation cancelled=0 host(s)=none
+[host 22:04:57.065] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=2 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:04:57.082] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.037 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:57.566] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=3 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:04:58.067] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=4 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:04:58.540] sidecar: [page] committed page=http://127.0.0.1:8099/ep2 by=c6728d90-5000-4ade-919f-182d5eb489c0 at=1795295098538
+[host 22:04:58.542] page: [page] pageCommitted page=http://127.0.0.1:8099/ep2 previewed=true
+[host 22:04:58.570] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=5 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:04:58.576] player: frame http://127.0.0.1:8099/ep2 640x360 duration=60.0 reason=appeared
+[host 22:04:59.070] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=6 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:04:59.080] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:04:59.080] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:00.070] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=7 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:00.079] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:00.570] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=8 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:00.571] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:00.572] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:01.071] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=9 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:01.081] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:01.575] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=10 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:01.577] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:01.578] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:02.576] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=11 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:02.577] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:02.578] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:03.572] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=12 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:03.575] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:04.076] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=13 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:04.084] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:04.085] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:05.073] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=14 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:05.075] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:05.107] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:06.077] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=15 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:06.078] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:06.078] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:06.598] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:07.072] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=16 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:07.082] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:07.082] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:07.579] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=17 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:07.580] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:08.079] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=18 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:08.089] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:08.089] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:08.096] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:09.073] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=19 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:09.082] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:09.604] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:10.070] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=20 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:10.079] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:10.079] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:10.573] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=21 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:10.584] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:11.076] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=22 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:11.078] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:11.093] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:11.578] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=23 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:11.580] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:11.581] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:12.105] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:12.567] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=24 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:12.578] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:13.076] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=25 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:13.085] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:13.086] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:13.597] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:14.065] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=26 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:14.070] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:14.577] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=27 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:14.578] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:14.578] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:15.101] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:15.576] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=28 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:15.577] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:16.077] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=29 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:16.085] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:16.085] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:16.093] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:17.073] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=30 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:17.075] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:17.610] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:18.066] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=31 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:18.076] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:18.076] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:19.073] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=32 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:19.083] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:19.083] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:19.091] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:20.079] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=33 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:20.088] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:20.088] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:20.097] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:21.078] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=34 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:21.080] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:21.607] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:22.068] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=35 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:22.078] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:22.078] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:22.602] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:23.064] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=36 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:23.066] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:23.568] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=37 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:23.570] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:23.571] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:23.602] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:24.070] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=38 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:24.072] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:24.609] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:25.065] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=39 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:25.075] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:25.075] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:25.566] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=40 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:25.575] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:26.066] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=41 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:26.076] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:26.076] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:26.098] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:27.067] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=42 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:27.076] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:27.439] site: bridge event frame=http://127.0.0.1:8099/ep2 seq=43 event=play
+[host 22:05:27.443] sidecar: [dev] scheduled-start startAt=1795295128942 maxRtt=1 leadMs=1500 reason=play
+[host 22:05:27.445] sidecar: [dev] state rev=7 reason=play playing=true position=0.000 startAt=1795295128942 by=c6728d90-5000-4ade-919f-182d5eb489c0
+[host 22:05:27.446] site: bridge event frame=http://127.0.0.1:8099/ep2 seq=44 event=applied
+[host 22:05:27.447] site: bridge event frame=http://127.0.0.1:8099/ep2 seq=45 event=pause
+[host 22:05:27.448] player: applied reason=play target=0.000 from=0.000
+[host 22:05:27.572] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=46 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:27.574] player: drift expected=0.000 actual=0.000 delta=0
+[host 22:05:27.574] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:27.593] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:28.074] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=47 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:28.076] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:28.595] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.000 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:28.953] site: bridge event frame=http://127.0.0.1:8099/ep2 seq=48 event=play
+[host 22:05:29.079] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=49 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=0.1]
+[host 22:05:29.081] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.082 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:29.081] player: drift expected=0.139 actual=0.057 delta=-81
+[host 22:05:29.095] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:30.068] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=50 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=1.0]
+[host 22:05:30.077] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.088 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:30.096] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:30.571] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=51 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=1.5]
+[host 22:05:30.573] player: drift expected=1.630 actual=1.550 delta=-80
+[host 22:05:30.573] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.081 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:30.603] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:31.073] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=52 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=2.1]
+[host 22:05:31.082] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.088 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:31.574] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=53 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=2.6]
+[host 22:05:31.583] player: drift expected=2.641 actual=2.551 delta=-89
+[host 22:05:31.584] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.090 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:31.602] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.104 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:32.105] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.104 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:32.570] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=54 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=3.5]
+[host 22:05:32.579] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.088 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:33.074] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=55 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=4.1]
+[host 22:05:33.084] player: drift expected=4.141 actual=4.053 delta=-88
+[host 22:05:33.084] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.089 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:33.092] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:33.607] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.111 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:34.072] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=56 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=5.1]
+[host 22:05:34.082] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.089 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:34.578] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=57 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=5.6]
+[host 22:05:34.587] player: drift expected=5.645 actual=5.557 delta=-88
+[host 22:05:34.587] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.088 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:34.596] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:35.113] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.111 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:35.576] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=58 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=6.6]
+[host 22:05:35.586] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.089 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:36.078] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=59 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=7.1]
+[host 22:05:36.080] player: drift expected=7.138 actual=7.058 delta=-80
+[host 22:05:36.080] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.080 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:36.096] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.102 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:36.607] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.111 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:37.068] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=60 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=8.0]
+[host 22:05:37.078] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.088 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:37.101] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:37.572] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=61 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=8.6]
+[host 22:05:37.575] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.082 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:37.575] player: drift expected=8.632 actual=8.551 delta=-81
+[host 22:05:37.605] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:38.075] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=62 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=9.1]
+[host 22:05:38.077] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.081 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:38.575] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=63 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=9.6]
+[host 22:05:38.579] player: drift expected=9.637 actual=9.554 delta=-83
+[host 22:05:38.580] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.083 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:38.592] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:39.565] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=64 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=10.5]
+[host 22:05:39.566] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.081 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:39.598] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:40.074] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=65 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=11.1]
+[host 22:05:40.075] player: drift expected=11.133 actual=11.053 delta=-80
+[host 22:05:40.076] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.080 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:40.599] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.105 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:41.068] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=66 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=12.0]
+[host 22:05:41.069] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.080 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:41.100] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:41.568] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=67 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=12.5]
+[host 22:05:41.569] player: drift expected=12.627 actual=12.547 delta=-80
+[host 22:05:41.570] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.080 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:41.601] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:42.071] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=68 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=13.0]
+[host 22:05:42.073] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.081 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:42.104] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:42.576] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=69 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=13.6]
+[host 22:05:42.578] player: drift expected=13.635 actual=13.554 delta=-81
+[host 22:05:42.578] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.082 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:43.091] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:43.576] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=70 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=14.6]
+[host 22:05:43.578] player: drift expected=14.635 actual=14.555 delta=-80
+[host 22:05:43.578] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.081 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:43.594] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:44.078] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=71 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=15.1]
+[host 22:05:44.079] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.081 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:44.098] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.106 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:44.578] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=72 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=15.6]
+[host 22:05:44.579] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.081 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:44.579] player: drift expected=15.637 actual=15.556 delta=-80
+[host 22:05:44.595] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:45.574] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=73 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=16.6]
+[host 22:05:45.576] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.081 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:45.591] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:46.091] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:46.575] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=74 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=17.6]
+[host 22:05:46.577] player: drift expected=17.634 actual=17.554 delta=-80
+[host 22:05:46.577] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.081 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:46.593] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.104 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:47.075] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=75 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=18.1]
+[host 22:05:47.077] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.082 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:47.092] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:47.580] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=76 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=18.6]
+[host 22:05:47.581] player: drift expected=18.639 actual=18.558 delta=-80
+[host 22:05:47.581] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.081 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:47.598] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:47.796] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=1 count=0 [none]
+[host 22:05:47.797] player: none reason=removed
+[host 22:05:47.798] site navigation completed http://127.0.0.1:8099/ep2 success=True status=200 error=Unknown
+[host 22:05:47.799] site: navigation cancelled=0 host(s)=none
+[host 22:05:48.099] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:48.308] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=2 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=0.0]
+[host 22:05:48.309] player: frame http://127.0.0.1:8099/ep2 640x360 duration=60.0 reason=appeared
+[host 22:05:48.311] site: bridge event frame=http://127.0.0.1:8099/ep2 seq=3 event=applied
+[host 22:05:48.312] site: bridge event frame=http://127.0.0.1:8099/ep2 seq=4 event=play
+[host 22:05:48.313] player: applied reason=play target=19.367 from=0.000
+[host 22:05:48.488] site: bridge event frame=http://127.0.0.1:8099/ep2 seq=5 event=seeked
+[host 22:05:48.605] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:48.803] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=6 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=19.6]
+[host 22:05:48.806] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.247 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:48.806] player: drift expected=19.863 actual=19.617 delta=-246
+[host 22:05:49.597] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:49.801] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=7 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=20.6]
+[host 22:05:49.803] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.247 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:50.100] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.104 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:50.799] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=8 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=21.6]
+[host 22:05:50.800] player: drift expected=21.858 actual=21.613 delta=-245
+[host 22:05:50.800] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.245 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:51.096] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.104 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:51.312] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=9 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=22.1]
+[host 22:05:51.314] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.247 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:52.091] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.104 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:52.309] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=10 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=23.1]
+[host 22:05:52.311] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.248 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:52.311] player: drift expected=23.369 actual=23.121 delta=-248
+[host 22:05:52.605] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.106 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:53.299] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=11 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=24.1]
+[host 22:05:53.301] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.246 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:53.593] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.105 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:53.813] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=12 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=24.6]
+[host 22:05:53.815] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.251 readyState=4 strikes=1 last=none action=none rate=1
+[host 22:05:53.830] player: drift expected=24.873 actual=24.622 delta=-251
+[host 22:05:54.101] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.104 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:54.809] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=13 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=25.6]
+[host 22:05:54.810] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.245 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:55.092] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.105 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:55.603] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.106 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:55.804] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=14 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=26.6]
+[host 22:05:55.806] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.246 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:55.806] player: drift expected=26.864 actual=26.618 delta=-246
+[host 22:05:56.310] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=15 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=27.1]
+[host 22:05:56.313] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.248 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:56.596] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.104 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:57.309] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=16 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=28.1]
+[host 22:05:57.311] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.246 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:57.311] player: drift expected=28.369 actual=28.123 delta=-246
+[host 22:05:57.597] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.104 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:58.104] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.104 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:58.307] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=17 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=29.1]
+[host 22:05:58.309] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.247 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:59.102] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.104 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:05:59.303] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=18 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=30.1]
+[host 22:05:59.304] player: drift expected=30.362 actual=30.116 delta=-246
+[host 22:05:59.304] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.246 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:00.098] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.104 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:00.298] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=19 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=31.1]
+[host 22:06:00.300] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.246 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:00.810] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=20 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=31.6]
+[host 22:06:00.819] player: drift expected=31.877 actual=31.623 delta=-254
+[host 22:06:00.819] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.254 readyState=4 strikes=1 last=none action=none rate=1
+[host 22:06:01.100] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.112 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:01.810] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=21 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=32.6]
+[host 22:06:01.819] player: drift expected=32.877 actual=32.623 delta=-254
+[host 22:06:01.820] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.254 readyState=4 strikes=2 last=none action=nudge rate=1.05
+[host 22:06:02.105] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.104 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:02.805] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=22 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=33.6]
+[host 22:06:02.814] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.253 readyState=4 strikes=3 last=1795295161819 action=none rate=1
+[host 22:06:03.104] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.105 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:03.801] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=23 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=34.6]
+[host 22:06:03.806] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.248 readyState=4 strikes=0 last=1795295161819 action=none rate=1
+[host 22:06:03.807] player: drift expected=34.863 actual=34.615 delta=-248
+[host 22:06:04.105] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.109 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:04.599] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.104 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:04.800] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=24 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=35.6]
+[host 22:06:04.802] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.248 readyState=4 strikes=0 last=1795295161819 action=none rate=1
+[host 22:06:05.309] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=25 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=36.1]
+[host 22:06:05.311] player: drift expected=36.369 actual=36.122 delta=-247
+[host 22:06:05.311] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.247 readyState=4 strikes=0 last=1795295161819 action=none rate=1
+[host 22:06:05.600] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.111 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:06.308] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=26 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=37.1]
+[host 22:06:06.310] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.246 readyState=4 strikes=0 last=1795295161819 action=none rate=1
+[host 22:06:06.598] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.111 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:06.811] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=27 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=37.6]
+[host 22:06:06.813] player: drift expected=37.870 actual=37.625 delta=-245
+[host 22:06:06.813] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.245 readyState=4 strikes=0 last=1795295161819 action=none rate=1
+[host 22:06:07.100] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.112 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:07.807] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=28 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=38.6]
+[host 22:06:07.809] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.247 readyState=4 strikes=0 last=1795295161819 action=none rate=1
+[host 22:06:08.106] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:08.805] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=29 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=39.6]
+[host 22:06:08.808] player: drift expected=39.865 actual=39.618 delta=-246
+[host 22:06:08.808] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.247 readyState=4 strikes=0 last=1795295161819 action=none rate=1
+[host 22:06:09.104] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.104 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:09.307] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=30 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=40.1]
+[host 22:06:09.310] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.248 readyState=4 strikes=0 last=1795295161819 action=none rate=1
+[host 22:06:10.100] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:10.305] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=31 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=41.1]
+[host 22:06:10.307] player: drift expected=41.365 actual=41.119 delta=-246
+[host 22:06:10.307] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.246 readyState=4 strikes=0 last=1795295161819 action=none rate=1
+[host 22:06:10.602] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.104 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:11.300] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=32 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=42.1]
+[host 22:06:11.302] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.246 readyState=4 strikes=0 last=1795295161819 action=none rate=1
+[host 22:06:11.598] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.105 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:12.097] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.103 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:12.297] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=33 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=43.1]
+[host 22:06:12.299] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.247 readyState=4 strikes=0 last=1795295161819 action=none rate=1
+[host 22:06:12.300] player: drift expected=43.357 actual=43.110 delta=-247
+[host 22:06:12.812] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=34 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=43.6]
+[host 22:06:12.813] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.247 readyState=4 strikes=0 last=1795295161819 action=none rate=1
+[host 22:06:13.095] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.104 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:13.311] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=35 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=44.1]
+[host 22:06:13.313] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.247 readyState=4 strikes=0 last=1795295161819 action=none rate=1
+[host 22:06:13.313] player: drift expected=44.371 actual=44.124 delta=-246
+[host 22:06:13.596] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.104 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:14.099] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.104 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:14.297] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=36 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=45.1]
+[host 22:06:14.299] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.246 readyState=4 strikes=0 last=1795295161819 action=none rate=1
+[host 22:06:14.797] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=37 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=45.6]
+[host 22:06:14.799] player: drift expected=45.857 actual=45.611 delta=-246
+[host 22:06:14.799] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.246 readyState=4 strikes=0 last=1795295161819 action=none rate=1
+[host 22:06:15.099] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.104 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:15.302] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=38 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=46.1]
+[host 22:06:15.304] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.248 readyState=4 strikes=0 last=1795295161819 action=none rate=1
+[host 22:06:16.101] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.104 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:16.304] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=39 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=47.1]
+[host 22:06:16.307] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.249 readyState=4 strikes=0 last=1795295161819 action=none rate=1
+[host 22:06:16.308] player: drift expected=47.365 actual=47.116 delta=-249
+[host 22:06:16.604] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.105 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:16.807] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=40 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=47.6]
+[host 22:06:16.809] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.247 readyState=4 strikes=0 last=1795295161819 action=none rate=1
+[host 22:06:17.308] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=41 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=48.1]
+[host 22:06:17.311] player: drift expected=48.368 actual=48.122 delta=-246
+[host 22:06:17.311] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.246 readyState=4 strikes=0 last=1795295161819 action=none rate=1
+[host 22:06:17.593] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.104 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:17.811] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=42 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=48.6]
+[host 22:06:17.812] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.246 readyState=4 strikes=0 last=1795295161819 action=none rate=1
+[host 22:06:18.094] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.104 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:18.312] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=43 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=49.1]
+[host 22:06:18.315] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.248 readyState=4 strikes=0 last=1795295161819 action=none rate=1
+[host 22:06:18.315] player: drift expected=49.372 actual=49.124 delta=-248
+[host 22:06:19.106] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.158 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:19.303] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=44 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=50.1]
+[host 22:06:19.312] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.297 readyState=4 strikes=1 last=1795295161819 action=none rate=1
+[host 22:06:20.099] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.159 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:20.300] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=45 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=51.1]
+[host 22:06:20.301] player: drift expected=51.359 actual=51.069 delta=-290
+[host 22:06:20.302] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.290 readyState=4 strikes=2 last=1795295161819 action=nudge rate=1.05
+[host 22:06:20.608] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.166 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:20.802] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=46 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=51.6]
+[host 22:06:20.803] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.291 readyState=4 strikes=3 last=1795295180301 action=none rate=1
+[host 22:06:21.596] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.158 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:21.812] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=47 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=52.6]
+[host 22:06:21.813] player: drift expected=52.871 actual=52.581 delta=-290
+[host 22:06:21.813] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.290 readyState=4 strikes=4 last=1795295180301 action=none rate=1
+[host 22:06:22.603] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.167 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:22.807] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=48 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=53.6]
+[host 22:06:22.810] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.291 readyState=4 strikes=5 last=1795295180301 action=none rate=1
+[host 22:06:23.105] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.159 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:23.308] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=49 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=54.1]
+[host 22:06:23.310] player: drift expected=54.368 actual=54.077 delta=-290
+[host 22:06:23.310] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.291 readyState=4 strikes=6 last=1795295180301 action=none rate=1
+[host 22:06:23.607] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.160 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:24.306] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=50 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=55.1]
+[host 22:06:24.315] player: drift expected=55.373 actual=55.075 delta=-298
+[host 22:06:24.315] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.298 readyState=4 strikes=7 last=1795295180301 action=none rate=1
+[host 22:06:24.605] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.162 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:25.102] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.159 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:25.302] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=51 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=56.1]
+[host 22:06:25.304] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.291 readyState=4 strikes=8 last=1795295180301 action=nudge rate=1.05
+[host 22:06:25.804] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=52 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=56.6]
+[host 22:06:25.806] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.293 readyState=4 strikes=9 last=1795295185304 action=none rate=1
+[host 22:06:25.806] player: drift expected=56.864 actual=56.571 delta=-293
+[host 22:06:26.108] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.166 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:26.801] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=53 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=57.6]
+[host 22:06:26.805] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.293 readyState=4 strikes=10 last=1795295185304 action=none rate=1
+[host 22:06:27.101] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.159 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:27.303] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=54 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=58.1]
+[host 22:06:27.304] player: drift expected=58.362 actual=58.071 delta=-290
+[host 22:06:27.304] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.291 readyState=4 strikes=11 last=1795295185304 action=none rate=1
+[host 22:06:28.101] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=-0.159 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:28.299] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=55 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=59.1]
+[host 22:06:28.301] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.290 readyState=4 strikes=12 last=1795295185304 action=none rate=1
+[host 22:06:28.799] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=56 count=1 [id=1 640x360 readyState=4 src=1 playing=1 duration=60.0 t=59.6]
+[host 22:06:28.809] player: drift expected=59.867 actual=59.568 delta=-299
+[host 22:06:28.809] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=-0.182 readyState=4 strikes=0 last=1795295185304 action=none rate=1
+[host 22:06:29.098] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.246 readyState=4 strikes=0 last=none action=none rate=1
+[host 22:06:29.247] site: bridge event frame=http://127.0.0.1:8099/ep2 seq=57 event=pause
+[host 22:06:29.249] sidecar: [dev] state rev=8 reason=pause playing=false position=60.000 startAt=none by=c6728d90-5000-4ade-919f-182d5eb489c0
+[host 22:06:29.252] site: bridge event frame=http://127.0.0.1:8099/ep2 seq=58 event=applied
+[host 22:06:29.254] player: applied reason=pause target=60.000 from=60.000
+[host 22:06:29.299] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=59 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=60.0]
+[host 22:06:29.301] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.250 readyState=4 strikes=1 last=1795295185304 action=none rate=1
+[host 22:06:29.604] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.250 readyState=4 strikes=1 last=none action=none rate=1
+[host 22:06:29.798] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=60 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=60.0]
+[host 22:06:29.801] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.250 readyState=4 strikes=2 last=1795295185304 action=none rate=1
+[host 22:06:30.311] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=61 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=60.0]
+[host 22:06:30.313] player: drift expected=60.000 actual=60.000 delta=0
+[host 22:06:30.313] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.250 readyState=4 strikes=3 last=1795295185304 action=snap rate=1
+[host 22:06:30.810] site: bridge report frame=http://127.0.0.1:8099/ep2 seq=62 count=1 [id=1 640x360 readyState=4 src=1 playing=0 duration=60.0 t=60.0]
+[host 22:06:30.819] sidecar: [dev] correction member=c6728d90-5000-4ade-919f-182d5eb489c0 drift=0.250 readyState=4 strikes=4 last=1795295190313 action=none rate=1
+[host 22:06:31.102] sidecar: [dev] correction member=a66b811d-a208-4c5d-8973-e94d969d75e7 drift=0.250 readyState=4 strikes=2 last=none action=snap rate=1
+[host 22:06:31.495] closing: killing sidecar pid 25620

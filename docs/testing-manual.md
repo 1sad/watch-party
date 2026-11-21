@@ -156,6 +156,21 @@ in its output rather than in your judgement. `-Pid`/`-Pids` pick by process, whi
 a title, so the plain form only ever photographs the topmost. `-Place` stacks them first and never puts one back, so run
 it last.
 
+### The rig for a live check
+
+Four traps cost a re-run on 06b and again on 07b. Do these before a live check, not after it fails.
+
+1. **Every `cdp.mjs` call names its window.** Two windows means `--port 9223` on B and `--port 9222` on A, or
+   `WP_DEBUG_PORT` in the environment. A call with no port reads the default window and quietly answers for the wrong one.
+2. **Neither window may be minimised.** A host started `-WindowStyle Hidden` never draws, and the camera refuses it until
+   the window is restored with `ShowWindow(SW_RESTORE)`. Start both windows visible.
+3. **A local page server must answer `206`.** One that answers `200` with `accept-ranges` but no `206` makes
+   `video.seekable` read `[0, 0]`, so every seek lands at 0 and the ladder looks broken. Serve real `Range` responses.
+4. **PowerShell 5.1 cannot send a `Range` header.** `Invoke-WebRequest` drops it; the `206` proof is
+   `curl.exe -s -o NUL -w "%{http_code}" -r 0-99 <url>`.
+5. **A reload is not a re-election.** `location.reload()` on the site view can leave `player: none reason=replaced` with
+   nothing taking its place; if the log shows that, restart both windows rather than chasing the bridge.
+
 ## 8. If something is wrong
 
 - The window opens but shows no page: read the newest log's first lines — a missing `PORT` line means the sidecar did
