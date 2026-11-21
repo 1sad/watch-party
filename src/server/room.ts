@@ -1,7 +1,10 @@
+import { isAbsolute } from 'node:path'
+
 import type {
   ChatMessage,
   CommandFrame,
   ErrorCode,
+  Media,
   Member,
   Playback,
   PlaybackReason,
@@ -10,10 +13,17 @@ import type {
 } from '../shared/protocol.ts'
 import { ANONYMOUS, displayNames } from '../shared/names.ts'
 import { pushChat } from '../shared/chat.ts'
+import { contentTypeFor } from '../shared/media.ts'
 import { expected, scheduledStartAt, seekIsDuplicate } from '../shared/timing.ts'
 
 /** §12: five people is a constraint of the design, not a setting. */
 export const MAX_MEMBERS = 5
+
+/**
+ * §4.2's file half plus the one fact that stays in this process: the absolute
+ * path the sidecar streams from. `snapshot()` strips it (T9a1's Safety line).
+ */
+export type RoomMedia = Media & { path: string }
 
 /** §4.1, in memory, owned by the sidecar (ADR-034: the host learns nothing). */
 export interface RoomState {
@@ -25,7 +35,7 @@ export interface RoomState {
   /** Always `[owner]` in M1 (phase slice §5); grants are T33. */
   controllers: string[]
   page: string | null
-  media: null
+  media: RoomMedia | null
   playback: Playback
   /** Monotonic on every mutation (§4.3 invariant 2). */
   revision: number
@@ -89,6 +99,54 @@ export function renameMember(
   member.lastSeen = now()
   room.revision += 1
   return true
+}
+
+/** The one file a `setMedia` frame asks the room to hold. */
+export interface MediaRegistration {
+  id: string
+  title: string
+  duration: number
+  /** Absolute, on the owner's own disk; the sidecar streams it, nobody else sees it. */
+  path: string
+}
+
+export type SetMediaResult = { ok: true } | { ok: false; code: ErrorCode }
+
+/**
+ * §7.2 file mode: the owner picks one file, the room remembers it, and `page`
+ * is cleared because the two kinds of media never coexist (§4.2).
+ *
+ * Every refusal returns before the first assignment, so `room.media`,
+ * `room.page` and `revision` are untouched — the same rule `applyCommand()`
+ * keeps, for the same reason (T9a1's Safety line). `pathExists` is injected so
+ * this module keeps its one dependency rule: the caller owns the filesystem.
+ */
+export function setMedia(
+  room: RoomState,
+  memberId: string,
+  file: MediaRegistration,
+  pathExists: (path: string) => boolean,
+): SetMediaResult {
+  if (!room.controllers.includes(memberId)) return { ok: false, code: 'not_controller' }
+
+  // ADR-035's map decides playability here, once; `/media/<id>` serves the
+  // content type this line stored rather than deriving a second answer.
+  const contentType = contentTypeFor(file.path)
+  if (contentType === null) return { ok: false, code: 'unsupported_media' }
+  if (!isAbsolute(file.path)) return { ok: false, code: 'bad_media' }
+  if (!pathExists(file.path)) return { ok: false, code: 'bad_media' }
+
+  room.media = {
+    kind: 'file',
+    id: file.id,
+    title: file.title,
+    duration: file.duration,
+    contentType,
+    path: file.path,
+  }
+  room.page = null
+  room.revision += 1
+  return { ok: true }
 }
 
 /** Presence follows the socket (§4.4): a closed socket is `offline`, not gone. */
@@ -210,9 +268,24 @@ export function snapshot(room: RoomState): RoomSnapshot {
     authority: room.authority,
     controllers: room.controllers,
     page: room.page,
-    media: room.media,
+    media: room.media === null ? null : wireMedia(room.media),
     playback: room.playback,
     revision: room.revision,
+  }
+}
+
+/**
+ * Explicit field by field, not a spread minus `path`: a field added to the
+ * room's media later must be a deliberate wire change, never an accidental
+ * leak of where the owner's file lives.
+ */
+function wireMedia(media: RoomMedia): Media {
+  return {
+    kind: media.kind,
+    id: media.id,
+    title: media.title,
+    duration: media.duration,
+    contentType: media.contentType,
   }
 }
 

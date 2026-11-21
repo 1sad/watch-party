@@ -11,7 +11,7 @@ import type { SidecarOptions } from '../../src/server/app.ts'
 
 async function withBuiltPage(
   run: (base: string, distDir: string) => Promise<void>,
-  extra: Pick<Partial<SidecarOptions>, 'start' | 'retryDiscovery'> = {},
+  extra: Partial<SidecarOptions> = {},
 ): Promise<void> {
   const distDir = await mkdtemp(join(tmpdir(), 'watch-party-dist-'))
   await mkdir(join(distDir, 'assets'))
@@ -94,4 +94,66 @@ test('/discovery hands the page its start state, and retry is a POST', async () 
       },
     },
   )
+})
+
+test('/media/<id> streams the one registered file in ranges, and refuses every other id', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'watch-party-media-'))
+  const mediaPath = join(dir, 'clip.mp4')
+  const bytes = Buffer.alloc(1000)
+  for (let index = 0; index < bytes.length; index += 1) bytes[index] = index % 251
+  await writeFile(mediaPath, bytes)
+
+  const log: string[] = []
+  const registered = { id: 'f1', path: mediaPath, contentType: 'video/mp4' }
+
+  try {
+    await withBuiltPage(
+      async (base) => {
+        const ranged = await fetch(`${base}/media/f1`, { headers: { range: 'bytes=100-200' } })
+        assert.equal(ranged.status, 206)
+        assert.equal(ranged.headers.get('content-range'), 'bytes 100-200/1000')
+        assert.equal(ranged.headers.get('content-length'), '101')
+        assert.equal(ranged.headers.get('accept-ranges'), 'bytes')
+        assert.equal(ranged.headers.get('content-type'), 'video/mp4')
+        assert.deepEqual(Buffer.from(await ranged.arrayBuffer()), bytes.subarray(100, 201))
+
+        // `bytes=0-` is a satisfiable range, so it is answered as one: 206
+        // covering the whole file, never a 200 (RFC 9110 §14.4).
+        const fromStart = await fetch(`${base}/media/f1`, { headers: { range: 'bytes=0-' } })
+        assert.equal(fromStart.status, 206)
+        assert.equal(fromStart.headers.get('content-range'), 'bytes 0-999/1000')
+
+        const noRange = await fetch(`${base}/media/f1`)
+        assert.equal(noRange.status, 200)
+        assert.equal(noRange.headers.get('content-length'), '1000')
+
+        const unreadable = await fetch(`${base}/media/f1`, { headers: { range: 'bytes=nonsense' } })
+        assert.equal(unreadable.status, 200)
+        assert.equal(unreadable.headers.get('content-length'), '1000')
+
+        const pastEnd = await fetch(`${base}/media/f1`, { headers: { range: 'bytes=1000-' } })
+        assert.equal(pastEnd.status, 416)
+        assert.equal(pastEnd.headers.get('content-range'), 'bytes */1000')
+
+        // The URL names an id, never a path: another id is simply not there.
+        const other = await fetch(`${base}/media/not-registered`)
+        assert.equal(other.status, 404)
+        const traversal = await fetch(`${base}/media/..%2f..%2fpackage.json`)
+        assert.equal(traversal.status, 404)
+      },
+      { media: () => registered, log: (line) => log.push(line) },
+    )
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+
+  assert.deepEqual(log, [
+    '[media] id=f1 status=206 range=bytes=100-200',
+    '[media] id=f1 status=206 range=bytes=0-',
+    '[media] id=f1 status=200 range=-',
+    '[media] id=f1 status=200 range=bytes=nonsense',
+    '[media] id=f1 status=416 range=bytes=1000-',
+    '[media] id=not-registered status=404 range=-',
+    '[media] id=../../package.json status=404 range=-',
+  ])
 })

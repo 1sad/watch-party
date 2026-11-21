@@ -51,6 +51,24 @@ export interface Playback {
   timelineDuration?: number
 }
 
+/**
+ * §4.2's file half, as the wire sees it (T9a1). It deliberately has no
+ * filesystem path: the room holds that, the sidecar serves the bytes, and every
+ * other window asks for `/media/<id>` on the owner's machine. The field §4.2
+ * calls `title` is the display name the roster shows.
+ */
+export interface FileMedia {
+  kind: 'file'
+  id: string
+  title: string
+  duration: number
+  /** One of ADR-035's four, derived from the extension when the file was set. */
+  contentType: string
+}
+
+/** §4.2. Website mode leaves `media` null and carries the address in `page`. */
+export type Media = FileMedia
+
 /** `spec.md` §4.1, minus `members`/`chat`, which travel beside it. */
 export interface RoomSnapshot {
   code: string
@@ -59,8 +77,8 @@ export interface RoomSnapshot {
   authority: { memberId: string; epoch: number }
   controllers: string[]
   page: string | null
-  /** §4.2's union arrives with file mode (T6); M1 is website mode only. */
-  media: null
+  /** §4.2: file mode sets this and clears `page`; website mode is the reverse. */
+  media: Media | null
   playback: Playback
   revision: number
 }
@@ -83,13 +101,21 @@ export interface ChatMessage {
   ts: number
 }
 
-export type ErrorCode = 'bad_room' | 'room_full' | 'not_controller' | ChatRefusalCode
+export type ErrorCode =
+  | 'bad_room'
+  | 'room_full'
+  | 'not_controller'
+  | 'bad_media'
+  | 'unsupported_media'
+  | ChatRefusalCode
 
 /** One sentence per code, shown as written (§5: "a refusal is explicit"). */
 export const ERROR_SENTENCES: Record<ErrorCode, string> = {
   bad_room: 'That room code does not match this room.',
   room_full: 'This room is full — five people is the limit.',
   not_controller: 'Only the person who started the room can change this.',
+  bad_media: 'That file cannot be played — it is missing from this machine, or its path is not absolute.',
+  unsupported_media: 'File mode plays MP4, M4V, WebM and MOV files only.',
   chat_too_long: 'A chat message can be at most 2000 characters.',
   chat_rate_limited: 'That is too many messages in a row — wait a few seconds.',
   chat_byte_limit:
@@ -163,6 +189,19 @@ export interface SeekFrame {
 
 export type CommandFrame = PlayFrame | PauseFrame | SeekFrame
 
+/**
+ * m→a: the owner names the one file the room plays (§7.2, R11). The path is an
+ * absolute path on the owner's own machine and is never sent back out: guests
+ * only ever see `Media.id` and fetch `/media/<id>` from this sidecar.
+ */
+export interface SetMediaFrame {
+  type: 'setMedia'
+  id: string
+  title: string
+  duration: number
+  path: string
+}
+
 /** m→a: what the member typed. The authority supplies everything else (§5). */
 export interface ChatSendFrame {
   type: 'chat'
@@ -227,6 +266,7 @@ export type ClientFrame =
   | HelloFrame
   | RenameFrame
   | CommandFrame
+  | SetMediaFrame
   | ChatSendFrame
   | PingFrame
   | ReportFrame

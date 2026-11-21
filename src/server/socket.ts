@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import type { IncomingMessage, Server } from 'node:http'
 import { WebSocketServer } from 'ws'
 
@@ -31,6 +32,7 @@ import {
   postChat,
   postSystemChat,
   renameMember,
+  setMedia,
   snapshot,
   wireMembers,
   type RoomState,
@@ -323,6 +325,23 @@ export function attachRoomSocket(
             updatedAt: at,
           }
           send(socket, stateFrame(correction, room.revision, room.authority.memberId, 'seek'))
+          return
+        }
+        case 'setMedia': {
+          // §7.2, owner-only and checked by `setMedia()` before anything is
+          // assigned. A frame that cannot be read is ignored (§5), not refused:
+          // the same rule `report` and `chat` keep.
+          if (
+            typeof frame.id !== 'string' ||
+            typeof frame.title !== 'string' ||
+            typeof frame.duration !== 'number' ||
+            !Number.isFinite(frame.duration) ||
+            typeof frame.path !== 'string'
+          ) {
+            return
+          }
+          const result = setMedia(room, member.id, frame, existsSync)
+          if (!result.ok) fail(socket, result.code)
           return
         }
         case 'chat': {

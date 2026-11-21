@@ -53,20 +53,25 @@ let startState: StartPayload = {
   invite: buildInviteLinks({ kind: 'upnp_unavailable', mappedPort: null, lanIp, localPort: 0, code: roomCode }),
 }
 
+// The room lives here and nowhere else (ADR-034): the host reads one port line
+// and knows nothing about codes, members or frames. The socket shares the page's
+// listener, so the window and a guest dial the same port (T3 item 1).
+const room = createRoom(roomCode)
+
 const server = createSidecarServer({
   distDir: join(root, 'dist'),
   // T6b: the committed clip the page plays until T9a swaps in a picked file.
   // It stays for the tests; `/fixture` is the only path that serves it.
   fixture: join(root, 'tests', 'fixtures', 'fixture.mp4'),
+  // T9a1: `/media/<id>` streams the one file the owner registered; the id is
+  // the only thing a guest's window ever holds.
+  media: () => room.media,
+  log: (line) => process.stdout.write(`${line}\n`),
   version: readVersion(),
   start: () => startState,
   retryDiscovery: () => void runDiscovery(),
 })
 
-// The room lives here and nowhere else (ADR-034): the host reads one port line
-// and knows nothing about codes, members or frames. The socket shares the page's
-// listener, so the window and a guest dial the same port (T3 item 1).
-const room = createRoom(roomCode)
 attachRoomSocket(server, room, {
   // Dev-only: one line per `state`, so a check can count them in the host log.
   // A production sidecar (`NODE_ENV=production`) passes nothing and logs none.

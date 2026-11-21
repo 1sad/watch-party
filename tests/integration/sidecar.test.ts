@@ -69,10 +69,13 @@ test('the sidecar serves the committed fixture at /fixture, with byte ranges', a
     assert.equal(body.length, 100)
     assert.equal(String.fromCharCode(...body.slice(4, 8)), 'ftyp', 'these are the mp4’s own bytes')
 
-    // A suffix range is not something the player sends; it is refused rather
-    // than answered with a 200 the browser would mis-seek.
+    // T9a1 replaced the old "suffix is refused" rule: the shared parser answers
+    // the tail form (`bytes=-500`) as the last 500 bytes, so one parser has one
+    // meaning for every shape a client can send.
     const suffix = await fetch(`http://127.0.0.1:${port}/fixture`, { headers: { range: 'bytes=-500' } })
-    assert.equal(suffix.status, 416)
+    assert.equal(suffix.status, 206)
+    assert.equal(suffix.headers.get('content-range'), `bytes ${size - 500}-${size - 1}/${size}`)
+    assert.equal(suffix.headers.get('content-length'), '500')
   } finally {
     child.kill()
   }

@@ -1,7 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-import type { ChatMessage, NudgeFrame, StateFrame } from '../../src/shared/protocol.ts'
+import type { ChatMessage, ErrorFrame, NudgeFrame, StateFrame } from '../../src/shared/protocol.ts'
 import { expected } from '../../src/shared/timing.ts'
 import { ScriptedClient } from '../support/client.ts'
 import {
@@ -494,6 +496,55 @@ test('R8/R9: a slowed, stalled client is nudged before a seek and converges unde
       `convergence took ${convergedAt - stallStart} ms after the stall began`,
     )
     assert.ok((seek as { at: number }).at - stallStart < 12_000)
+  } finally {
+    await harness.close()
+  }
+})
+
+// T9a1: file mode's wire half. The bytes are served by `/media/<id>`; this
+// assertion is the door — who may name the file, and whether a refusal moves
+// anything.
+test('R11: only the owner may set the room\'s media, and a refusal leaves the room untouched', async () => {
+  const harness = await startHarness({ clients: 2 })
+  const fixture = fileURLToPath(new URL('../fixtures/fixture.mp4', import.meta.url))
+  try {
+    assert.equal(harness.room.media, null, 'the room starts with no file')
+    const guest = harness.guests[0] as ScriptedClient
+
+    // ADR-030 / §5: a guest naming a path on someone else's disk is refused,
+    // and the refusal happens before anything is assigned.
+    guest.send({ type: 'setMedia', id: 'guest', title: 'not mine', duration: 1, path: fixture })
+    const refusal = (await guest.next((frame) => frame.type === 'error')).frame as ErrorFrame
+    assert.equal(refusal.code, 'not_controller')
+    assert.equal(harness.room.media, null, 'a guest cannot put a file in the room')
+
+    harness.owner.send({ type: 'setMedia', id: 'f1', title: 'Fixture', duration: 60, path: fixture })
+    const set = await waitFor(() => harness.room.media, 2000, 'the owner set the room’s media')
+    assert.equal(set.id, 'f1')
+    assert.equal(set.contentType, 'video/mp4', 'the content type comes from ADR-035’s map')
+
+    // The same guard refuses a path that is not there, and `f1` stays put.
+    harness.owner.send({
+      type: 'setMedia',
+      id: 'f2',
+      title: 'Missing',
+      duration: 60,
+      path: join(dirname(fixture), 'missing.mp4'),
+    })
+    const missing = (await harness.owner.next((frame) => frame.type === 'error')).frame as ErrorFrame
+    assert.equal(missing.code, 'bad_media')
+    assert.equal(harness.room.media?.id, 'f1')
+
+    // `welcome.room.media` is what a guest receives: the same file, no path.
+    const late = await harness.join('late')
+    assert.deepEqual(late.welcome.room.media, {
+      kind: 'file',
+      id: 'f1',
+      title: 'Fixture',
+      duration: 60,
+      contentType: 'video/mp4',
+    })
+    assert.equal('path' in (late.welcome.room.media as object), false, 'the owner’s disk path never goes on the wire')
   } finally {
     await harness.close()
   }

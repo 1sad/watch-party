@@ -4,6 +4,15 @@ import { createReadStream } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 
+import { parseRange } from '../shared/media.ts'
+
+/** The one file the room registered, as `/media/<id>` needs it. T9a1. */
+export interface RegisteredMedia {
+  id: string
+  path: string
+  contentType: string
+}
+
 export interface SidecarOptions {
   /** The folder the page was built into (vite → dist/). */
   distDir: string
@@ -13,6 +22,13 @@ export interface SidecarOptions {
    * the sidecar for the contents of the disk.
    */
   fixture?: string
+  /**
+   * The room's one file (T9a1). `/media/<id>` serves this and only this: a URL
+   * names an id, never a path, so a guest cannot read the owner's disk.
+   */
+  media?: () => RegisteredMedia | null
+  /** The sidecar's own log; one line per `/media/` request (T9a1 item 4). */
+  log?: (line: string) => void
   /** What GET /healthz answers with; the page shows it. */
   version: string
   /**
@@ -81,7 +97,20 @@ async function handle(
       sendMethodNotAllowed(response, 'GET, HEAD')
       return
     }
-    await sendFixture(request, response, options.fixture, method)
+    if (options.fixture === undefined) {
+      sendText(response, 404, 'no fixture\n', method)
+      return
+    }
+    await sendFile(request, response, { path: options.fixture, contentType: 'video/mp4' }, method)
+    return
+  }
+
+  if (url.pathname.startsWith('/media/')) {
+    if (method !== 'GET' && method !== 'HEAD') {
+      sendMethodNotAllowed(response, 'GET, HEAD')
+      return
+    }
+    await sendMedia(request, response, url.pathname.slice('/media/'.length), options, method)
     return
   }
 
@@ -166,51 +195,82 @@ function sendMethodNotAllowed(response: ServerResponse, allow: string): void {
 }
 
 /**
- * The fixture clip, with byte ranges because a `<video>` seeks by asking for a
- * byte range starting at a keyframe. Without `206` the browser has to download
- * the whole file before `currentTime = 30` can land, which would make T6b's
- * seek checks measure the disk rather than the player.
+ * `/media/<id>`: the one file the room holds, and nothing else. The id is
+ * looked up in the room's registration; a path never travels in a URL, so this
+ * cannot be asked for a file nobody registered (T9a1's Safety line).
  *
- * `no-store` keeps a window's reload from trusting a stale body after the
- * fixture is regenerated.
+ * One log line per request, whatever the answer: the file id, the status and
+ * the range exactly as received. That is how a later run reads "206, not one
+ * 200" without opening DevTools (T9a1 item 4).
  */
-async function sendFixture(
+async function sendMedia(
   request: IncomingMessage,
   response: ServerResponse,
-  fixture: string | undefined,
+  rawId: string,
+  options: SidecarOptions,
   method: string,
 ): Promise<void> {
-  if (fixture === undefined) {
-    sendText(response, 404, 'no fixture\n', method)
+  let id: string
+  try {
+    id = decodeURIComponent(rawId)
+  } catch {
+    id = rawId
+  }
+
+  const rangeHeader = request.headers.range
+  const media = options.media?.() ?? null
+  if (media === null || media.id !== id) {
+    options.log?.(`[media] id=${id} status=404 range=${rangeHeader ?? '-'}`)
+    sendText(response, 404, 'not found\n', method)
     return
   }
 
+  const status = await sendFile(request, response, media, method)
+  options.log?.(`[media] id=${id} status=${status} range=${rangeHeader ?? '-'}`)
+}
+
+/**
+ * One file, streamed, with byte ranges because a `<video>` seeks by asking for
+ * a range starting at a keyframe. Without `206` the browser downloads the whole
+ * file before `currentTime = 30` can land, which measures the disk rather than
+ * the player. No temp copy, no cache, no whole-file read: `createReadStream`
+ * on the registered path and nothing between it and the socket.
+ *
+ * The header's meaning is `parseRange()`'s (shared, table-tested); this
+ * function only turns its three answers into the three statuses.
+ */
+async function sendFile(
+  request: IncomingMessage,
+  response: ServerResponse,
+  file: { path: string; contentType: string },
+  method: string,
+): Promise<number> {
   let size: number
   try {
-    size = (await stat(fixture)).size
+    size = (await stat(file.path)).size
   } catch {
-    sendText(response, 404, 'no fixture\n', method)
-    return
+    sendText(response, 404, 'not found\n', method)
+    return 404
   }
 
   const headers: Record<string, string | number> = {
-    'content-type': 'video/mp4',
+    'content-type': file.contentType,
     'accept-ranges': 'bytes',
     'cache-control': 'no-store',
   }
 
-  const range = parseByteRange(request.headers.range, size)
-  if (range === 'invalid') {
-    response.writeHead(416, { ...headers, 'content-range': `bytes */${size}` })
+  const range = parseRange(request.headers.range, size)
+  if (range.kind === 'unsatisfiable') {
+    response.writeHead(416, { ...headers, 'content-range': `bytes */${range.size}` })
     response.end()
-    return
+    return 416
   }
 
-  if (range === null) {
+  if (range.kind === 'whole') {
     response.writeHead(200, { ...headers, 'content-length': size })
     if (method === 'HEAD') response.end()
-    else createReadStream(fixture).pipe(response)
-    return
+    else createReadStream(file.path).pipe(response)
+    return 200
   }
 
   response.writeHead(206, {
@@ -219,30 +279,6 @@ async function sendFixture(
     'content-range': `bytes ${range.start}-${range.end}/${size}`,
   })
   if (method === 'HEAD') response.end()
-  else createReadStream(fixture, { start: range.start, end: range.end }).pipe(response)
-}
-
-/**
- * One `Range: bytes=` header in the two forms a media element sends:
- * `start-` (from a keyframe to the end) and `start-end`. A suffix range
- * (`-500`) is the tail and is not needed by the player, so it is refused as
- * invalid rather than half-implemented. Anything unreadable is `invalid`, never
- * "serve the whole thing": a browser that asked for a range and got 200 will
- * seek in the wrong place.
- */
-export function parseByteRange(
-  header: string | undefined,
-  size: number,
-): { start: number; end: number } | 'invalid' | null {
-  if (header === undefined) return null
-  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim())
-  if (match === null) return 'invalid'
-  const [, rawStart, rawEnd] = match
-  if (rawStart === '' || size === 0) return 'invalid'
-
-  const start = Number(rawStart)
-  const end = rawEnd === '' ? size - 1 : Number(rawEnd)
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return 'invalid'
-  if (start >= size || start > end) return 'invalid'
-  return { start, end: Math.min(end, size - 1) }
+  else createReadStream(file.path, { start: range.start, end: range.end }).pipe(response)
+  return 206
 }
