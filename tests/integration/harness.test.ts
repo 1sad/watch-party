@@ -525,6 +525,11 @@ test('R11: a setMedia carrying a stale epoch is refused and registers nothing', 
     // holds is one behind the room's.
     harness.room.authority = { memberId: harness.room.authority.memberId, epoch: held + 1 }
 
+    // The refusal must be a no-op down to the sequence number: a pick that was
+    // not applied is not a write, so `revision` may not move (§4.3 invariant 8).
+    // Hoisting `revision += 1` above the epoch compare in `setMedia()` turns
+    // this red while the `stale_host` assertion above stays green.
+    const revisionBefore = harness.room.revision
     harness.owner.send({
       type: 'setMedia',
       id: 'f1',
@@ -536,6 +541,11 @@ test('R11: a setMedia carrying a stale epoch is refused and registers nothing', 
     const refusal = (await harness.owner.next((frame) => frame.type === 'error')).frame as ErrorFrame
     assert.equal(refusal.code, 'stale_host')
     assert.equal(harness.room.media, null, 'a stale pick puts no file in the room')
+    assert.equal(
+      harness.room.revision,
+      revisionBefore,
+      'a refused pick left the room’s revision where it was',
+    )
     // T9a2's line is written only after an accepted pick, so its absence here is
     // the proof that nothing was registered.
     await settle(100)
@@ -690,8 +700,8 @@ test('F4: the owner closing before any pick still ends the room, and the guest i
 
 // F4: `wss.close()` only stops new upgrades; a socket that connected but never
 // sent `hello` is in `wss.clients` and not in `sockets`. The end must reach it
-// too, and a late `hello` must never receive `welcome`.
-test('F4: a client that never said hello does not outlive the room or join it afterwards', async () => {
+// too, and it must never have been welcomed while it was live.
+test('F4: a client that never said hello does not outlive the room', async () => {
   const harness = await startHarness({ clients: 2 })
   try {
     const raw = await connectSilently(harness.port)
@@ -700,26 +710,24 @@ test('F4: a client that never said hello does not outlive the room or join it af
     await harness.owner.close()
 
     // The end closes every client, joined or not, so this socket cannot keep
-    // listening to the discarded room.
+    // listening to the discarded room. Limit the end's sweep to `sockets` and
+    // this wait times out with the raw socket still open.
     await waitFor(
       () => raw.socket.readyState !== WebSocket.OPEN,
       2000,
       'the room’s end reached the un-joined socket',
     )
+    // It never sent `hello`, so nothing should ever have answered it: a
+    // `welcome` here means a socket was seated as a member without asking.
     assert.equal(
       raw.frames.some((frame) => frame.type === 'welcome'),
       false,
       'a silent socket was never welcomed',
     )
 
-    // Sending the hello it withheld arrives too late: no welcome can follow.
-    raw.send({ type: 'hello', code: CODE })
-    await settle(150)
-    assert.equal(
-      raw.frames.some((frame) => frame.type === 'welcome'),
-      false,
-      'a hello after the room’s end is never accepted',
-    )
+    // The late-hello guard is not tested here: a send on this socket cannot
+    // reach the server now, so an assertion about it would pass for the wrong
+    // reason. That guard is proven on a live socket by the next case.
   } finally {
     await harness.close()
   }
