@@ -179,6 +179,11 @@ Four traps cost a re-run on 06b and again on 07b. Do these before a live check, 
   same room code.
 - `cdp.mjs` finds nothing: the window came from `npm run dev`, not `npm run dev:debug`.
 - The logs are in the way: `logs/` is not committed; delete the old files freely.
+- **A site navigates itself away.** Measured 2026-11-21: `bingebang.sx` replaces its player and sends the whole site view
+  to `google.com` about 15 s after load, then covers it with a Google cookie-consent layer. A trusted press at a player
+  control then lands on that layer or on `HTML.`, so the press proves nothing. Dismiss the consent (a trusted click on
+  its reject button) or use the repository's own page for a layout or bridge check. Never read a site's own redirect as a
+  fault in our bridge.
 - **A sidecar started by hand is easy to leak.** `Get-Process node` should show nothing when no window is open; six
   orphaned `node src/server/main.ts` processes survived one afternoon of live checks on 2026-11-21, each holding a
   port. Closing a window with `CloseMainWindow()` takes its sidecar with it; `Stop-Process` on the host, or starting a
