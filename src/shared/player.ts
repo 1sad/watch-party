@@ -27,8 +27,17 @@ export interface FrameCandidate {
   playing: boolean
   /** 0 when the element has no duration yet, or a live stream's Infinity. */
   duration: number
-  /** The element's own `currentTime`, which 06 will report and correct against the room. */
+  /** The element's own `currentTime`, which 06 reports and corrects against the room. */
   t: number
+  /**
+   * The three fields §5's `report` needs beyond `t` and `readyState` (T06):
+   * whether the element is paused, its buffered end and its own rate. Optional
+   * in the type because the election never reads them, but the bridge always
+   * sends them, and the report the room receives is made from them.
+   */
+  paused?: boolean
+  buffered?: number
+  rate?: number
 }
 
 /** What one frame posts, plus where it came from and when it was heard. */

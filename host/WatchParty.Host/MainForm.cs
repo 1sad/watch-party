@@ -84,6 +84,16 @@ public sealed class MainForm : Form
     private long _siteSeq;
 
     /// <summary>
+    /// T06: the child frames of the site view, by the URL their messages came
+    /// from. A command must reach the frame the elected player lives in — on 6
+    /// of 11 sites that is a cross-origin child frame, and the top document
+    /// cannot pass it on — so the host remembers which frame sent each report
+    /// and posts a <c>playerCommand</c> straight to that one. The entry is only
+    /// ever written from a frame's own message, never from the page.
+    /// </summary>
+    private readonly Dictionary<string, CoreWebView2Frame> _playerFrames = new();
+
+    /// <summary>
     /// T04: the site view's list, read once at startup from <c>data/ad-hosts.txt</c>.
     /// The app view never consults it — its filtering is T1's, so the file-mode
     /// probe keeps working.
@@ -538,13 +548,10 @@ public sealed class MainForm : Form
     /// </summary>
     private void OnSiteFrameCreated(object? sender, CoreWebView2FrameCreatedEventArgs e)
     {
-        e.Frame.WebMessageReceived += OnFrameMessage;
-    }
-
-    /// <summary>One message from a child frame, relayed by the same rule as the top document's.</summary>
-    private void OnFrameMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
-    {
-        RelaySiteEvent(e.Source, e.WebMessageAsJson);
+        // The frame object, not its URL: only this handler knows which frame a
+        // later message came from, and only the frame can be posted to (T06).
+        CoreWebView2Frame frame = e.Frame;
+        frame.WebMessageReceived += (_, args) => RelaySiteEvent(frame, args.Source, args.WebMessageAsJson);
     }
 
     /// <summary>
@@ -554,7 +561,7 @@ public sealed class MainForm : Form
     /// </summary>
     private void OnSiteMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
-        RelaySiteEvent(e.Source, e.WebMessageAsJson);
+        RelaySiteEvent(null, e.Source, e.WebMessageAsJson);
     }
 
     /// <summary>
@@ -565,7 +572,7 @@ public sealed class MainForm : Form
     /// taught to the app view. The one exception is 02b's relay self-test, which
     /// exists only in the measuring build with the test armed.
     /// </summary>
-    private void RelaySiteEvent(string source, string json)
+    private void RelaySiteEvent(CoreWebView2Frame? frame, string source, string json)
     {
         string? kind = MessageKind(json);
         if (!IsRelayable(kind))
@@ -579,6 +586,12 @@ public sealed class MainForm : Form
             }
             return;
         }
+
+        // T06: a frame that reports is the frame the elected player may live in,
+        // and a command for that URL has to be posted to it, not to the top
+        // document. Remembered from the frame's own message; the page cannot
+        // name itself into this table.
+        if (frame is not null && kind == "playerReport") _playerFrames[source] = frame;
 
 #if DEBUG
         // T05's evidence line, measuring build only: every second of a live page
@@ -626,8 +639,11 @@ public sealed class MainForm : Form
 
     /// <summary>
     /// One <c>siteCommand</c> from the app view. Its payload is forwarded as it
-    /// arrived, except a <c>navigate</c> payload, which the host performs itself:
-    /// it is the only way the site view ever moves, and nothing else may issue it.
+    /// arrived, except two the host owns: a <c>navigate</c> payload loads that
+    /// address (nothing else may move the site view), and a <c>playerCommand</c>
+    /// is posted to the frame its <c>source</c> names, because a cross-origin
+    /// player frame cannot be reached through the top document (T01b measured
+    /// that it can be reached directly; T06 is the first caller).
     /// </summary>
     private void RelayToSite(string messageJson)
     {
@@ -648,6 +664,22 @@ public sealed class MainForm : Form
             }
 
             string forwarded = "{\"kind\":\"siteCommand\",\"payload\":" + payload.GetRawText() + "}";
+            if (TryReadPlayerSource(payload, out string source)
+                && _playerFrames.TryGetValue(source, out CoreWebView2Frame? playerFrame)
+                && playerFrame is not null
+                && playerFrame.IsDestroyed() == 0)
+            {
+                // The elected player's own frame. The bridge there checks the
+                // href again, so a stale entry cannot move a different document.
+                playerFrame.PostWebMessageAsJson(forwarded);
+                _relayOut++;
+                MaybeLogRelayOk();
+                return;
+            }
+
+            // No frame of that URL (a top-document player, or a page that has
+            // just reloaded): the top document is the only place left, and the
+            // bridge's href guard stops a command landing in the wrong one.
             _site.CoreWebView2.PostWebMessageAsJson(forwarded);
             _relayOut++;
             MaybeLogRelayOk();
@@ -660,6 +692,24 @@ public sealed class MainForm : Form
         {
             HostLog.Write($"relay: a command could not reach the site view: {error.Message}");
         }
+    }
+
+    /// <summary>
+    /// The second payload field the host reads: a <c>playerCommand</c>'s
+    /// <c>source</c>, the frame URL the app view elected (T06).
+    /// </summary>
+    private static bool TryReadPlayerSource(JsonElement payload, out string source)
+    {
+        source = string.Empty;
+        if (payload.ValueKind != JsonValueKind.Object) return false;
+        if (!payload.TryGetProperty("kind", out JsonElement kind)
+            || kind.ValueKind != JsonValueKind.String
+            || kind.GetString() != "playerCommand") return false;
+        if (!payload.TryGetProperty("source", out JsonElement value)
+            || value.ValueKind != JsonValueKind.String) return false;
+
+        source = value.GetString() ?? string.Empty;
+        return source.Length > 0;
     }
 
     /// <summary>
@@ -984,6 +1034,12 @@ public sealed class MainForm : Form
             case "playerElected":
                 LogPlayerElection(e.WebMessageAsJson);
                 break;
+            case "playerApplied":
+                LogPlayerApplied(e.WebMessageAsJson);
+                break;
+            case "playerDrift":
+                LogPlayerDrift(e.WebMessageAsJson);
+                break;
         }
     }
 
@@ -1013,6 +1069,50 @@ public sealed class MainForm : Form
         catch (JsonException)
         {
             HostLog.Write("player: an election from the app view was not JSON");
+        }
+    }
+
+    /// <summary>
+    /// T06: one line per command the bridge carried out —
+    /// <c>player: applied reason=pause target=83.500 from=84.010</c>. Unlike the
+    /// measuring build's <c>site:</c> lines, this one is written in both builds:
+    /// it is the live check's evidence that the room moved the site's player,
+    /// and where the playhead was when it did. ASCII only (AGENTS.md rule 10).
+    /// </summary>
+    private void LogPlayerApplied(string json)
+    {
+        try
+        {
+            using JsonDocument message = JsonDocument.Parse(json);
+            JsonElement root = message.RootElement;
+            HostLog.Write($"player: applied reason={StringField(root, "reason") ?? "(none)"} "
+                + $"target={SecondsField(root, "target"):F3} from={SecondsField(root, "from"):F3}");
+        }
+        catch (JsonException)
+        {
+            HostLog.Write("player: an applied command from the app view was not JSON");
+        }
+    }
+
+    /// <summary>
+    /// T06: the drift line 09 quotes —
+    /// <c>player: drift expected=83.500 actual=83.610 delta=110</c>. The app view
+    /// writes at most one a second (the bridge reports twice as often while the
+    /// site plays), so a run's worst number is the largest <c>delta</c> on these
+    /// lines. Millis, whole, so no reader has to know a unit.
+    /// </summary>
+    private void LogPlayerDrift(string json)
+    {
+        try
+        {
+            using JsonDocument message = JsonDocument.Parse(json);
+            JsonElement root = message.RootElement;
+            HostLog.Write($"player: drift expected={SecondsField(root, "expected"):F3} "
+                + $"actual={SecondsField(root, "actual"):F3} delta={IntField(root, "deltaMs")}");
+        }
+        catch (JsonException)
+        {
+            HostLog.Write("player: a drift line from the app view was not JSON");
         }
     }
 

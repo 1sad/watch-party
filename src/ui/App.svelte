@@ -10,6 +10,7 @@
     type Media,
     type NudgeFrame,
     type Playback,
+    type PlaybackReason,
     type ReportFrame,
     type ServerFrame,
     type SetMediaFrame,
@@ -46,6 +47,17 @@
     type PlayerCandidate,
     type PlayerEvent,
   } from '../shared/player.ts'
+  import {
+    createSiteEchoes,
+    decidePageEvent,
+    driftFromPlayer,
+    driftLogDue,
+    echoEntries,
+    planFromState,
+    reportFromPlayer,
+    type PagePlan,
+    type PlayerActionEvent,
+  } from '../shared/site-player.ts'
   import {
     PING_INTERVAL_MS,
     authorityNow,
@@ -414,6 +426,10 @@
       // a reconnect, a different room).
       playback = frame.room.playback
       revision = frame.room.revision
+      // §4.1's controllers, as the snapshot stated them: T06 uses this to tell a
+      // controller's click on the site's player from a guest's.
+      controllers = frame.room.controllers
+      playbackReason = 'join'
       // §5: `welcome` carries the epoch, and `setMedia` sends it back.
       epoch = frame.epoch
       // §4.2 + invariant 9: the snapshot also says which file; a window landing
@@ -445,6 +461,10 @@
       if (frame.revision < revision) return
       playback = frame.playback
       revision = frame.revision
+      playbackReason = frame.reason
+      // T06 item 1: the site view's player is a follower too (ADR-029), and a
+      // `state` is the one frame that moves it.
+      driveSite(frame)
     } else if (frame.type === 'pageCommitted') {
       // §5: the authority's word that the staged page is now the room's. Every
       // window moves on this frame and on nothing else — the bar's countdown is
@@ -645,6 +665,18 @@
   let playerEvents: PlayerEvent[] = []
   /** §10.1's winner: one per room, kept until it goes. */
   let elected: PlayerCandidate | null = null
+  /**
+   * §4.1's controllers, as the last `welcome` stated them. ADR-030's one writer
+   * decides, but this window also has to: a guest's click on the site's own
+   * player is corrected back rather than sent to a room that would refuse it.
+   */
+  let controllers: string[] = []
+  /** The reason of the last `state`, so a correction re-applies the room under the same name. */
+  let playbackReason: PlaybackReason = 'join'
+  /** §6.6's set, one per element: the file player has one, a site has ads and a player. */
+  const siteEchoes = createSiteEchoes()
+  /** `performance.now()` of the last `player: drift` line; null before the first. */
+  let driftLineAt: number | null = null
 
   /**
    * The relay's other half: one frame's report or one reload event. The host has
@@ -682,6 +714,9 @@
         receivedAt: Date.now(),
       })
       electPlayer()
+      // The same report also carries the elected element's playhead, which is
+      // §5's `report` (T06 item 2) when this frame holds the winner.
+      reportFromSite(source, candidates)
       return
     }
 
@@ -689,9 +724,44 @@
       const id = body.id
       const event = body.event
       if (typeof id !== 'number') return
-      if (event !== 'emptied' && event !== 'loadstart') return
-      playerEvents.push({ source, id, event, t: typeof body.t === 'number' ? body.t : 0 })
-      electPlayer()
+
+      if (event === 'emptied' || event === 'loadstart') {
+        playerEvents.push({ source, id, event, t: typeof body.t === 'number' ? body.t : 0 })
+        electPlayer()
+        return
+      }
+
+      if (event === 'applied') {
+        // T06 item 4: one line per command the bridge carried out, written by
+        // the host in both builds exactly as the election line is.
+        postToHost({
+          kind: 'playerApplied',
+          reason: typeof body.reason === 'string' ? body.reason : '(none)',
+          target: typeof body.target === 'number' ? body.target : 0,
+          from: typeof body.from === 'number' ? body.from : 0,
+        })
+        return
+      }
+
+      const playbackEvent = event === 'play' || event === 'pause' || event === 'seeked' ? event : null
+      if (playbackEvent === null) return
+      const action: PlayerActionEvent = {
+        source,
+        id,
+        event: playbackEvent,
+        t: typeof body.t === 'number' ? body.t : 0,
+        wasPlaying: body.wasPlaying === true,
+      }
+      // §6.6 and ADR-030: ours is dropped, the controller's is a command, and a
+      // guest's is corrected back rather than sent to a room that would refuse.
+      const decision = decidePageEvent(action, elected, siteEchoes, performance.now(), isController())
+      if (decision.kind === 'send') {
+        sendCommand(decision.command)
+        return
+      }
+      if (decision.kind === 'correct' && playback !== null) {
+        postToSite(planFromState(playback, revision, playbackReason, elected, authorityClock()))
+      }
     }
   }
 
@@ -710,6 +780,10 @@
       playing: candidate.playing === true,
       duration: typeof candidate.duration === 'number' ? candidate.duration : 0,
       t: typeof candidate.t === 'number' ? candidate.t : 0,
+      // T06: §5's `report` fields, measured by the bridge on the element itself.
+      paused: candidate.paused === true,
+      buffered: typeof candidate.buffered === 'number' ? candidate.buffered : 0,
+      rate: typeof candidate.rate === 'number' ? candidate.rate : 1,
     }
   }
 
@@ -737,6 +811,73 @@
             h: result.elected.h,
             duration: result.elected.duration,
           },
+    })
+  }
+
+  /** Whether this window is one the room will listen to (ADR-024, ADR-030). */
+  function isController(): boolean {
+    return selfId !== null && controllers.includes(selfId)
+  }
+
+  /**
+   * T06 item 3's rule, in the one place it can be kept: record every event the
+   * command will cause **before** it is posted, then post it. The bridge cannot
+   * be touched before the message arrives, so the entry is in the set before
+   * the write it describes (§6.6).
+   */
+  function postToSite(plan: PagePlan | null): void {
+    if (plan === null || host === null) return
+    siteEchoes.expect(
+      { source: plan.command.source, id: plan.command.id },
+      echoEntries(plan, performance.now()),
+    )
+    postToHost({ kind: 'siteCommand', payload: plan.command })
+  }
+
+  /**
+   * T06 item 1: the `state` frame's play / pause / seek, posted to the elected
+   * element only. A website room is the only one with a site view to drive, and
+   * a preview is not a follower yet (ADR-032 as amended) — the same two rules
+   * `Player` keeps for the file.
+   */
+  function driveSite(frame: { playback: Playback; revision: number; reason: PlaybackReason }): void {
+    if (roomPage === null || pendingPreview !== null) return
+    postToSite(planFromState(frame.playback, frame.revision, frame.reason, elected, authorityClock()))
+  }
+
+  /**
+   * T06 item 2: the elected element's own numbers become §5's `report`, and one
+   * `player: drift` line a second goes to the host beside it. The room's ladder
+   * is the only corrector; nothing here decides a correction. A paused room gets
+   * reports too: §6.3's paused row (snap directly) can only act on a measurement.
+   */
+  function reportFromSite(source: string, candidates: readonly FrameCandidate[]): void {
+    const winner = elected
+    if (winner === null || winner.source !== source) return
+    if (playback === null || pendingPreview !== null) return
+    const candidate = candidates.find((one) => one.id === winner.id)
+    if (candidate === undefined) return
+    const reading = {
+      t: candidate.t,
+      paused: candidate.paused === true,
+      readyState: candidate.readyState,
+      buffered: candidate.buffered ?? 0,
+      rate: candidate.rate ?? 1,
+    }
+    sendCommand(reportFromPlayer(reading, {
+      duration: Number.isFinite(candidate.duration) && candidate.duration > 0 ? candidate.duration : undefined,
+      origin: location.origin,
+      rtt: estimate.rtt,
+    }))
+    const now = performance.now()
+    if (!driftLogDue(driftLineAt, now)) return
+    driftLineAt = now
+    const drift = driftFromPlayer(reading, playback, authorityClock())
+    postToHost({
+      kind: 'playerDrift',
+      expected: drift.expected,
+      actual: drift.actual,
+      deltaMs: drift.deltaMs,
     })
   }
 

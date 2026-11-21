@@ -1,18 +1,28 @@
 /*
- * The bridge (T05, ADR-038): the only script of ours that runs in the site view.
+ * The bridge (T05, T06, ADR-038): the only script of ours that runs in the site view.
  *
  * The host injects this text into every document of the site view with
  * `AddScriptToExecuteOnDocumentCreatedAsync`, so it runs in each frame of the
  * page - the cross-origin player frames on 6 of the 11 sites E2 tested included
  * (01 measured that a frame's message reaches the host on its own
- * `frame.WebMessageReceived`). Its whole job is to say what `<video>` elements
- * its frame has; the app view scores them and keeps the winner (shared/player.ts).
+ * `frame.WebMessageReceived`). It has two jobs: say what `<video>` elements its
+ * frame has, so the app view can elect one (shared/player.ts), and be the hands
+ * of the room on that element - accept a command, and report what the element
+ * did (T06).
  *
- * It posts exactly two kinds, `playerReport` and `playerEvent`, and the host's
- * relay drops every other kind - a page can run this script too, so the frame is
- * not trusted with more. It is plain ES5-ish JavaScript with no imports because
- * it is injected as text, and it must not depend on anything the page may have
- * broken: every read of an element is defensive.
+ * It posts one kind, `playerReport`, for the candidate list, and one,
+ * `playerEvent`, for everything the element does: `emptied`/`loadstart` (a
+ * reload), `play`/`pause`/`seeked` (a state the room may have to hear about),
+ * and `applied` (a command this frame just carried out, for the `player:` line).
+ * The host's relay drops every other kind - a page can run this script too, so
+ * the frame is not trusted with more. It is plain ES5-ish JavaScript with no
+ * imports because it is injected as text, and it must not depend on anything the
+ * page may have broken: every read of an element is defensive.
+ *
+ * §6.6's echo suppression is **not** here: the events this script posts include
+ * our own commands' effects, and the app view drops them using the one echo set
+ * in `shared/echo.ts`, recorded before the command is posted. That keeps the
+ * rule in one place, and this file only has to say what happened.
  *
  * Read from disk by `tests/unit/player-bridge.test.ts` and served to the host at
  * `/bridge.js`; there is one copy of these bytes.
@@ -22,11 +32,16 @@
 
   var REPORT = 'playerReport'
   var EVENT = 'playerEvent'
+  var COMMAND = 'siteCommand'
+  var APPLY = 'playerCommand'
 
   // A report never repeats faster than this while the candidate set is the
   // same; a changed set may go sooner, but not more than four times a second.
   var POLL_MS = 1000
   var CHANGE_GAP_MS = 250
+  // §6.2 wants a measurement often enough for §6.3's ladder; while a candidate
+  // is playing (or the site view has focus), the poll runs at this rate.
+  var PLAYBACK_POLL_MS = 500
   // `emptied` and `loadstart` arrive back to back for one reload; one is enough.
   var EVENT_GAP_MS = 100
 
@@ -35,8 +50,10 @@
 
   var ids = new WeakMap()
   var nextId = 1
+  var byId = {}
   var listened = new WeakSet()
   var eventAt = {}
+  var seeking = {}
   var seq = 0
   var lastSentAt = 0
   var lastShape = null
@@ -66,6 +83,17 @@
     return typeof value === 'number' && isFinite(value) ? value : 0
   }
 
+  function bufferedEnd(element) {
+    try {
+      if (element.buffered && element.buffered.length > 0) {
+        return number(element.buffered.end(element.buffered.length - 1))
+      }
+    } catch (error) {
+      // A detached or empty TimeRanges has no end; 0 is the honest answer.
+    }
+    return 0
+  }
+
   function measure(element) {
     var box = element.getBoundingClientRect ? element.getBoundingClientRect() : null
     var readyState = number(element.readyState)
@@ -79,6 +107,10 @@
       playing: element.paused === false && element.ended !== true && readyState > 2,
       duration: number(element.duration),
       t: number(element.currentTime),
+      // §5's `report` fields (T06): the app view maps these onto the `report` frame.
+      paused: element.paused !== false,
+      buffered: bufferedEnd(element),
+      rate: number(element.playbackRate),
     }
   }
 
@@ -90,6 +122,10 @@
     post({ kind: EVENT, event: kind, id: id, t: number(element.currentTime) })
   }
 
+  function onPlayback(element, kind) {
+    post({ kind: EVENT, event: kind, id: idOf(element), t: number(element.currentTime) })
+  }
+
   function watch(element) {
     if (listened.has(element) || !element.addEventListener) return
     listened.add(element)
@@ -99,6 +135,23 @@
     element.addEventListener('loadstart', function (event) {
       onReloaded(element, event ? event.type : 'loadstart')
     })
+    // T06: the four events a room command can be mistaken for, or a person can
+    // cause. Which of the two it was is the app view's answer (§6.6).
+    element.addEventListener('play', function () {
+      onPlayback(element, 'play')
+    })
+    element.addEventListener('pause', function () {
+      onPlayback(element, 'pause')
+    })
+    element.addEventListener('seeking', function () {
+      seeking[idOf(element)] = element.paused === false
+    })
+    element.addEventListener('seeked', function () {
+      var id = idOf(element)
+      var wasPlaying = seeking[id] === true
+      delete seeking[id]
+      post({ kind: EVENT, event: 'seeked', id: id, t: number(element.currentTime), wasPlaying: wasPlaying })
+    })
   }
 
   /** What the frame can see right now: every `<video>` in this document, in DOM order. */
@@ -107,14 +160,16 @@
     var list = []
     for (var i = 0; i < videos.length; i += 1) {
       watch(videos[i])
+      byId[idOf(videos[i])] = videos[i]
       list.push(measure(videos[i]))
     }
     return list
   }
 
   /**
-   * The candidate set as one string, without `t`: the position moves every
-   * second by itself, and a report per second is the poll, not a change.
+   * The candidate set as one string, without `t` and the playback fields: the
+   * position moves every second by itself, and a report per half second is the
+   * poll, not a change.
    */
   function shapeOf(list) {
     var parts = []
@@ -133,21 +188,120 @@
     post({ kind: REPORT, candidates: list })
   }
 
+  function focused() {
+    try {
+      return !!(document.hasFocus && document.hasFocus())
+    } catch (error) {
+      return false
+    }
+  }
+
   function tick() {
     var list = scan()
     var shape = shapeOf(list)
     var now = Date.now()
+    var busy = focused()
+    for (var i = 0; i < list.length; i += 1) {
+      if (list[i].playing) busy = true
+    }
     if (shape !== lastShape) {
       if (now - lastSentAt >= CHANGE_GAP_MS) send(list, now)
       // A change inside the gap is not lost: the next poll sees it again.
       return
     }
-    if (now - lastSentAt >= POLL_MS) send(list, now)
+    if (now - lastSentAt >= (busy ? PLAYBACK_POLL_MS : POLL_MS)) send(list, now)
+  }
+
+  function startPlay(element) {
+    try {
+      var playing = element.play()
+      // A refused autoplay is the site's own business, not a reason to throw here.
+      if (playing && typeof playing.catch === 'function') playing.catch(function () {})
+    } catch (error) {
+      // Same: the element not starting is reported by the next report.
+    }
+  }
+
+  function setTime(element, target) {
+    try {
+      element.currentTime = target
+    } catch (error) {
+      // An element with no duration yet refuses the write; the next state tries again.
+    }
+  }
+
+  /**
+   * One `playerCommand` from the app view: the only write this frame makes on
+   * the room's behalf. The host routed it to this frame (T01b measured a
+   * cross-origin frame accepts a posted message); `href` is checked again here
+   * because the same command falls back to the top document when the host has
+   * no frame for that URL, and a stray id must not move a different video.
+   *
+   * A command with a `leadMs` is §6.4's scheduled start, so it is never "play
+   * now": whatever is playing is held first, the playhead is placed, and
+   * `play()` waits for the beat. That is what stops the window that pressed
+   * play running ahead of the one that only heard about it.
+   */
+  function applyCommand(payload) {
+    if (!payload || payload.kind !== APPLY) return
+    var element = byId[payload.id]
+    if (!element) return
+    if (typeof payload.href === 'string' && payload.href !== String(location.href)) return
+
+    var from = number(element.currentTime)
+    var target = typeof payload.target === 'number' && isFinite(payload.target) ? payload.target : from
+    var lead = typeof payload.leadMs === 'number' && isFinite(payload.leadMs) ? Math.max(0, payload.leadMs) : 0
+    var action = payload.action
+    var scheduled = lead > 0
+
+    if (action !== 'pause' && action !== 'play' && action !== 'seek') return
+
+    try {
+      if (action === 'pause' || (scheduled && element.paused === false)) element.pause()
+    } catch (error) {
+      // A page that broke `pause` still gets the line below, which says so.
+    }
+
+    if (typeof payload.target === 'number') setTime(element, target)
+
+    if (action === 'pause') {
+      // Nothing more: a paused room's playhead is the ladder's to snap.
+    } else if (action === 'seek' && payload.resume !== true) {
+      // A paused snap: the playhead moved and the element stays paused.
+    } else if (scheduled) {
+      setTimeout(function () {
+        startPlay(element)
+      }, lead)
+    } else {
+      startPlay(element)
+    }
+
+    // T06's one line per applied command: the reason the room gave, where the
+    // playhead was asked to go, and where it was when this frame looked.
+    post({
+      kind: EVENT,
+      event: 'applied',
+      id: idOf(element),
+      action: action,
+      reason: typeof payload.reason === 'string' ? payload.reason : '(none)',
+      target: target,
+      from: from,
+    })
+  }
+
+  function onHostMessage(event) {
+    var message = event ? event.data : null
+    if (!message || message.kind !== COMMAND) return
+    applyCommand(message.payload)
+  }
+
+  if (typeof host.addEventListener === 'function') {
+    host.addEventListener('message', onHostMessage)
   }
 
   function start() {
     tick()
-    setInterval(tick, POLL_MS)
+    setInterval(tick, PLAYBACK_POLL_MS)
   }
 
   if (document.readyState === 'loading' && document.addEventListener) {

@@ -1,12 +1,16 @@
 /**
- * Ticket 05: the frame side of the bridge, run for real.
+ * Ticket 05: the frame side of the bridge, run for real. Ticket 06 adds the
+ * room's half: a posted command moves only its own element, and the element's
+ * own play/pause/seeked are posted back for the app view to judge (§6.6).
  *
  * `src/shared/player-bridge.js` is injected into every frame of the site view as
  * text, so it cannot be imported; it is read here exactly as the sidecar serves
  * it and run against a fake document. What is proved: one report at DOM ready
- * carrying the fields the scoring reads, the once-a-second poll, a change posting
- * sooner than the poll, an `emptied`/`loadstart` posting the element's own id —
- * and that only the two kinds the relay accepts ever leave the frame.
+ * carrying the scoring's fields and §5's report fields, the poll's two rates, a
+ * change posting sooner than the poll, an `emptied`/`loadstart` posting the
+ * element's own id, the command path (play, pause, a scheduled beat, a foreign
+ * href), the five events the app view turns into commands or lines — and that
+ * only the two kinds the relay accepts ever leave the frame.
  */
 
 import test from 'node:test'
@@ -29,13 +33,19 @@ interface FakeVideo {
   ended: boolean
   duration: number
   currentTime: number
+  playbackRate: number
+  buffered: { length: number; end(index: number): number }
+  played: number
+  pausedCalls: number
   listeners: Map<string, Listener[]>
   getBoundingClientRect(): { width: number; height: number }
   addEventListener(name: string, listener: Listener): void
+  play(): Promise<void>
+  pause(): void
 }
 
 function video(over: Partial<FakeVideo> = {}): FakeVideo {
-  return {
+  const element: FakeVideo = {
     w: 842,
     h: 474,
     readyState: 4,
@@ -44,6 +54,10 @@ function video(over: Partial<FakeVideo> = {}): FakeVideo {
     ended: false,
     duration: 1420.0436,
     currentTime: 80.2,
+    playbackRate: 1,
+    buffered: { length: 1, end: () => 1400.5 },
+    played: 0,
+    pausedCalls: 0,
     listeners: new Map<string, Listener[]>(),
     getBoundingClientRect() {
       return { width: this.w, height: this.h }
@@ -53,40 +67,94 @@ function video(over: Partial<FakeVideo> = {}): FakeVideo {
       listeners.push(listener)
       this.listeners.set(name, listeners)
     },
+    play() {
+      this.played += 1
+      this.paused = false
+      return Promise.resolve()
+    },
+    pause() {
+      this.pausedCalls += 1
+      this.paused = true
+    },
     ...over,
   }
+  return element
 }
 
+/** One message the bridge posted, as the harness keeps it. */
+type Posted = Record<string, unknown>
+
 function harness(videos: FakeVideo[]) {
-  const posted: Array<Record<string, unknown>> = []
+  const posted: Posted[] = []
   const intervals: Array<() => void> = []
+  const timers: Array<() => void> = []
+  const hostListeners: Array<(event: { data?: unknown }) => void> = []
   let clock = 1_000_000
 
   const document = {
     readyState: 'complete',
     querySelectorAll: (selector: string) => (selector === 'video' ? videos : []),
     addEventListener: () => {},
+    // The fake page has no focus, which is the paused-rate case.
+    hasFocus: () => false,
   }
   const window = {
-    chrome: { webview: { postMessage: (message: Record<string, unknown>) => posted.push(message) } },
+    chrome: {
+      webview: {
+        postMessage: (message: Posted) => posted.push(message),
+        addEventListener: (_name: string, listener: (event: { data?: unknown }) => void) => {
+          hostListeners.push(listener)
+        },
+      },
+    },
   }
 
-  // The five names the bridge reads from its surroundings are parameters, so a
-  // fake document and a fake clock replace the browser's own.
-  const run = new Function('window', 'document', 'location', 'setInterval', 'Date', source)
-  run(window, document, { href: HREF }, (tick: () => void) => intervals.push(tick), {
-    now: () => clock,
-  })
+  // The six names the bridge reads from its surroundings are parameters, so a
+  // fake document, a fake clock and a fake timer queue replace the browser's own.
+  const run = new Function(
+    'window',
+    'document',
+    'location',
+    'setInterval',
+    'setTimeout',
+    'Date',
+    source,
+  )
+  run(
+    window,
+    document,
+    { href: HREF },
+    (tick: () => void) => intervals.push(tick),
+    (timer: () => void) => timers.push(timer),
+    { now: () => clock },
+  )
 
   return {
     posted,
+    /** One `siteCommand` as the host posts it into the frame. */
+    command(payload: Posted) {
+      for (const listener of hostListeners) {
+        listener({ data: { kind: 'siteCommand', payload } })
+      }
+    },
     tick() {
       for (const interval of intervals) interval()
+    },
+    /** Run the bridge's pending `setTimeout` beats. */
+    flush() {
+      while (timers.length > 0) timers.shift()?.()
     },
     advance(ms: number) {
       clock += ms
     },
   }
+}
+
+/** The one message of this event name, or a failed assertion naming what arrived. */
+function eventOf(posted: Posted[], name: string): Posted {
+  const found = posted.find((message) => message.kind === 'playerEvent' && message.event === name)
+  assert.ok(found, `no ${name} event arrived; posted ${JSON.stringify(posted)}`)
+  return found
 }
 
 test('a frame with one playing video posts one report, with the fields the scoring reads', () => {
@@ -98,7 +166,20 @@ test('a frame with one playing video posts one report, with the fields the scori
   assert.equal(report?.href, HREF)
   assert.equal(report?.seq, 1)
   assert.deepEqual(report?.candidates, [
-    { id: 1, w: 842, h: 474, readyState: 4, hasSrc: true, playing: true, duration: 1420.0436, t: 80.2 },
+    {
+      id: 1,
+      w: 842,
+      h: 474,
+      readyState: 4,
+      hasSrc: true,
+      playing: true,
+      duration: 1420.0436,
+      t: 80.2,
+      // T06: §5's `report` fields, measured on the element itself.
+      paused: false,
+      buffered: 1400.5,
+      rate: 1,
+    },
   ])
 })
 
@@ -108,24 +189,34 @@ test('a frame with no videos still reports: an empty candidate list', () => {
   assert.deepEqual(bridge.posted[0]?.candidates, [])
 })
 
-test('the poll posts once a second; a changed set posts sooner', () => {
+test('a playing candidate is reported twice a second; a paused, unfocused one once', () => {
   const element = video()
   const bridge = harness([element])
   const before = bridge.posted.length
 
   bridge.advance(500)
   bridge.tick()
-  assert.equal(bridge.posted.length, before, 'the same set inside the second is not a second message')
+  assert.equal(bridge.posted.length, before + 1, 'while playing, half a second is a report')
 
   bridge.advance(500)
   bridge.tick()
-  assert.equal(bridge.posted.length, before + 1, 'one second later it is')
+  assert.equal(bridge.posted.length, before + 2, 'and the next one')
 
   element.paused = true
   bridge.advance(300)
   bridge.tick()
-  assert.equal(bridge.posted.length, before + 2, 'a change does not wait for the poll')
-  assert.equal((bridge.posted[before + 1]?.candidates as Array<{ playing: boolean }>)[0]?.playing, false)
+  assert.equal(bridge.posted.length, before + 3, 'a change does not wait for the poll')
+  assert.equal(
+    ((bridge.posted[before + 2]?.candidates as Array<{ playing: boolean }>) ?? [])[0]?.playing,
+    false,
+  )
+
+  bridge.advance(500)
+  bridge.tick()
+  assert.equal(bridge.posted.length, before + 3, 'paused and unfocused, half a second is not')
+  bridge.advance(500)
+  bridge.tick()
+  assert.equal(bridge.posted.length, before + 4, 'a full second is')
 })
 
 test('emptied and loadstart post the element\'s own id, once between the two', () => {
@@ -146,6 +237,7 @@ test('only the two kinds the relay accepts ever leave the frame', () => {
   const element = video()
   const bridge = harness([element])
   element.listeners.get('emptied')?.[0]?.({ type: 'emptied' })
+  bridge.command({ kind: 'playerCommand', href: HREF, id: 1, action: 'pause', reason: 'pause', revision: 2 })
   element.paused = true
   bridge.advance(1_000)
   bridge.tick()
@@ -157,4 +249,119 @@ test('only the two kinds the relay accepts ever leave the frame', () => {
       `the frame posted ${String(message.kind)}`,
     )
   }
+})
+
+test('a play command puts the playhead where the room says, then plays, and says where it was', () => {
+  const element = video({ paused: true, currentTime: 10 })
+  const bridge = harness([element])
+  bridge.posted.length = 0
+
+  bridge.command({
+    kind: 'playerCommand',
+    source: HREF,
+    href: HREF,
+    id: 1,
+    reason: 'play',
+    action: 'play',
+    target: 600.5,
+    revision: 7,
+  })
+
+  assert.equal(element.currentTime, 600.5, 'the playhead moved before play()')
+  assert.equal(element.played, 1, 'and then it played')
+  const applied = eventOf(bridge.posted, 'applied')
+  assert.equal(applied.action, 'play')
+  assert.equal(applied.reason, 'play')
+  assert.equal(applied.target, 600.5)
+  assert.equal(applied.from, 10, 'the pre-command position, measured here')
+})
+
+test('a pause command pauses the element and reports the position it was at', () => {
+  const element = video({ paused: false, currentTime: 84.01 })
+  const bridge = harness([element])
+  bridge.posted.length = 0
+
+  bridge.command({ kind: 'playerCommand', href: HREF, id: 1, reason: 'pause', action: 'pause', revision: 8 })
+
+  assert.equal(element.paused, true)
+  assert.equal(element.pausedCalls, 1)
+  const applied = eventOf(bridge.posted, 'applied')
+  assert.equal(applied.action, 'pause')
+  assert.equal(applied.from, 84.01)
+})
+
+test('a scheduled play seeks now and plays at the beat the room named', () => {
+  const element = video({ paused: true, currentTime: 0 })
+  const bridge = harness([element])
+  bridge.posted.length = 0
+
+  bridge.command({
+    kind: 'playerCommand',
+    href: HREF,
+    id: 1,
+    reason: 'play',
+    action: 'play',
+    target: 300,
+    leadMs: 1500,
+    revision: 9,
+  })
+
+  assert.equal(element.currentTime, 300, 'the playhead is placed before the wait')
+  assert.equal(element.played, 0, 'and play() waits for the beat')
+  bridge.flush()
+  assert.equal(element.played, 1)
+})
+
+test('a scheduled play holds an element that is already playing, then plays at the beat', () => {
+  const element = video({ paused: false, currentTime: 300 })
+  const bridge = harness([element])
+  bridge.posted.length = 0
+
+  bridge.command({
+    kind: 'playerCommand',
+    href: HREF,
+    id: 1,
+    reason: 'play',
+    action: 'play',
+    leadMs: 1500,
+    revision: 10,
+  })
+
+  assert.equal(element.paused, true, 'never "play now": the playing window is held')
+  assert.equal(element.played, 0)
+  bridge.flush()
+  assert.equal(element.played, 1, 'and started at the beat')
+})
+
+test('a command for another frame\'s href, or an id this frame does not have, changes nothing', () => {
+  const element = video({ paused: false, currentTime: 12 })
+  const bridge = harness([element])
+  bridge.posted.length = 0
+
+  bridge.command({ kind: 'playerCommand', href: 'https://other.example/e/1', id: 1, action: 'pause', revision: 3 })
+  bridge.command({ kind: 'playerCommand', href: HREF, id: 99, action: 'pause', revision: 4 })
+
+  assert.equal(element.pausedCalls, 0)
+  assert.equal(bridge.posted.length, 0)
+})
+
+test('play, pause and seeked are posted with the element id, and seeked says what it was doing', () => {
+  const element = video({ paused: false, currentTime: 41.5 })
+  const bridge = harness([element])
+  bridge.posted.length = 0
+
+  element.listeners.get('play')?.[0]?.({ type: 'play' })
+  element.listeners.get('pause')?.[0]?.({ type: 'pause' })
+  element.listeners.get('seeking')?.[0]?.({ type: 'seeking' })
+  element.currentTime = 50
+  element.listeners.get('seeked')?.[0]?.({ type: 'seeked' })
+
+  const play = eventOf(bridge.posted, 'play')
+  assert.equal(play.id, 1)
+  assert.equal(play.t, 41.5)
+  const pause = eventOf(bridge.posted, 'pause')
+  assert.equal(pause.id, 1)
+  const seeked = eventOf(bridge.posted, 'seeked')
+  assert.equal(seeked.t, 50)
+  assert.equal(seeked.wasPlaying, true, 'the element was playing when the seek began (§5)')
 })
