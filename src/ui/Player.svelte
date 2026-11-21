@@ -2,6 +2,7 @@
   import type { CommandFrame, Media, NudgeFrame, Playback, ReportFrame } from '../shared/protocol.ts'
   import {
     CORRECTION_DEADBAND_SECONDS,
+    NUDGE_WATCH_MS,
     REPORT_INTERVAL_MS,
     SEEK_SKIP_SECONDS,
     clampToMedia,
@@ -51,13 +52,6 @@
 
   // §6.6's set: the events this component's own play/pause/seek calls cause.
   const echoes = createEchoSet()
-
-  /**
-   * How often a held nudge is re-examined. It is a polling interval, not a
-   * §6.3 number: 200 ms is well inside the deadband's closing time (2 s at
-   * 5 %) and cheap enough to run in every window.
-   */
-  const NUDGE_WATCH_MS = 200
 
   let video = $state<HTMLVideoElement | null>(null)
   /**

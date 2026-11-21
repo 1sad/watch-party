@@ -241,8 +241,9 @@
         caused: takeCaused(element, 'seeked'),
       })
     })
-    // T15: a rate this frame re-rates is ours too, and says so. Nothing reads it
-    // yet (§6.3's rate is the ladder's), but the flag is the same flag.
+    // T15: a rate this frame re-rates is ours too, and says so. Since T14 this
+    // frame does write rates (the nudge's set and restore), and the app view
+    // still never turns one into a room command (§6.3's rate is the ladder's).
     element.addEventListener('ratechange', function () {
       onPlayback(element, 'rate')
     })
@@ -374,6 +375,21 @@
     var lead = typeof payload.leadMs === 'number' && isFinite(payload.leadMs) ? Math.max(0, payload.leadMs) : 0
     var action = payload.action
     var scheduled = lead > 0
+
+    // T14: §6.3's nudge rate and its restore to 1. One write, nothing else: a
+    // rate must not move the playhead, start or stop the element, or cancel a
+    // beat that is waiting (a hold is about *when* to play, not how fast). No
+    // `applied` line either - the room gave no reason and no target for it.
+    if (action === 'rate') {
+      var nextRate = typeof payload.rate === 'number' && isFinite(payload.rate) ? payload.rate : 1
+      try {
+        element.playbackRate = nextRate
+      } catch (error) {
+        // A page that froze `playbackRate` reports its own number; the app
+        // view's deadline still restores, and that restore simply does not take.
+      }
+      return
+    }
 
     if (action !== 'pause' && action !== 'play' && action !== 'seek') return
 

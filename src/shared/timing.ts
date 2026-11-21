@@ -225,6 +225,14 @@ export const STRIKES_BEFORE_CORRECTION = 2
 export const CORRECTION_SPACING_MS = 5000
 export const SLOW_DOWN_RATE = 0.95
 export const SPEED_UP_RATE = 1.05
+/**
+ * How often a held nudge is re-examined. It is a polling interval, not a §6.3
+ * number: 200 ms is well inside the deadband's closing time (2 s at 5 %) and
+ * cheap enough to run in every window. It lives here because both holders
+ * (the file player and the site view, T14) watch their hold at this rate, and
+ * two copies of a number is how they would come to disagree.
+ */
+export const NUDGE_WATCH_MS = 200
 
 export type CorrectionAction = 'none' | 'nudge' | 'seek' | 'snap'
 

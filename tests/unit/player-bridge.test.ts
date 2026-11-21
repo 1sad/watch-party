@@ -561,4 +561,43 @@ test('every message names its document, so a reload is news and not old news (T0
   assert.notEqual(reloaded.posted[0]?.doc, docs[0], 'and says it is a different document')
 })
 
+test('a rate command writes playbackRate and nothing else, and the beat still waits (T14)', () => {
+  const element = video({ paused: true, currentTime: 42, playbackRate: 1 })
+  const bridge = harness([element])
+  bridge.posted.length = 0
+
+  // A scheduled play is waiting for its beat...
+  bridge.command({
+    kind: 'playerCommand',
+    source: HREF,
+    href: HREF,
+    id: 1,
+    reason: 'play',
+    action: 'play',
+    target: 42,
+    leadMs: 1500,
+    revision: 9,
+  })
+  // ...and the nudge's rate must not move the playhead, start the element, or
+  // cancel the beat. A rate is about how fast, not when.
+  bridge.command({ kind: 'playerCommand', href: HREF, id: 1, action: 'rate', rate: 1.05 })
+  assert.equal(element.playbackRate, 1.05, 'the rate was written')
+  assert.equal(element.currentTime, 42, 'the playhead did not move')
+  assert.equal(element.paused, true, 'the element was not started')
+  assert.equal(element.played, 0, 'and the waiting beat is still waiting')
+
+  bridge.flush()
+  assert.equal(element.played, 1, 'the beat still fired')
+  assert.equal(element.playbackRate, 1.05, 'the beat did not undo the rate')
+
+  // The restore is the same command with the other number: exactly 1.
+  bridge.command({ kind: 'playerCommand', href: HREF, id: 1, action: 'rate', rate: 1 })
+  assert.equal(element.playbackRate, 1)
+  assert.equal(
+    bridge.posted.filter((message) => message.kind === 'playerEvent' && message.event === 'applied').length,
+    1,
+    'a rate writes no `applied` line: the room gave it no reason and no target',
+  )
+})
+
 

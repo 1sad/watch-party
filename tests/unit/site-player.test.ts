@@ -22,6 +22,8 @@ import { ECHO_EXPIRY_MS } from '../../src/shared/echo.ts'
 import { playbackAfterPageCommit } from '../../src/shared/page.ts'
 import {
   SEEK_AHEAD_SECONDS,
+  SLOW_DOWN_RATE,
+  SPEED_UP_RATE,
   STRIKES_BEFORE_CORRECTION,
   decideCorrection,
   type CorrectionInput,
@@ -31,6 +33,7 @@ import {
   PLAYER_DRIFT_LOG_INTERVAL_MS,
   alignmentOverdue,
   createSiteEchoes,
+  createSiteNudge,
   decidePageEvent,
   driftFromPlayer,
   driftLogDue,
@@ -656,6 +659,125 @@ test('the tolerance and the ladder are one number, so neither can move alone (T1
     'nudge',
     'a drift below it is still only a nudge',
   )
+})
+
+/*
+ * Ticket 14: §6.3's nudge reaches the site's elected player.
+ *
+ * The hold is the file player's (`Player.svelte`'s `held`/`nudgeTimer`/
+ * `nudgeWatch`), with a page command where the local write was. The four cases
+ * the ticket names are below, plus the two the shape needs: the gap closing ends
+ * the hold, and a replacement inherits nothing.
+ */
+
+test('a nudge sets 1.05 (and 0.95) on the elected element only', () => {
+  const elected = player()
+
+  const faster = createSiteNudge().apply(SPEED_UP_RATE, 120_000, elected, 100_000)
+  assert.equal(faster.length, 1, 'one element, one write')
+  assert.equal(faster[0].action, 'rate')
+  assert.equal(faster[0].rate, 1.05)
+  assert.equal(faster[0].source, elected.source)
+  assert.equal(faster[0].id, elected.id)
+
+  const slower = createSiteNudge().apply(SLOW_DOWN_RATE, 120_000, elected, 100_000)
+  assert.equal(slower.length, 1)
+  assert.equal(slower[0].rate, 0.95, 'a window ahead of the room slows down')
+
+  // Nobody elected: no element is rated, so nothing is written and nothing is held.
+  assert.deepEqual(createSiteNudge().apply(SPEED_UP_RATE, 120_000, null, 100_000), [])
+})
+
+test('the rate is restored to exactly 1 at the end time', () => {
+  const nudge = createSiteNudge()
+  const elected = player({ t: 600 })
+  const playback = playing(600)
+
+  assert.equal(nudge.apply(SPEED_UP_RATE, 101_000, elected, 100_000).length, 1)
+  assert.deepEqual(nudge.step(elected, playback, 100_999), [], 'the hold is still in force')
+  const restore = nudge.step(elected, playback, 101_000)
+  assert.equal(restore.length, 1, 'one restore at the bound')
+  assert.equal(restore[0].action, 'rate')
+  assert.equal(restore[0].rate, 1, 'exactly 1, not a stopped rate')
+  assert.equal(restore[0].id, elected.id)
+  assert.equal(nudge.current(), null)
+  assert.deepEqual(nudge.step(elected, playback, 101_001), [], 'one restore, one owner')
+
+  // A nudge that arrives already past its bound holds nothing at all.
+  assert.deepEqual(createSiteNudge().apply(SPEED_UP_RATE, 99_000, elected, 100_000), [])
+})
+
+test('a nudge produces no outbound room frame', () => {
+  const nudge = createSiteNudge()
+  const elected = player()
+  const echoes = createSiteEchoes()
+  const target = { source: elected.source, id: elected.id }
+
+  for (const command of nudge.apply(SPEED_UP_RATE, 120_000, elected, 100_000)) {
+    assert.equal(command.kind, 'playerCommand', 'a page message, not a §5 room frame')
+    assert.equal('type' in command, false, 'no room frame is ever built here')
+  }
+
+  // The bridge will fire `ratechange` for that write. Even from the controller it
+  // is not a command, and it spends nothing the play/pause/seek set still owes.
+  echoes.expect(target, [{ kind: 'play', atMs: 100_000 }])
+  assert.deepEqual(
+    decidePageEvent(
+      { source: elected.source, id: elected.id, event: 'rate', t: elected.t },
+      elected,
+      echoes,
+      100_000,
+      true,
+    ),
+    { kind: 'ignore' },
+  )
+  assert.equal(echoes.consume(target, 'play', 100_000), true, 'the owed play entry survived')
+})
+
+test('a pause or seek during a nudge does not leave the rate at 1.05', () => {
+  const nudge = createSiteNudge()
+  const elected = player()
+  nudge.apply(SPEED_UP_RATE, 140_000, elected, 100_000)
+
+  // A `state` (pause, seek or snap) is the room moving the playhead, so the hold
+  // ends with it — `postToSite` calls this before the plan goes out.
+  const restore = nudge.end()
+  assert.equal(restore.length, 1)
+  assert.equal(restore[0].rate, 1)
+  assert.equal(restore[0].id, elected.id)
+  assert.equal(nudge.current(), null)
+
+  // A second state has nothing left to restore: no second timer, no second 1.
+  assert.deepEqual(nudge.end(), [])
+})
+
+test('the hold ends when the gap is back under the deadband, not only at the bound', () => {
+  const nudge = createSiteNudge()
+  const playback = playing(600)
+  nudge.apply(SPEED_UP_RATE, 140_000, player({ t: 601 }), 100_000)
+
+  // 0.6 s out still: the rate holds.
+  assert.deepEqual(nudge.step(player({ t: 601 }), playback, 100_400), [])
+  // Back within §6.3's quarter second: restore, well before the bound.
+  const restore = nudge.step(player({ t: 600.9 }), playback, 100_800)
+  assert.equal(restore.length, 1)
+  assert.equal(restore[0].rate, 1)
+})
+
+test('a replaced element inherits nothing, and the deadline restores the one that was rated', () => {
+  const nudge = createSiteNudge()
+  const first = player()
+  const replacement = player({ id: 2, source: 'https://cdn.example/player/2' })
+  nudge.apply(SPEED_UP_RATE, 130_000, first, 100_000)
+
+  // The replacement is never written to, and cannot be judged against a hold on
+  // another element, so it cannot shorten or extend one either.
+  assert.deepEqual(nudge.step(replacement, playing(600), 100_500), [])
+  const restore = nudge.step(replacement, playing(600), 130_000)
+  assert.equal(restore.length, 1)
+  assert.equal(restore[0].rate, 1)
+  assert.equal(restore[0].id, first.id, 'the element that was rated is the one restored')
+  assert.equal(restore[0].source, first.source)
 })
 
 

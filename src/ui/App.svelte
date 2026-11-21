@@ -54,6 +54,7 @@
     ALIGN_TOLERANCE_MS,
     alignmentOverdue,
     createSiteEchoes,
+    createSiteNudge,
     decidePageEvent,
     driftFromPlayer,
     driftLogDue,
@@ -64,8 +65,10 @@
     type FollowerStep,
     type PagePlan,
     type PlayerActionEvent,
+    type PlayerPageCommand,
   } from '../shared/site-player.ts'
   import {
+    NUDGE_WATCH_MS,
     PING_INTERVAL_MS,
     authorityNow,
     emptyEstimate,
@@ -299,6 +302,9 @@
     revision = 0
     media = null
     nudge = null
+    // T14: a different room is a different site view; whatever rate this window
+    // held goes back to 1 before its element is left behind.
+    endSiteNudge()
     // T03c: a different connection is a different room, so neither its page nor
     // a preview of the old one survives it.
     roomPage = null
@@ -378,6 +384,8 @@
     roomEnded = true
     stopPing()
     nudge = null
+    // T14: a room that is over must not leave a sped-up element behind.
+    endSiteNudge()
     if (!fromAuthority) {
       chat = [
         ...chat,
@@ -496,6 +504,9 @@
       if (dev) console.info(`[page] pageCommitted page=${frame.page} previewed=${previewed}`)
       roomPage = frame.page
       pendingPreview = null
+      // T14: the old page's player is gone (or about to be); the hold on it goes
+      // with the document, whether or not this window navigates here.
+      endSiteNudge()
       // T07 item 4, §5's `pageCommitted` row: a new page is a new film, so the
       // room's playback is at position 0 and paused from this frame on. The
       // authority reset it (`commitDuePage`) but sends only the page, so this
@@ -535,8 +546,10 @@
     } else if (frame.type === 'nudge') {
       // §6.3, to this window only: a rate and the authority instant it ends by.
       // It is handed to the player as a new object, so the same nudge cannot be
-      // applied twice by a re-render.
+      // applied twice by a re-render. The elected site player gets the same hold
+      // through the bridge (T14); with none elected that path writes nothing.
       nudge = frame
+      applySiteNudge(frame)
     } else if (frame.type === 'members') {
       members = frame.members
     } else if (frame.type === 'chat') {
@@ -734,6 +747,15 @@
   let playbackReason: PlaybackReason = 'join'
   /** §6.6's set, one per element: the file player has one, a site has ads and a player. */
   const siteEchoes = createSiteEchoes()
+  /**
+   * T14: §6.3's nudge for the site view — `Player.svelte`'s `held` hold with the
+   * elected element behind the bridge. One owner of its `playbackRate`: `apply`
+   * sets the rate, and `step` (the deadline and the watch) and `end` (a `state`)
+   * are the only restores, all through this one object.
+   */
+  const siteNudge = createSiteNudge()
+  let siteNudgeTimer: ReturnType<typeof setTimeout> | undefined
+  let siteNudgeWatch: ReturnType<typeof setInterval> | undefined
   /** `performance.now()` of the last `player: drift` line; null before the first. */
   let driftLineAt: number | null = null
 
@@ -952,12 +974,70 @@
   }
 
   /**
+   * T14 item 3: a rate write is a page message and nothing else. It records no
+   * §6.6 entry and spends none, so a play or seek in flight keeps the entry it
+   * is owed, and it is never posted through `postToSite`, which clears them.
+   */
+  function postRateCommands(commands: readonly PlayerPageCommand[]): void {
+    for (const command of commands) postToHost({ kind: 'siteCommand', payload: command })
+  }
+
+  /** The one clearer: a hold and its two timers end together, or not at all. */
+  function stopSiteNudge(): void {
+    if (siteNudgeTimer !== undefined) clearTimeout(siteNudgeTimer)
+    siteNudgeTimer = undefined
+    if (siteNudgeWatch !== undefined) clearInterval(siteNudgeWatch)
+    siteNudgeWatch = undefined
+  }
+
+  /**
+   * §6.3's nudge, on the elected site player only (T14). The deadline is the
+   * hold's own `untilAuthorityMs` — the frame's number, or the older hold's when
+   * a frame held nothing — on this window's clock. The watch is the file
+   * player's: a sleeping window throttles timers, so a late tick still ends the
+   * hold rather than leaving 1.05 behind. With no element elected nothing is
+   * held and nothing is written.
+   */
+  function applySiteNudge(frame: NudgeFrame): void {
+    // ADR-032: a window with its own preview up is not a follower, so the room's
+    // ladder is not applied to a film that is not the room's.
+    if (pendingPreview !== null) return
+    const now = authorityClock()
+    stopSiteNudge()
+    postRateCommands(siteNudge.apply(frame.rate, frame.untilAuthorityMs, elected, now))
+    const live = siteNudge.current()
+    if (live === null) return
+    siteNudgeTimer = setTimeout(() => {
+      siteNudgeTimer = undefined
+      postRateCommands(siteNudge.step(elected, playback, authorityClock()))
+      if (siteNudge.current() === null) stopSiteNudge()
+    }, Math.max(0, live.hold.untilAuthorityMs - now))
+    siteNudgeWatch = setInterval(() => {
+      if (siteNudge.current() === null) {
+        stopSiteNudge()
+        return
+      }
+      postRateCommands(siteNudge.step(elected, playback, authorityClock()))
+      if (siteNudge.current() === null) stopSiteNudge()
+    }, NUDGE_WATCH_MS)
+  }
+
+  /** The room moved the playhead: §6.3's last rule restores the rate with it. */
+  function endSiteNudge(): void {
+    postRateCommands(siteNudge.end())
+    stopSiteNudge()
+  }
+
+  /**
    * T06 item 3's rule, in the one place it can be kept: record every event the
    * command will cause **before** it is posted, then post it. The bridge cannot
    * be touched before the message arrives, so the entry is in the set before
    * the write it describes (§6.6).
    */
   function postToSite(plan: PagePlan | null): void {
+    // The room is putting the page on its position — a pause, a seek or a snap —
+    // so §6.3's hold ends with it, before the plan can move the playhead (T14).
+    endSiteNudge()
     if (plan === null || host === null) return
     const target = { source: plan.command.source, id: plan.command.id }
     // T15: this command supersedes whatever the element still owes, so a hold's
@@ -1147,6 +1227,9 @@
    * authority's `pageCommitted` reaches it.
    */
   function moveSiteView(page: string): void {
+    // T14: a new document is a new element at rate 1; the hold on the old one
+    // ends here so its deadline cannot fire into the page that replaced it.
+    endSiteNudge()
     // T18: a preview and a Cancel move the site view no less than a commit does,
     // so the documents held here are the page being left in every case.
     notePageLeft()

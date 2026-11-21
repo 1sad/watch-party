@@ -16,7 +16,14 @@
 
 import type { CommandFrame, Playback, PlaybackReason, ReportFrame } from './protocol.ts'
 import type { PlayerCandidate, PlayerReason } from './player.ts'
-import { SEEK_AHEAD_SECONDS, SEEK_SKIP_SECONDS, expected } from './timing.ts'
+import {
+  CORRECTION_DEADBAND_SECONDS,
+  SEEK_AHEAD_SECONDS,
+  SEEK_SKIP_SECONDS,
+  expected,
+  nudgeRateAt,
+  type NudgeHold,
+} from './timing.ts'
 import { createEchoSet, type EchoKind } from './echo.ts'
 
 /** Across frames, a player's identity is `(source, id)` — `player.ts`'s own key. */
@@ -88,9 +95,13 @@ export interface PlayerPageCommand {
   source: string
   href: string
   id: number
-  /** §5's reason, carried so the one `player:` line names the same state the room sent. */
-  reason: PlaybackReason
-  action: 'play' | 'pause' | 'seek'
+  /**
+   * §5's reason, carried so the one `player:` line names the same state the room
+   * sent. Absent for a rate, which no `state` asked for — the ladder is its own
+   * reason (§6.3).
+   */
+  reason?: PlaybackReason
+  action: 'play' | 'pause' | 'seek' | 'rate'
   /** Media seconds to put in `currentTime` first; absent when the element is already there. */
   target?: number
   /** Millis to the beat, for §6.4's scheduled start; absent means now. */
@@ -98,11 +109,17 @@ export interface PlayerPageCommand {
   /** For a seek the room plays through: `play()` once the seek is done. */
   resume?: boolean
   /**
+   * For `action: 'rate'` (T14): the `playbackRate` to write. §6.3's nudge and
+   * its restore to 1 are the only reasons this is ever present.
+   */
+  rate?: number
+  /**
    * The room's revision the `state` carried. Nothing on the page orders by it —
    * the relay delivers in order — but the command is the state's own number, so
-   * a reader of a message can tell which room state produced it.
+   * a reader of a message can tell which room state produced it. Absent for a
+   * rate, which no room state carried.
    */
-  revision: number
+  revision?: number
 }
 
 /** A command and the §6.6 events it will cause, which the caller records before posting. */
@@ -267,6 +284,130 @@ export function realignPlan(
     ],
     beatMs: leadMs ?? 0,
   }
+}
+
+/**
+ * T14: §6.3's nudge for the site view — the file adapter's `held` hold, with
+ * the element behind the bridge. The shape is `Player.svelte`'s on purpose: one
+ * hold, one deadline, one watch, and **one owner of `playbackRate`**, so nothing
+ * else writes a rate and nothing else restores one (§6.3's last rule).
+ *
+ * A rate is not a `state`: it never becomes a `PagePlan`, because §6.6's set is
+ * about play/pause/seek and a rate has no event the room must hear. The caller
+ * posts these commands *outside* `postToSite`, which would clear an element's
+ * echo entries; and a `rate` event is already not a room command
+ * (`decidePageEvent`), so this cannot become an outbound frame.
+ *
+ * The hold's bound is the frame's own `untilAuthorityMs` on this window's clock,
+ * not a countdown started here: a nudge that arrives stale is never applied and
+ * a hold cannot outlive its bound. The caller owns the timers — `step()` is what
+ * a deadline and a watch tick both call, so the two cannot restore separately.
+ */
+export interface SiteNudge {
+  /** The hold in force and the element it was written to, or null. */
+  current(): { hold: NudgeHold; target: Pick<PlayerCandidate, 'source' | 'href' | 'id'> } | null
+  /**
+   * §6.3 from the authority: hold `rate` on the elected element until
+   * `untilAuthorityMs`. A frame already past its bound, or a rate the ladder
+   * never chooses, holds nothing and ends whatever was held (`nudgeRateAt`). No
+   * elected element writes nothing; a newer nudge replaces an older one outright
+   * rather than stacking a second deadline — only a *different* element needs
+   * its old rate put back first.
+   */
+  apply(
+    rate: number,
+    untilAuthorityMs: number,
+    elected: PlayerCandidate | null,
+    nowMs: number,
+  ): PlayerPageCommand[]
+  /**
+   * One watch tick. The restore comes out here when the bound has passed, and
+   * when the gap is back under §6.3's deadband — the two ways a nudge ends
+   * without a message. A replacement element cannot be judged against another
+   * element's hold, so it never shortens one; the deadline still ends it.
+   */
+  step(elected: PlayerCandidate | null, playback: Playback | null, nowMs: number): PlayerPageCommand[]
+  /**
+   * The room moved the playhead (a `state`: pause, seek or snap), so the rate
+   * goes back to exactly 1 with it. Returns the restore once, then nothing.
+   */
+  end(): PlayerPageCommand[]
+}
+
+export function createSiteNudge(): SiteNudge {
+  type Held = {
+    hold: NudgeHold
+    target: Pick<PlayerCandidate, 'source' | 'href' | 'id'>
+  }
+  let held: Held | null = null
+
+  /** The one write this object makes, always aimed at the element it rated. */
+  function write(rate: number): PlayerPageCommand[] {
+    if (held === null) return []
+    const total = held
+    return [
+      {
+        kind: 'playerCommand',
+        source: total.target.source,
+        href: total.target.href,
+        id: total.target.id,
+        action: 'rate',
+        rate,
+      },
+    ]
+  }
+
+  function end(): PlayerPageCommand[] {
+    const commands = write(1)
+    held = null
+    return commands
+  }
+
+  function apply(
+    rate: number,
+    untilAuthorityMs: number,
+    elected: PlayerCandidate | null,
+    nowMs: number,
+  ): PlayerPageCommand[] {
+    const hold: NudgeHold = { rate, untilAuthorityMs }
+    if (nudgeRateAt(hold, nowMs) !== hold.rate) return end()
+    if (elected === null) return []
+
+    // A newer nudge replaces an older one outright: two deadlines for one
+    // element would let the first restore a rate the second just set. A hold on
+    // a different element is restored first, so a swap cannot leave 1.05 behind.
+    const previous = held
+    const replaced =
+      previous !== null &&
+      (previous.target.source !== elected.source || previous.target.id !== elected.id)
+    const restore = replaced ? end() : []
+    held = { hold, target: { source: elected.source, href: elected.href, id: elected.id } }
+    return [...restore, { kind: 'playerCommand', source: elected.source, href: elected.href, id: elected.id, action: 'rate', rate }]
+  }
+
+  function step(
+    elected: PlayerCandidate | null,
+    playback: Playback | null,
+    nowMs: number,
+  ): PlayerPageCommand[] {
+    const current = held
+    if (current === null) return []
+    // The bound first: a late tick must not keep a stale rate alive.
+    if (nudgeRateAt(current.hold, nowMs) !== current.hold.rate) return end()
+    const target = current.target
+    if (
+      elected !== null &&
+      playback !== null &&
+      elected.source === target.source &&
+      elected.id === target.id &&
+      Math.abs(elected.t - expected(playback, nowMs)) <= CORRECTION_DEADBAND_SECONDS
+    ) {
+      return end()
+    }
+    return []
+  }
+
+  return { current: () => held, apply, step, end }
 }
 
 /**
