@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn, type ChildProcess } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 // The number-one integration fact of M1's first ticket: the sidecar is startable
@@ -44,6 +45,26 @@ test('the sidecar process prints PORT <n> and serves /healthz on that port', asy
     const response = await fetch(`http://127.0.0.1:${port}/healthz`)
     assert.equal(response.status, 200)
     assert.match(await response.text(), /^\d+\.\d+\.\d+/)
+  } finally {
+    child.kill()
+  }
+})
+
+// T05: the bridge the host injects into every frame of the site view is a
+// sidecar asset (ADR-038, "nothing of ours runs in it except one bridge
+// script"). The served bytes are compared with the file the unit test reads, so
+// there is one copy of them.
+test('the sidecar serves the frame bridge at /bridge.js, as the file the tests read', async () => {
+  const { child, port } = await startSidecar()
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/bridge.js`)
+    assert.equal(response.status, 200)
+    assert.match(response.headers.get('content-type') ?? '', /^text\/javascript/)
+    const served = await response.text()
+    const file = readFileSync(new URL('../../src/shared/player-bridge.js', import.meta.url), 'utf8')
+    assert.equal(served, file)
+    assert.match(served, /playerReport/)
+    assert.match(served, /playerEvent/)
   } finally {
     child.kill()
   }

@@ -28,6 +28,12 @@ export interface SidecarOptions {
    * names an id, never a path, so a guest cannot read the owner's disk.
    */
   media?: () => RegisteredMedia | null
+  /**
+   * T05: the bridge the host injects into every frame of the site view, served
+   * here so that the script the window runs and the script the tests read are
+   * one file (ADR-038: "nothing of ours runs in it except one bridge script").
+   */
+  bridge?: string
   /** The sidecar's own log; one line per `/media/` request (T9a1 item 4). */
   log?: (line: string) => void
   /** What GET /healthz answers with; the page shows it. */
@@ -103,6 +109,19 @@ async function handle(
       return
     }
     await sendFile(request, response, { path: options.fixture, contentType: 'video/mp4' }, method)
+    return
+  }
+
+  if (url.pathname === '/bridge.js') {
+    if (method !== 'GET' && method !== 'HEAD') {
+      sendMethodNotAllowed(response, 'GET, HEAD')
+      return
+    }
+    if (options.bridge === undefined) {
+      sendText(response, 404, 'no bridge\n', method)
+      return
+    }
+    await sendFile(request, response, { path: options.bridge, contentType: 'text/javascript; charset=utf-8' }, method)
     return
   }
 

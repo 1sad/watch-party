@@ -72,6 +72,14 @@ public sealed class MainForm : Form
     private long _relayIn;
     private long _relayOut;
 
+    /// <summary>
+    /// T05's whitelist, counted: how many site messages it has dropped, and how
+    /// many of those are worth one log line each. A page can post once a second
+    /// forever, and a log that repeats has stopped being evidence.
+    /// </summary>
+    private const int RelayDropLines = 5;
+    private int _relayDropped;
+
     /// <summary>The <c>seq</c> every site event carries: one count, so one order.</summary>
     private long _siteSeq;
 
@@ -519,7 +527,24 @@ public sealed class MainForm : Form
         // `frame.PostWebMessageAsJson`. The frame half is ticket 05's; this relay
         // does not assume the site's messages all come from one document.
         _site.CoreWebView2.WebMessageReceived += OnSiteMessageReceived;
-        HostLog.Write("relay installed: site events to the app view, commands to the site view");
+        _site.CoreWebView2.FrameCreated += OnSiteFrameCreated;
+        HostLog.Write("relay installed: site events (top document and every frame) to the app view, commands to the site view");
+    }
+
+    /// <summary>
+    /// One frame of the site view, as it is created. Its messages arrive on its
+    /// own event and nowhere else (01 measured this on a cross-origin player
+    /// frame), so every frame the page builds is wired here.
+    /// </summary>
+    private void OnSiteFrameCreated(object? sender, CoreWebView2FrameCreatedEventArgs e)
+    {
+        e.Frame.WebMessageReceived += OnFrameMessage;
+    }
+
+    /// <summary>One message from a child frame, relayed by the same rule as the top document's.</summary>
+    private void OnFrameMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        RelaySiteEvent(e.Source, e.WebMessageAsJson);
     }
 
     /// <summary>
@@ -529,11 +554,43 @@ public sealed class MainForm : Form
     /// </summary>
     private void OnSiteMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
+        RelaySiteEvent(e.Source, e.WebMessageAsJson);
+    }
+
+    /// <summary>
+    /// T05's whitelist, and the one place a site message becomes a site event.
+    /// A page can run the bridge's own script too, so a frame is not trusted
+    /// with any kind it likes: only <c>playerReport</c> and <c>playerEvent</c>
+    /// cross to the app view, and anything else is dropped here rather than
+    /// taught to the app view. The one exception is 02b's relay self-test, which
+    /// exists only in the measuring build with the test armed.
+    /// </summary>
+    private void RelaySiteEvent(string source, string json)
+    {
+        string? kind = MessageKind(json);
+        if (!IsRelayable(kind))
+        {
+            // A page that posts junk every second would otherwise fill the log:
+            // the first few say what happened, the rest are counted nowhere.
+            if (++_relayDropped <= RelayDropLines)
+            {
+                HostLog.Write($"relay: dropped a site message of kind {kind ?? "(none)"}; "
+                    + "a frame may post playerReport and playerEvent only");
+            }
+            return;
+        }
+
+#if DEBUG
+        // T05's evidence line, measuring build only: every second of a live page
+        // is one line per frame, and the shipped log keeps none of them.
+        if (_measuring) LogBridgeMessage(source, json);
+#endif
+
         string relayed;
         try
         {
-            using JsonDocument message = JsonDocument.Parse(e.WebMessageAsJson);
-            relayed = "{\"kind\":\"siteEvent\",\"source\":" + JsonSerializer.Serialize(e.Source)
+            using JsonDocument message = JsonDocument.Parse(json);
+            relayed = "{\"kind\":\"siteEvent\",\"source\":" + JsonSerializer.Serialize(source)
                 + ",\"seq\":" + (++_siteSeq)
                 + ",\"payload\":" + message.RootElement.GetRawText() + "}";
         }
@@ -553,6 +610,18 @@ public sealed class MainForm : Form
         {
             HostLog.Write($"relay: a site event could not reach the app view: {error.Message}");
         }
+    }
+
+    /// <summary>
+    /// Whether a site message may cross to the app view. This is the line the
+    /// ticket's Safety claim rests on: nothing else leaves a frame.
+    /// </summary>
+    private bool IsRelayable(string? kind)
+    {
+#if DEBUG
+        if (_selfTestArmed && kind == "relaySelfTest") return true;
+#endif
+        return kind is "playerReport" or "playerEvent";
     }
 
     /// <summary>
@@ -648,6 +717,52 @@ public sealed class MainForm : Form
 #endif
     }
 
+#if DEBUG
+    /// <summary>
+    /// T05: one line per bridge message, measuring build only — the frame's own
+    /// candidate list, as it arrived. A live page reports once a second per
+    /// frame, which is why the shipped build has none of these.
+    /// </summary>
+    private void LogBridgeMessage(string source, string json)
+    {
+        try
+        {
+            using JsonDocument message = JsonDocument.Parse(json);
+            JsonElement root = message.RootElement;
+            string kind = StringField(root, "kind") ?? "(none)";
+            int seq = IntField(root, "seq");
+
+            if (kind == "playerEvent")
+            {
+                HostLog.Write($"site: bridge event frame={source} seq={seq} event={StringField(root, "event") ?? "(none)"}");
+                return;
+            }
+
+            List<string> candidates = new();
+            if (root.TryGetProperty("candidates", out JsonElement list) && list.ValueKind == JsonValueKind.Array)
+            {
+                foreach (JsonElement candidate in list.EnumerateArray()) candidates.Add(CandidateText(candidate));
+            }
+
+            string shown = candidates.Count == 0 ? "none" : string.Join(" ", candidates);
+            HostLog.Write($"site: bridge report frame={source} seq={seq} count={candidates.Count} [{shown}]");
+        }
+        catch (JsonException)
+        {
+            HostLog.Write($"site: a bridge message from {source} was not JSON");
+        }
+    }
+
+    /// <summary>One reported `<video>`: the six fields the scoring reads, in one token each.</summary>
+    private static string CandidateText(JsonElement candidate)
+    {
+        return $"id={IntField(candidate, "id")} {IntField(candidate, "w")}x{IntField(candidate, "h")}"
+            + $" readyState={IntField(candidate, "readyState")}"
+            + $" src={(BoolField(candidate, "hasSrc") ? 1 : 0)}"
+            + $" playing={(BoolField(candidate, "playing") ? 1 : 0)}"
+            + $" duration={SecondsField(candidate, "duration"):F1} t={SecondsField(candidate, "t"):F1}";
+    }
+#endif
 #if DEBUG
     /// <summary>
     /// T8d: the page's own console, into this window's own log file. A live check
@@ -866,7 +981,66 @@ public sealed class MainForm : Form
             case "siteCommand":
                 RelayToSite(e.WebMessageAsJson);
                 break;
+            case "playerElected":
+                LogPlayerElection(e.WebMessageAsJson);
+                break;
         }
+    }
+
+    /// <summary>
+    /// T05's one line, one per election: `player: frame <href> <w>x<h>
+    /// duration=<s> reason=<why>`, or `player: none reason=<why>`. The app view
+    /// decides and this only writes it, which is why the line is in the log
+    /// whether the page is a production build or the measuring one. ASCII only
+    /// (AGENTS.md rule 10), so `w x h` is written with an `x`.
+    /// </summary>
+    private void LogPlayerElection(string json)
+    {
+        try
+        {
+            using JsonDocument message = JsonDocument.Parse(json);
+            JsonElement root = message.RootElement;
+            string reason = StringField(root, "reason") ?? "(none)";
+            if (root.TryGetProperty("frame", out JsonElement frame) && frame.ValueKind == JsonValueKind.Object)
+            {
+                HostLog.Write($"player: frame {StringField(frame, "href") ?? "(unknown)"} "
+                    + $"{IntField(frame, "w")}x{IntField(frame, "h")} "
+                    + $"duration={SecondsField(frame, "duration"):F1} reason={reason}");
+                return;
+            }
+            HostLog.Write($"player: none reason={reason}");
+        }
+        catch (JsonException)
+        {
+            HostLog.Write("player: an election from the app view was not JSON");
+        }
+    }
+
+    /// <summary>
+    /// One field of a message object, or the empty answer: every reader in this
+    /// file treats a missing or wrongly-typed field as absent rather than as an
+    /// error, because the sender is a page.
+    /// </summary>
+    private static string? StringField(JsonElement element, string name)
+    {
+        return element.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+    }
+
+    private static int IntField(JsonElement element, string name)
+    {
+        return element.TryGetProperty(name, out JsonElement value) && value.TryGetInt32(out int number) ? number : 0;
+    }
+
+    private static bool BoolField(JsonElement element, string name)
+    {
+        return element.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.True;
+    }
+
+    private static double SecondsField(JsonElement element, string name)
+    {
+        return element.TryGetProperty(name, out JsonElement value) && value.TryGetDouble(out double number) ? number : 0;
     }
 
     /// <summary>A message's <c>kind</c>, or null for anything not one of ours.</summary>
@@ -1063,6 +1237,22 @@ public sealed class MainForm : Form
         HostLog.Write($"parsed sidecar PORT {port}; navigating to {url}");
         _navigated = true;
         _page.CoreWebView2.Navigate(url);
+
+        // T05: the bridge first, the site view's first document after it. A
+        // script added after a document exists misses that document, so this
+        // order is the whole point of doing it here rather than at random.
+        _ = OpenSiteViewAsync(port);
+    }
+
+    /// <summary>
+    /// Puts the bridge into the site view and only then lets it load anything,
+    /// so no document of the site ever runs without it (ADR-038). In a normal
+    /// run that is all it does: the site view has no address until the room sets
+    /// one (03c), and this is the call that makes that address bridged.
+    /// </summary>
+    private async Task OpenSiteViewAsync(int port)
+    {
+        await InjectBridgeAsync(port);
 #if DEBUG
         // E10's stand-in for "the room has a page": the measuring build's site
         // view opens the address the variable names, and file mode is what every
@@ -1074,6 +1264,39 @@ public sealed class MainForm : Form
             _site.CoreWebView2.Navigate(_spikeUrl);
         }
 #endif
+    }
+
+    /// <summary>
+    /// ADR-038's one script. Its text is the sidecar's own `/bridge.js`, fetched
+    /// over loopback: one asset, so the bytes the window runs are the bytes the
+    /// tests read, and the page build has nothing to copy. A failure is a log
+    /// line - the window still opens and the site still plays, it just has no
+    /// player to follow.
+    /// </summary>
+    private async Task InjectBridgeAsync(int port)
+    {
+        string? script = null;
+        try
+        {
+            using HttpClient http = new() { Timeout = TimeSpan.FromSeconds(5) };
+            script = await http.GetStringAsync($"http://127.0.0.1:{port}/bridge.js");
+        }
+        catch (Exception error)
+        {
+            HostLog.Write($"bridge: /bridge.js could not be read from the sidecar: {error.Message}");
+        }
+
+        if (string.IsNullOrWhiteSpace(script)) return;
+
+        try
+        {
+            await _site.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(script);
+            HostLog.Write($"bridge: /bridge.js injected into every frame of the site view ({script.Length} chars)");
+        }
+        catch (Exception error)
+        {
+            HostLog.Write($"bridge: injection failed: {error.Message}");
+        }
     }
 
     /// <summary>

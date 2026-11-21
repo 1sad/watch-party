@@ -68,6 +68,8 @@ const server = createSidecarServer({
   // consumer: the page no longer opens on it; `/fixture` is one path, nothing
   // more, and `tests/integration/sidecar.test.ts` is what still reads it).
   fixture: join(root, 'tests', 'fixtures', 'fixture.mp4'),
+  // T05: `/bridge.js`, the one script of ours the site view runs, in every frame.
+  bridge: join(root, 'src', 'shared', 'player-bridge.js'),
   // T9a1: `/media/<id>` streams the one file the owner registered; the id is
   // the only thing a guest's window ever holds.
   media: () => room.media,

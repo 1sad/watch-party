@@ -38,6 +38,15 @@
   import { readDevPlay } from './dev-drift.ts'
   import Player from './Player.svelte'
   import {
+    PLAYER_MESSAGE_KINDS,
+    elect,
+    mergeReports,
+    type FrameCandidate,
+    type FrameReport,
+    type PlayerCandidate,
+    type PlayerEvent,
+  } from '../shared/player.ts'
+  import {
     PING_INTERVAL_MS,
     authorityNow,
     emptyEstimate,
@@ -568,6 +577,11 @@
     if (typeof message !== 'object' || message === null) return
     const kind = (message as { kind?: unknown }).kind
 
+    if (kind === 'siteEvent') {
+      onSiteEvent(message)
+      return
+    }
+
     if (kind === 'picked') {
       const path = (message as { path?: unknown }).path
       if (typeof path !== 'string') {
@@ -618,6 +632,109 @@
       const sentence = (message as { sentence?: unknown }).sentence
       refusePick(typeof sentence === 'string' ? sentence : 'The app could not read the file it chose.')
     }
+  }
+
+  /**
+   * T05: every frame of the site view as its last report described it, keyed by
+   * the frame's URL (the host names the sender). Nothing here is drawn: 06 reads
+   * the winner and feeds the room, and this ticket's only surface is the host's
+   * one `player:` line.
+   */
+  const playerFrames = new Map<string, FrameReport>()
+  /** The bridge's `emptied`/`loadstart` messages since the last election (§7.1). */
+  let playerEvents: PlayerEvent[] = []
+  /** §10.1's winner: one per room, kept until it goes. */
+  let elected: PlayerCandidate | null = null
+
+  /**
+   * The relay's other half: one frame's report or one reload event. The host has
+   * already refused every kind but the two (`RelaySiteEvent`), so this only has
+   * to keep the shape honest.
+   */
+  function onSiteEvent(message: object): void {
+    const source = (message as { source?: unknown }).source
+    const payload = (message as { payload?: unknown }).payload
+    if (typeof source !== 'string' || source.length === 0) return
+    if (typeof payload !== 'object' || payload === null) return
+
+    const body = payload as Record<string, unknown>
+    const kind = body.kind
+    if (typeof kind !== 'string' || !(PLAYER_MESSAGE_KINDS as readonly string[]).includes(kind)) return
+
+    if (kind === 'playerReport') {
+      const seq = typeof body.seq === 'number' ? body.seq : 0
+      const known = playerFrames.get(source)
+      // A report that arrives after a newer one is older news, whichever order
+      // the three hops put them in.
+      if (known !== undefined && seq <= known.seq) return
+      const candidates: FrameCandidate[] = []
+      if (Array.isArray(body.candidates)) {
+        for (const raw of body.candidates) {
+          const candidate = frameCandidate(raw)
+          if (candidate !== null) candidates.push(candidate)
+        }
+      }
+      playerFrames.set(source, {
+        source,
+        href: typeof body.href === 'string' && body.href.length > 0 ? body.href : source,
+        seq,
+        candidates,
+        receivedAt: Date.now(),
+      })
+      electPlayer()
+      return
+    }
+
+    if (body.kind === 'playerEvent') {
+      const id = body.id
+      const event = body.event
+      if (typeof id !== 'number') return
+      if (event !== 'emptied' && event !== 'loadstart') return
+      playerEvents.push({ source, id, event, t: typeof body.t === 'number' ? body.t : 0 })
+      electPlayer()
+    }
+  }
+
+  /** One reported `<video>`, or null for anything that is not one. */
+  function frameCandidate(raw: unknown): FrameCandidate | null {
+    if (typeof raw !== 'object' || raw === null) return null
+    const candidate = raw as Record<string, unknown>
+    if (typeof candidate.id !== 'number' || typeof candidate.w !== 'number'
+      || typeof candidate.h !== 'number' || typeof candidate.readyState !== 'number') return null
+    return {
+      id: candidate.id,
+      w: candidate.w,
+      h: candidate.h,
+      readyState: candidate.readyState,
+      hasSrc: candidate.hasSrc === true,
+      playing: candidate.playing === true,
+      duration: typeof candidate.duration === 'number' ? candidate.duration : 0,
+      t: typeof candidate.t === 'number' ? candidate.t : 0,
+    }
+  }
+
+  /**
+   * §10.1, once per report: score every frame's candidates and keep the winner.
+   * Only a change is sent anywhere — the host writes one `player:` line per
+   * election, and 06 is the first reader of the value that line names.
+   */
+  function electPlayer(): void {
+    const result = elect(elected, mergeReports(playerFrames.values(), Date.now()), playerEvents)
+    playerEvents = []
+    if (result.reason === null) return
+    elected = result.elected
+    postToHost({
+      kind: 'playerElected',
+      reason: result.reason,
+      frame: result.elected === null
+        ? null
+        : {
+            href: result.elected.href,
+            w: result.elected.w,
+            h: result.elected.h,
+            duration: result.elected.duration,
+          },
+    })
   }
 
   /**
