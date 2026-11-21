@@ -11,6 +11,15 @@
 
 import type { SetPageFrame } from './protocol.ts'
 
+/**
+ * ADR-032's window, in milliseconds: how long the authority holds a staged page
+ * before it commits. The authority owns the number — §5's `setPage.stageMs` is a
+ * suggestion it never reads, and a client that could shorten the window would
+ * own the undo — but the initiator's bar counts the same two seconds down
+ * (R29), so it is written once, here, and imported by both.
+ */
+export const PAGE_STAGE_MS = 2000
+
 /** An explicit scheme, as RFC 3986 writes one: `https:`, `ftp:`, `javascript:`. */
 const EXPLICIT_SCHEME = /^[a-z][a-z0-9+.-]*:/i
 

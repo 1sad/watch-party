@@ -24,7 +24,8 @@
     mediaUrl,
     type LoadRefusal,
   } from '../shared/media.ts'
-  import { setPageFrame } from '../shared/page.ts'
+  import { PAGE_STAGE_MS, setPageFrame } from '../shared/page.ts'
+  import { previewHolds, type PendingPreview } from './preview.ts'
   import { readClockSkew } from './dev-clock.ts'
   import { readDevPlay } from './dev-drift.ts'
   import Player from './Player.svelte'
@@ -92,6 +93,25 @@
   // could not use, or why the clipboard was unreadable.
   let pageDraft = $state('')
   let pageNotice = $state<string | null>(null)
+
+  /**
+   * T03c: the room's committed page, as `welcome` or the last `pageCommitted`
+   * said it — the address everyone else is still watching while a preview runs,
+   * and the one Cancel goes back to. `null` in file mode, and in a room that
+   * has no page yet.
+   */
+  let roomPage = $state<string | null>(null)
+  /**
+   * T03c: this window's own staged page, while the authority's window is open
+   * (ADR-032 as amended 2026-11-21). Its presence *is* "a change is pending":
+   * the site view is already on `page`, the bar counts down and offers Cancel,
+   * and `previewHolds` (ui/preview.ts) keeps this page from behaving as a
+   * follower until the window ends. Tickets 06 and 07 consult it; only a frame
+   * or a Cancel clears it, never a timer here.
+   */
+  let pendingPreview = $state<PendingPreview | null>(null)
+  /** R29's countdown redraw — a beat that moves the seconds shown, and nothing else. */
+  let previewTick = $state(0)
 
   // §4.1's `playback` as the room last said it, and `revision` beside it (§4.3
   // invariant 2). Only a `welcome` or a `state` writes these; the player is the
@@ -227,6 +247,10 @@
     revision = 0
     media = null
     nudge = null
+    // T03c: a different connection is a different room, so neither its page nor
+    // a preview of the old one survives it.
+    roomPage = null
+    pendingPreview = null
     roomEnded = false
     // T9a3: this connection's owner — the window and every guest fetch the room's
     // one file from here (`mediaUrl`), never from their own sidecar.
@@ -366,6 +390,12 @@
       // here plays it and realigns below, so a late joiner or a reload arrives
       // where the room is (T9a3).
       media = frame.room.media
+      // T03c item 5: the snapshot already carries the room's page, so a window
+      // that arrives late — a guest, or this one reconnecting — lands on what
+      // everyone is watching instead of waiting for the next change.
+      roomPage = frame.room.page
+      pendingPreview = null
+      if (roomPage !== null) moveSiteView(roomPage)
       realign += 1
       // A late joiner's panel is the ring buffer the authority sent (R5).
       chat = [...frame.chatTail]
@@ -374,12 +404,32 @@
       // The one loop starts once this connection has a member identity to beat for.
       startPing()
     } else if (frame.type === 'state') {
+      // ADR-032 as amended: while this window's own preview is up it is not a
+      // follower, so the room's frame is held rather than applied — a command
+      // aimed at the old film must not drag the preview with it. The commit and
+      // the Cancel are the two ways this window rejoins the room.
+      if (previewHolds(pendingPreview, frame.type)) return
       // The room's one writer's answer to a command (§5). Older revisions are
       // dropped here so the button and the bar cannot show an undone future;
       // the player applies the same rule to its own copy.
       if (frame.revision < revision) return
       playback = frame.playback
       revision = frame.revision
+    } else if (frame.type === 'pageCommitted') {
+      // §5: the authority's word that the staged page is now the room's. Every
+      // window moves on this frame and on nothing else — the bar's countdown is
+      // a label, so no client timer can commit early or late (ADR-032).
+      const wasPending = pendingPreview !== null
+      // This window's site view is already on the page when the frame is its own
+      // preview's: navigating again would reload the page it just loaded, which
+      // is the visible revert ADR-032 exists to avoid.
+      const previewed = pendingPreview !== null && pendingPreview.page === frame.page
+      roomPage = frame.page
+      pendingPreview = null
+      // Ours, or someone else's that replaced ours (ADR-032's cost line): either
+      // way the bar goes back to the address the authority actually committed.
+      if (wasPending) pageDraft = frame.page
+      if (!previewed) moveSiteView(frame.page)
     } else if (frame.type === 'media') {
       // T9a3: the owner picked a file while this window was already here. The
       // player gets a new source and is put on the room's position (invariant 9),
@@ -420,12 +470,18 @@
       // undone locally too. Explaining it is not enough — the gesture already
       // moved this element, and the room did not move with it.
       if (frame.code === 'not_controller') realign += 1
+      // T03c: a staged page the authority refused never commits, so the preview
+      // has nothing left to wait for and Cancel would name a window that closed.
+      if (frame.code === 'not_controller' || frame.code === 'stale_host') pendingPreview = null
     }
   }
 
   /** §5's commands and §5's `report`, in the one shape the player hands them over. */
   function sendCommand(frame: CommandFrame | ReportFrame): void {
     if (socket === null || selfId === null) return
+    // ADR-032 as amended: what this window measures while a preview is up
+    // belongs to the preview's page, not the room's film, so it stays here.
+    if (previewHolds(pendingPreview, frame.type)) return
     socket.send(JSON.stringify(frame))
   }
 
@@ -631,9 +687,67 @@
 
     socket.send(JSON.stringify(frame))
     pageNotice = null
+    // T03c item 1: this window shows the new page at once — the preview — while
+    // everyone else keeps the old one until `pageCommitted` (ADR-032). It starts
+    // at the instant the frame leaves, because that is when the authority's
+    // window starts too.
+    pendingPreview = { page: frame.page, epoch, sentAt: Date.now() }
+    moveSiteView(frame.page)
     // T03b's live check reads this line's absence for a bad address, so the
     // success is as explicit as the refusal above.
     if (dev) console.info(`[page] setPage ${frame.page}`)
+  }
+
+  /**
+   * T03c: the only way the site view ever moves (ADR-038) — a `siteCommand` the
+   * host performs itself. Nothing outside this window hears of it, which is what
+   * makes the preview a preview: a guest's site view is not moved until the
+   * authority's `pageCommitted` reaches it.
+   */
+  function moveSiteView(page: string): void {
+    postToHost({ kind: 'siteCommand', payload: { kind: 'navigate', url: page } })
+    if (dev) console.info(`[page] site view -> ${page}`)
+  }
+
+  /**
+   * R29's countdown, in whole seconds, from this window's own clock. It is a
+   * label and not the window: the pending preview ends on `pageCommitted`, on a
+   * Cancel or on a refusal, never on this number reaching zero — the authority
+   * owns the two seconds (ADR-032), and a client timer that decided would be a
+   * second authority.
+   */
+  const previewSeconds = $derived.by(() => {
+    void previewTick
+    const pending = pendingPreview
+    if (pending === null) return 0
+    return Math.max(0, Math.ceil((pending.sentAt + PAGE_STAGE_MS - Date.now()) / 1000))
+  })
+
+  // R29: the countdown has to move. It runs only while a preview is up, so a
+  // window with none has exactly the timers it had before.
+  $effect(() => {
+    if (pendingPreview === null) return
+    const beat = setInterval(() => (previewTick += 1), 250)
+    return () => clearInterval(beat)
+  })
+
+  /**
+   * R29's Cancel: §5's `cancelPage` with this window's epoch, the site view back
+   * on the room's committed page, and the countdown gone. That is the whole of
+   * it on the wire — "nobody else ever hears of it" (§5), so no chat line, no
+   * notice and no toast for the other windows.
+   */
+  function cancelPreview(): void {
+    const pending = pendingPreview
+    if (pending === null) return
+    pendingPreview = null
+    if (socket !== null && selfId !== null) {
+      socket.send(JSON.stringify({ type: 'cancelPage', epoch: pending.epoch }))
+    }
+    // A room that had no page yet has nothing to go back to, and the host has no
+    // message that hides the site view again (03d's one gap, reported).
+    if (roomPage !== null) moveSiteView(roomPage)
+    if (dev) console.info(`[page] cancel ${pending.page}`)
   }
 
   /**
@@ -765,6 +879,20 @@
       />
       <button type="button" class="paste" onclick={() => void pasteAddress()}>Paste</button>
     </form>
+    {#if pendingPreview !== null}
+      <!-- T03c: R29's countdown, beside the address the room is still on, so the
+           person can see the change they just made has not landed for anyone
+           else yet. At zero the Cancel goes and the row waits for the
+           authority's `pageCommitted`: this page keeps no timer that could
+           decide the window (ADR-032). -->
+      <p class="bar-preview" role="status">
+        <span class="bar-committed">Room is on {roomPage ?? 'no page'}</span>
+        {#if previewSeconds > 0}
+          <span class="bar-countdown">{previewSeconds} s</span>
+          <button type="button" class="cancel" onclick={cancelPreview}>Cancel</button>
+        {/if}
+      </p>
+    {/if}
     {#if pageNotice !== null}
       <p class="bar-notice" role="status">{pageNotice}</p>
     {/if}
@@ -992,6 +1120,39 @@
     font-size: 0.8rem;
     line-height: 1.25;
     color: #ffb3a7;
+  }
+
+  /* T03c: the countdown row — the committed address on the left, the seconds and
+     Cancel on the right, in the same 0.8rem as the notice so the bar's height
+     does not jump while a preview runs. */
+  .bar-preview {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    font-size: 0.8rem;
+    line-height: 1.25;
+    color: #c9ccd8;
+  }
+
+  .bar-committed {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .bar-countdown {
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+    color: #a9b4ff;
+  }
+
+  .bar-preview .cancel {
+    flex: 0 0 auto;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.8rem;
   }
 
   h1 {

@@ -14,7 +14,7 @@ import type {
 import { ANONYMOUS, displayNames } from '../shared/names.ts'
 import { pushChat } from '../shared/chat.ts'
 import { contentTypeFor } from '../shared/media.ts'
-import { canonicalPage } from '../shared/page.ts'
+import { canonicalPage, PAGE_STAGE_MS } from '../shared/page.ts'
 import { clampToMedia, expected, scheduledStartAt, seekIsDuplicate } from '../shared/timing.ts'
 
 /** §12: five people is a constraint of the design, not a setting. */
@@ -24,8 +24,10 @@ export const MAX_MEMBERS = 5
  * ADR-032: the authority holds a pending room change for two seconds. The value
  * is the authority's, not the sender's — §5's `setPage` carries `stageMs` as a
  * suggestion, and a client that could shorten the window would own the undo.
+ * It is *defined* in `shared/page.ts`, because the initiator's bar counts the
+ * same window down (T03c) and two copies of the number could disagree.
  */
-export const PAGE_STAGE_MS = 2000
+export { PAGE_STAGE_MS }
 
 /**
  * ADR-032's one pending entry: stored, sent to nobody, until `expiresAt`. It
