@@ -712,6 +712,11 @@ blocking.
 
 ## ADR-032 — Room changes are staged for two seconds before they commit
 
+> **Amended 2026-11-21 (ADR-029, `spec.md` §5):** while a change is pending, the initiator's page is a **preview** —
+> not a follower yet. No realignment runs against it, it sends no position reports, and no room command reaches it
+> until the window ends. On Cancel it navigates back and realigns to the committed room; on commit it becomes the
+> page, and the room's playback resets to position 0, paused (§5, `pageCommitted`).
+
 **Decision.** A room action from a controller (change page, episode, or film) does **not** reach anyone immediately.
 The authority holds it as pending for **2 s**, showing the initiator a countdown with **Cancel**. If they cancel
 inside the window, nothing happens and nobody else ever learns it did — not a flicker, not a toast. If they don't,
@@ -776,6 +781,9 @@ spike for loading uBOL inside WebView2 as a quality upgrade (T38) once the real 
 ---
 
 ## ADR-034 — The window is a small .NET host around WebView2; the room stays in TypeScript
+
+> **Amended 2026-11-21 (ADR-038):** the window holds **two** WebView2 controls — our page and the site — not one
+> filling it. Everything else here stands, including "the host contains no product logic".
 
 **Decision.** The app is one install, one launch and one window, made of two processes that start and stop together:
 
@@ -929,4 +937,54 @@ turns a check into decoration — which is what ADR-036 exists to avoid.
 null`, a `.unref` on a number, implicit `any` in tests) are fixed or suppressed. They are T8a2. Suppression is
 allowed only as one line at the site with a reason next to it; a project-wide relaxation, or a `strict: false`, is
 not.
+
+---
+
+## ADR-038 — The window holds two views: our page, and the site
+
+> **Amends ADR-034:** the window contains **two** WebView2 controls, not one filling it.
+
+**Decision.** The window is a native frame around two WebView2 controls, with a layout the host owns:
+
+- **The app view** — our Svelte page, still served by the sidecar and loaded from `127.0.0.1`. It is the room's only
+  client: chat, roster, controls, and the address bar across the top. It may not navigate — `NavigationStarting`
+  cancels anything that is not the sidecar's own origin — and it keeps the file picker's `WebMessage` bridge to
+  itself.
+- **The site view** — a second control, its own engine, loading whatever page the room names. The request filter, the
+  fullscreen interception and the popup policy apply to this view alone. Nothing of ours runs in it except one bridge
+  script, injected by the host with `AddScriptToExecuteOnDocumentCreatedAsync` so it exists in every frame — including
+  the cross-origin player frames E2 found on 6 of 11 sites — before any page script.
+- **The host** — a relay and a layout, still no room logic. Site to app: the bridge's `WebMessageReceived` is re-posted
+  to the app view together with the source frame's URL. App to site: a command is posted to the site view and handed to
+  the bridge, which applies it to the elected player.
+- **With no page, there is no site view.** File mode hides it and the app view fills the window exactly as in M1: a
+  room is either a site or a file, never both (§4.2), and the file-mode picture must not be squeezed into a column.
+- **Popups never open a window.** A site view's `NewWindowRequested` is cancelled and the app says so in one line
+  naming the host it asked for (R37). On E2's sites the popup was an ad; a second window would also be a second
+  browser we cannot sync.
+
+**Why two views and not one.** ADR-006 already forbids syncing a third-party page through an iframe we host: our page
+cannot script a cross-origin frame, and proxying the HTML breaks on CSP. A single top-level engine cannot show our UI
+and the site at once either. Injecting our Svelte UI into the site's DOM would put our state, our CSS and our key
+handling inside a page we do not control, where one site's script or CSP can break the sidebar for the evening.
+
+**Why the app view stays on loopback.** It keeps all room logic in TypeScript (ADR-034). It closes a leak M1 never
+looked at: `WebMessageReceived` never reads `e.Source`, so any document the engine loads could send `pick`/`probe`;
+with our bridge confined to the app view's origin, a third-party page has no bridge to abuse. And it makes R19's
+"typing in chat never pauses the film" free — focus in the app view cannot reach the site's keyboard shortcuts.
+
+**Rejected.** (a) One engine with our UI injected into the site — the sidebar inherits the site's CSP, DOM and script
+faults. (b) Our UI in an iframe over the site — forbidden by ADR-006 and unscriptable. (c) An address bar drawn by
+WinForms — R29 wants a right-click menu and a visible Paste button, which the HTML bar gets for free, and native
+widgets would put product logic in the host. (d) A second browser or process — banned by ADR-022.
+
+**Cost.** Two renderers per person, so the "≤ 300 MB with a page open" target now counts both, and it becomes a number
+to measure. Every command crosses three hops (site → host → app → sidecar) — fine, because only reports and commands
+cross it, never pixels — but it is one more place for a message to be dropped, so the bridge's messages carry a
+sequence number. Two controls also mean focus, z-order and lifetime are now the host's problem in a way one control
+never was.
+
+**Amends.** ADR-034: "one WebView2 control filling it" becomes two. Its other rules stand unchanged — the split, the
+relay and the fullscreen toggle are window mechanics, not product logic.
+
 

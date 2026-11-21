@@ -121,6 +121,7 @@ unaffected (ADR-024, §4.4).
 | R34 | Personal choices never propagate: mirror, sub/dub, audio, subtitles and volume affect only that member | two members on different dubs stay in sync and neither switches |
 | R35 | Peer-to-peer plumbing is blocked by default, with a one-line notice and a per-site Allow switch | load a site that uses WebRTC; the notice appears, playback is unaffected, and Allow makes the site work if it needed it |
 | R36 | Two controllers staging different pages at once: the later request replaces the earlier, and the first sees a "replaced" notice | both click a title within 2 s; one commits, the other is told why it did not |
+| R37 | A page's request to open a window never opens one; the app says so in one line, naming the host it asked for | click a page's popup link; no window appears, and one line names the host |
 
 Rows tagged *v2* are requirements that survive the reordering (ADR-027) but are not built in v1. Nothing was
 deleted: R16 is the only one genuinely dropped, because rooms no longer outlive their members.
@@ -265,7 +266,7 @@ What each party learns, honestly:
 | Host, while disconnected | Cannot be told at the moment it happens. Sees "connection lost" within ~10 s, and on return a "Sam has the room now" notice. |
 | Host, app open but the film's page closed | May still hold authority with no player. Not an error; the room shows "host has no player" and waits. |
 | Everyone else | Toast + roster badge, within one heartbeat. |
-| The new host | "You have the room now" toast. Nothing else changes — everyone could already control (ADR-025). |
+| The new host | "You have the room now" toast. Control follows the host role (ADR-033); nothing else changes. |
 | Nobody has authority (all apps closed) | Website mode: the film keeps playing in nobody's app, so the room is over. File mode: same. Nothing is left running to keep. |
 
 **Why there is no "orphaned room" any more.** Rooms do not live on a machine that outlives its members, so a room
@@ -408,7 +409,7 @@ as **member → authority** and **authority → members** so it survives that ch
 | m→a | `rename` | `{name}` | anyone; null clears back to `anonymous` |
 | m→a | `setPage` | `{page, stageMs, epoch}` | controller only (ADR-030); staged, not applied (ADR-032) |
 | m→a | `cancelPage` | `{epoch}` | cancels the sender's own pending change; nobody else ever hears of it |
-| a→m | `pageCommitted` | `{page, by, at}` | sent when the 2 s window expires; every app navigates now |
+| a→m | `pageCommitted` | `{page, by, at}` | sent when the 2 s window expires; every app navigates now; the room's playback resets to position 0, paused — a new page is a new film |
 | m→a | `grantControl` | `{memberId, allow, epoch}` | controller or owner; roster shows the result; survives reconnect (ADR-033) |
 | m→a | `claimControl` | `{}` | allowed only when no online member holds control; first to arrive wins |
 | m→a | `setMedia` | `{media, epoch}` | file mode; owner only, since they serve the bytes |
@@ -745,7 +746,7 @@ Milestones, not modes: each one is demoable. R-numbers are in §2.
 | M | Content | Done when |
 | --- | --- | --- |
 | **M1 A room that syncs** | app shell, room create/join over one direct connection, names/`anonymous`, chat, clock sync, position model, drift ladder, scheduled start, **file mode** | two apps stay within 250 ms for 10 min with one throttled; R1–R9, R11; a file is picked on one machine and plays on the other |
-| **M2 Website mode** | embedded browser, ad filtering, **app-owned fullscreen**, page following with **staged changes**, **control role, promotion and Take control**, **personal-choice isolation**, player discovery, echo suppression, per-viewer offsets | R17, R20, R21, R29, R30, R31, R33, R34, R36; two apps open the same page and stay in step; typing in chat never pauses the film |
+| **M2 Website mode** | embedded browser, ad filtering, **app-owned fullscreen**, page following with **staged changes**, **control role, promotion and Take control**, **personal-choice isolation**, player discovery, echo suppression, per-viewer offsets | R17, R20, R21, R29, R30, R31, R33, R34, R36, R37; two apps open the same page and stay in step; typing in chat never pauses the film |
 | **M3 Gate and resilience** | ready gate, buffering UI, reconnects, source-mismatch badges, quit/join polish, **cinema mode (T29)**, **realign triggers (T35)**, **peer-to-peer block (T37)** | R8, R10, R28, R32, R35; a member on a different mirror is visibly flagged and can fix it in one click |
 | **M4 Peer mesh and takeover** | every app connects to every app, room replication, authority transfer with no interruption | R22, R27; the owner closes their app mid-film and nobody's picture stops, chat keeps working, a new host appears within 2 s |
 | **M5 Add-on** | website-mode extension, Chrome + Firefox manifests, chat overlay | R18, R19; add-on and app share a room; typing "ar" in chat on a site where "a" seeks does not seek |

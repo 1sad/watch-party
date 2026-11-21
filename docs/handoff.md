@@ -201,6 +201,21 @@ Only matters if Modes 1–4 are built (`spec.md §7.4`). The command and the pas
 previous revision of this file, and live in research §20: the first segment's start time must be ≈ the seek point,
 monotonic, with no discontinuity, or every position calculation breaks across a restart.
 
+### E10 — Does the bridge work in WebView2? (gates M2's browser work)
+
+E2 was a throwaway **Electron** spike; the shipping engine is WebView2 (ADR-034), and M1 never injected a script into
+a page it did not serve. Re-run the part that matters, on the engine we ship, before any product code: a script added
+with `AddScriptToExecuteOnDocumentCreatedAsync` must (a) run inside a **cross-origin player frame**, (b) post a message
+the host receives with `e.Source` naming that frame, (c) accept a command back into that frame, and (d) read and set
+that frame's `currentTime`; and (e) the request filter must still block an ad host without breaking the player.
+
+**Pass:** all five, on a site from E2's table whose player is in a cross-origin frame (`animex.one`).
+**Fail case that matters:** the frame's script cannot reach the host. Then the bridge is a different design (CDP per
+frame) and M2 is re-cut rather than patched.
+**Record:** the site, the WebView2 version, and the quoted lines, under **Results** here.
+
+**Results:** —
+
 ### The TURN experiment is dead
 
 The old E5 ("does WebRTC need TURN for this group?") is deleted, not postponed. ADR-023 dropped WebRTC: the mesh is

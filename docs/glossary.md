@@ -178,8 +178,9 @@ only while at least one app is in it.
 
 **Owner** — the member whose app is serving a local file. Never changes hands; if they leave, that room ends.
 
-**Host** — whoever currently holds **authority** (see below). The word deliberately no longer means "the person in
-charge": everyone can control, and the host is only the app that is currently writing the room's state.
+**Host** — whoever currently holds **authority** (see below). The word deliberately does not mean "the person in
+charge": the host is only the app that is currently writing the room's state, and holding it is not permission to
+change the room — that is **control** (ADR-030).
 
 **Authority** — the right to be the one writer of room state. Exactly one app has it at a time; it moves by rule
 when that app goes quiet, and every write carries the **epoch** so a stale writer is rejected. In website mode
@@ -197,7 +198,8 @@ happened.
 **Personal choices** — everything that must never move anyone else: which mirror or server, sub or dub, audio track,
 subtitles, volume, sidebar or cinema. Each app has its own browser, so these simply stay put.
 
-**Control mode** — *gone.* There is no host-only mode; everyone can pause, seek and change the page (ADR-025).
+**Control mode** — *gone.* There is no host-only *mode*: control is a role that anyone may be granted (ADR-025, as
+amended by ADR-030 — "everyone controls" was reversed).
 
 **Epoch** — a counter that goes up every time authority moves. Commands carry it so an old writer's late messages
 are ignored. Without it, two apps can write the room at once.

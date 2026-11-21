@@ -83,7 +83,8 @@ it everywhere.
 
 **Settled on 2026-11-16** (kept so the answers are not re-litigated):
 
-- Who controls: **everyone** (ADR-025). There is no host-only mode.
+- Who controls: **whoever holds control** — the owner by default, grantable to anyone (ADR-030, which reversed the
+  earlier "everyone" answer of ADR-025). There is no host-only mode.
 - Who may start a room: **anyone running the app**. There is no server to protect.
 - Where the "box" lives: **the host's own PC, for the evening** (ADR-023). No NAS, no VPS.
 - Room lifetime: **while at least one app is in it**. No TTL, no persistence (R16 dropped).
