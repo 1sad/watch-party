@@ -533,7 +533,10 @@ test('R11: only the owner may set the room\'s media, and a refusal leaves the ro
     })
     const missing = (await harness.owner.next((frame) => frame.type === 'error')).frame as ErrorFrame
     assert.equal(missing.code, 'bad_media')
-    assert.equal(harness.room.media?.id, 'f1')
+    // The assertion at the top narrowed `harness.room.media` to null; the room is
+    // changed through the socket, so read it afresh to get its declared type back.
+    const currentMedia = () => harness.room.media
+    assert.equal(currentMedia()?.id, 'f1')
 
     // `welcome.room.media` is what a guest receives: the same file, no path.
     const late = await harness.join('late')

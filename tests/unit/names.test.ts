@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { ANONYMOUS, displayNames, normalizeName } from '../../src/shared/names.ts'
+import { ANONYMOUS, displayNames, normalizeName, type NamedMember } from '../../src/shared/names.ts'
 
 // §4.1 (`name: string | null`) and R26: the naming rule, tested where it lives,
 // because both the roster and the sidecar call it.
@@ -34,7 +34,8 @@ test('the second member called sam is "sam (2)", the third "sam (3)"', () => {
 })
 
 test('renaming to null clears back to anonymous and frees the suffix', () => {
-  const members = [
+  // §4.1: a member's name is `string | null`, so this list must allow the clear below.
+  const members: NamedMember[] = [
     { id: 'a', name: 'sam', joinedAt: 1 },
     { id: 'b', name: 'sam', joinedAt: 2 },
   ]
