@@ -17,25 +17,6 @@ public sealed class MainForm : Form
     // gives the filter something to cancel until T30 owns the real list.
     private static readonly string[] BlockedHosts = ["blocked.invalid"];
 
-#if DEBUG
-    /// <summary>
-    /// E10's filter evidence, and only that: while <c>WATCHPARTY_SPIKE_URL</c> is
-    /// set the filter also cancels one host the spike's page really requests, so
-    /// "the filter sees a site it did not serve" is a measured number rather than
-    /// a claim about <c>blocked.invalid</c>, which no real site asks for. Compiled
-    /// out of the shipped build and inert with the variable unset, so the
-    /// temporary list above is still the only one a normal window uses; T30 owns
-    /// the real list.
-    ///
-    /// The host is the ad script `animex.one` loads (`/script/aclib.js`), read
-    /// from that page's own HTML on 2026-11-21.
-    /// </summary>
-    private static readonly bool SpikeFilterArmed =
-        !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WATCHPARTY_SPIKE_URL"));
-
-    private static readonly string[] SpikeBlockedHosts = ["acscdn.com"];
-#endif
-
     /// <summary>
     /// §14's autoplay grant, and the one Debug switch that withholds it so the
     /// "click to join playback" overlay can be seen and tested. A released
@@ -80,6 +61,17 @@ public sealed class MainForm : Form
     /// <summary>T9a2: one dialog at a time, and the file it last returned.</summary>
     private bool _pickOpen;
     private string? _pickedPath;
+
+    /// <summary>
+    /// The relay's two directions, counted: <c>in</c> is a site message wrapped
+    /// and posted to the app view, <c>out</c> is an app command posted to the
+    /// site view. Only the measuring build's self-test ever logs them.
+    /// </summary>
+    private long _relayIn;
+    private long _relayOut;
+
+    /// <summary>The <c>seq</c> every site event carries: one count, so one order.</summary>
+    private long _siteSeq;
 #if DEBUG
     /// <summary>
     /// T8d: whether this window is the measuring one — the window <c>dev:debug</c>
@@ -89,21 +81,30 @@ public sealed class MainForm : Form
     private bool _measuring;
 
     /// <summary>
-    /// E10: the address the measuring build's <em>site view</em> opens, when
+    /// The address the measuring build's <em>site view</em> opens, when
     /// <c>WATCHPARTY_SPIKE_URL</c> names one — it stands in for "the room has a
-    /// page" until 03 sets a real one. Null in every normal run, which is what
-    /// keeps the spike unreachable, and leaves the window in file mode.
+    /// page" until 03 sets a real one. Null in every normal run, which keeps the
+    /// window in file mode and hides the site view.
     /// </summary>
     private string? _spikeUrl;
 
     /// <summary>
-    /// E10's return half: every child frame the engine has created, so a command
-    /// arrives on one as a web message (<c>CoreWebView2.WebMessageReceived</c>
-    /// never sees a frame's message, and <c>CoreWebView2Frame</c> is the only
-    /// handle that posts back). Only frames created while the spike is armed are
-    /// added, and the spike is armed only by `WATCHPARTY_SPIKE_URL`.
+    /// The relay self-test (<c>WATCHPARTY_RELAY_SELFTEST=1</c>): armed only in a
+    /// measuring build that also has a site view. <c>_appLoaded</c> and
+    /// <c>_siteLoaded</c> are the first navigation of each view; the two
+    /// completion sources are the two host acts the self-test must see happen —
+    /// the relay carrying a message each way, and the navigate command the host
+    /// owns — so the log's order is the evidence rather than a race.
     /// </summary>
-    private readonly List<CoreWebView2Frame> _spikeFrames = [];
+    private bool _selfTestArmed;
+    private bool _selfTestStarted;
+    private bool _relayOkLogged;
+    private bool _appLoaded;
+    private bool _siteLoaded;
+    private readonly TaskCompletionSource _selfTestRelayDone =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _selfTestNavigate =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 #endif
 
     public MainForm(string[]? launchArgs)
@@ -185,9 +186,11 @@ public sealed class MainForm : Form
         InstallAutoplayGrant();
         InstallFilePicker();
         InstallAppOriginLock();
+        InstallRelay();
 #if DEBUG
         InstallPageConsole();
-        await InstallSpikeAsync();
+        ArmSpikeUrl();
+        ArmRelaySelfTest();
 #endif
         _page.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
         _site.CoreWebView2.NavigationCompleted += OnSiteNavigationCompleted;
@@ -338,7 +341,13 @@ public sealed class MainForm : Form
         if (IsAppOrigin(e.Uri)) return;
 
         e.Cancel = true;
-        HostLog.Write($"app view blocked a navigation to {e.Uri}");
+        // The address as asked, without scheme or trailing slash, then the form
+        // the engine reported: the sentence this window's live checks read is
+        // `site: app-view navigation refused <address>`.
+        string shown = Uri.TryCreate(e.Uri, UriKind.Absolute, out Uri? target)
+            ? $"{target.Host}{target.AbsolutePath.TrimEnd('/')}"
+            : e.Uri;
+        HostLog.Write($"site: app-view navigation refused {shown} (engine saw {e.Uri})");
     }
 
     /// <summary>The sidecar's own origin, or the failure page the host writes itself.</summary>
@@ -351,6 +360,157 @@ public sealed class MainForm : Form
             && target.Scheme == Uri.UriSchemeHttp
             && string.Equals(target.Host, "127.0.0.1", StringComparison.Ordinal)
             && target.Port == port;
+    }
+
+    /// <summary>
+    /// ADR-038's relay: one message handler per view. A message from the site is
+    /// re-posted to the app view as <c>{kind:'siteEvent', source, seq, payload}</c>
+    /// — <c>source</c> is the document or frame that sent it, <c>payload</c> is
+    /// the message itself, untouched. A <c>{kind:'siteCommand', payload}</c> from
+    /// the app view is posted to the site view, except the one command the host
+    /// must own: a payload that says <c>navigate</c> loads that address in the
+    /// site view, because nothing else may move it. Neither payload is read
+    /// beyond that (ADR-034, ADR-038).
+    ///
+    /// The app view's handler is the picker's (<c>InstallFilePicker</c>): one
+    /// handler per view, so the <c>siteCommand</c> case lives there beside
+    /// <c>pick</c> and <c>probe</c>.
+    /// </summary>
+    private void InstallRelay()
+    {
+        // Top-level only, as measured in 01/01b: a child frame's message arrives
+        // on that frame's own event (`CoreWebView2.FrameCreated` →
+        // `frame.WebMessageReceived`), and a command into a frame needs
+        // `frame.PostWebMessageAsJson`. The frame half is ticket 05's; this relay
+        // does not assume the site's messages all come from one document.
+        _site.CoreWebView2.WebMessageReceived += OnSiteMessageReceived;
+        HostLog.Write("relay installed: site events to the app view, commands to the site view");
+    }
+
+    /// <summary>
+    /// One message from the site view's top-level document. It is wrapped, not
+    /// read: the host adds where it came from and a sequence number, and nothing
+    /// else.
+    /// </summary>
+    private void OnSiteMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        string relayed;
+        try
+        {
+            using JsonDocument message = JsonDocument.Parse(e.WebMessageAsJson);
+            relayed = "{\"kind\":\"siteEvent\",\"source\":" + JsonSerializer.Serialize(e.Source)
+                + ",\"seq\":" + (++_siteSeq)
+                + ",\"payload\":" + message.RootElement.GetRawText() + "}";
+        }
+        catch (JsonException)
+        {
+            HostLog.Write("relay: a site message was not JSON, so it was not relayed");
+            return;
+        }
+
+        try
+        {
+            _page.CoreWebView2.PostWebMessageAsJson(relayed);
+            _relayIn++;
+            MaybeLogRelayOk();
+        }
+        catch (Exception error)
+        {
+            HostLog.Write($"relay: a site event could not reach the app view: {error.Message}");
+        }
+    }
+
+    /// <summary>
+    /// One <c>siteCommand</c> from the app view. Its payload is forwarded as it
+    /// arrived, except a <c>navigate</c> payload, which the host performs itself:
+    /// it is the only way the site view ever moves, and nothing else may issue it.
+    /// </summary>
+    private void RelayToSite(string messageJson)
+    {
+        try
+        {
+            using JsonDocument message = JsonDocument.Parse(messageJson);
+            if (message.RootElement.ValueKind != JsonValueKind.Object
+                || !message.RootElement.TryGetProperty("payload", out JsonElement payload))
+            {
+                HostLog.Write("relay: a site command with no payload was ignored");
+                return;
+            }
+
+            if (TryReadNavigate(payload, out string address))
+            {
+                NavigateSite(address);
+                return;
+            }
+
+            string forwarded = "{\"kind\":\"siteCommand\",\"payload\":" + payload.GetRawText() + "}";
+            _site.CoreWebView2.PostWebMessageAsJson(forwarded);
+            _relayOut++;
+            MaybeLogRelayOk();
+        }
+        catch (JsonException)
+        {
+            HostLog.Write("relay: a site command was not JSON, so it was not relayed");
+        }
+        catch (Exception error)
+        {
+            HostLog.Write($"relay: a command could not reach the site view: {error.Message}");
+        }
+    }
+
+    /// <summary>
+    /// The one payload field the host reads: <c>{kind:'navigate', url}</c>. Every
+    /// other command is somebody else's to interpret.
+    /// </summary>
+    private static bool TryReadNavigate(JsonElement payload, out string address)
+    {
+        address = string.Empty;
+        if (payload.ValueKind != JsonValueKind.Object) return false;
+        if (!payload.TryGetProperty("kind", out JsonElement kind)
+            || kind.ValueKind != JsonValueKind.String
+            || kind.GetString() != "navigate") return false;
+        if (!payload.TryGetProperty("url", out JsonElement url)
+            || url.ValueKind != JsonValueKind.String) return false;
+
+        address = url.GetString() ?? string.Empty;
+        return address.Length > 0;
+    }
+
+    /// <summary>
+    /// The site view's only way to be moved (ADR-038). The address must be
+    /// absolute http(s): the site view has no origin lock — that is the point of
+    /// the two views — so the shape is checked here and nothing else.
+    /// </summary>
+    private void NavigateSite(string address)
+    {
+        if (!Uri.TryCreate(address, UriKind.Absolute, out Uri? target)
+            || (target.Scheme != Uri.UriSchemeHttp && target.Scheme != Uri.UriSchemeHttps))
+        {
+            HostLog.Write($"site: navigate refused {address}: not an http(s) address");
+            return;
+        }
+
+        ShowSiteView();
+        HostLog.Write($"site: navigate {address}");
+        _site.CoreWebView2.Navigate(address);
+#if DEBUG
+        // The self-test waits for this so its refusal lands after the navigate.
+        _selfTestNavigate.TrySetResult();
+#endif
+    }
+
+    /// <summary>
+    /// One line, once, when the measuring build's self-test has seen the relay
+    /// carry a message each way. Silent in every other run.
+    /// </summary>
+    private void MaybeLogRelayOk()
+    {
+#if DEBUG
+        if (!_selfTestArmed || _relayOkLogged || _relayIn < 1 || _relayOut < 1) return;
+        _relayOkLogged = true;
+        HostLog.Write($"site: relay ok out={_relayOut} in={_relayIn}");
+        _selfTestRelayDone.TrySetResult();
+#endif
     }
 
 #if DEBUG
@@ -455,186 +615,87 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
-    /// E10: the one Debug-only hand-off. With <c>WATCHPARTY_SPIKE_URL</c> unset
-    /// this returns before it reads the probe, so a normal run — Debug or not —
-    /// never injects a script and never navigates the site view anywhere at all.
-    ///
-    /// It hangs on the site view, because that view is where the page in the room
-    /// loads (ADR-038); the app view keeps the picker's messages alone.
-    ///
-    /// The probe is registered before the first navigation, which is the order
-    /// the engine requires: the documentation says an added script applies to
-    /// "all future top level document and child frame navigations". Whether it
-    /// really reaches a cross-origin child frame is what the spike measures.
+    /// The measuring build's stand-in for "the room has a page": when
+    /// <c>WATCHPARTY_SPIKE_URL</c> names an address, the site view opens it when
+    /// the sidecar reports its port. Unset, nothing is loaded and the window is
+    /// in file mode, exactly as a normal run. This is the whole of the variable's
+    /// meaning (02); the probe that used to travel with it is gone.
     /// </summary>
-    private async Task InstallSpikeAsync()
+    private void ArmSpikeUrl()
     {
         string? url = Environment.GetEnvironmentVariable("WATCHPARTY_SPIKE_URL");
         if (string.IsNullOrWhiteSpace(url)) return;
 
+        _spikeUrl = url;
+        HostLog.Write($"spike: the site view will open {url}");
+    }
+
+    /// <summary>
+    /// Arms the relay self-test, which proves the two directions and the navigate
+    /// command with messages the pages really post, and proves the app view's lock
+    /// with one navigation to <c>example.invalid</c> — an address nobody serves.
+    /// It needs a site view, so a run without <c>WATCHPARTY_SPIKE_URL</c> says so
+    /// and does nothing.
+    /// </summary>
+    private void ArmRelaySelfTest()
+    {
+        if (Environment.GetEnvironmentVariable("WATCHPARTY_RELAY_SELFTEST") != "1") return;
+        _selfTestArmed = true;
+        HostLog.Write("selftest: relay self-test armed (Debug build only)");
+        if (_spikeUrl is null)
+        {
+            HostLog.Write("selftest: no site view without WATCHPARTY_SPIKE_URL, so it will not run");
+        }
+    }
+
+    /// <summary>
+    /// Runs once both views have finished their first navigation. The messages
+    /// come from the documents themselves — a one-line script posted into each
+    /// view — so the relay carries a page's message, not a host-made call.
+    /// </summary>
+    private void MaybeRunRelaySelfTest()
+    {
+        if (!_selfTestArmed || _selfTestStarted || !_appLoaded || !_siteLoaded) return;
+        _selfTestStarted = true;
+        _ = RunRelaySelfTestAsync();
+    }
+
+    private async Task RunRelaySelfTestAsync()
+    {
         try
         {
-            string probe = ReadSpikeProbe();
-            await _site.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(probe);
-            // The engine's own documentation says `CoreWebView2.WebMessageReceived`
-            // is raised for the top-level document, and that an iframe's message
-            // arrives on that frame's event instead. Subscribing here is what
-            // lets a cross-origin player frame be heard at all; a frame that
-            // already existed would be missed, and before the first navigation
-            // there is none.
-            _site.CoreWebView2.FrameCreated += OnSpikeFrameCreated;
-            _site.CoreWebView2.WebMessageReceived += OnSpikeWebMessageReceived;
-            _spikeUrl = url;
-            HostLog.Write($"spike: probe registered for every document; the site view will open {url}");
+            // In: one message from the site view's own document, which the relay
+            // must wrap as a siteEvent and post to the app view.
+            await _site.CoreWebView2.ExecuteScriptAsync(
+                "window.chrome.webview.postMessage({kind:'relaySelfTest',from:'site'});");
+
+            // Out: one siteCommand from our page's document, which the relay must
+            // post to the site view.
+            await _page.CoreWebView2.ExecuteScriptAsync(
+                "window.chrome.webview.postMessage({kind:'siteCommand',payload:{kind:'relaySelfTest',from:'app'}});");
+
+            // Waited for, so `site: relay ok` lands before the navigate line.
+            await Task.WhenAny(_selfTestRelayDone.Task, Task.Delay(5_000));
+
+            // The one command the host owns: the app view moves the site view.
+            string address = _site.CoreWebView2.Source;
+            await _page.CoreWebView2.ExecuteScriptAsync(
+                "window.chrome.webview.postMessage({kind:'siteCommand',payload:{kind:'navigate',url:"
+                + JsonSerializer.Serialize(address) + "}});");
+            await Task.WhenAny(_selfTestNavigate.Task, Task.Delay(5_000));
+
+            // The deliberate refusal, last. The line after it records that the
+            // app view is still our page, which is the other half of the proof.
+            _page.CoreWebView2.Navigate("https://example.invalid/");
+            await Task.Delay(500);
+            HostLog.Write($"site: app-view still on {_page.CoreWebView2.Source} after the refusal");
         }
         catch (Exception error)
         {
-            // A broken spike is a log line, not a window that fails to open.
-            HostLog.Write($"spike: probe not registered: {error.Message}");
+            HostLog.Write($"selftest: relay self-test failed: {error.Message}");
         }
     }
 
-    /// <summary>One frame's message, on that frame's own event (see InstallSpikeAsync).</summary>
-    private void OnSpikeFrameCreated(object? sender, CoreWebView2FrameCreatedEventArgs e)
-    {
-        CoreWebView2Frame frame = e.Frame;
-        frame.WebMessageReceived += LogSpikeMessage;
-        // Destroyed is the engine's own notice that this handle can no longer be
-        // posted to; without it a command would be sent to a dead iframe.
-        frame.Destroyed += (_, _) => _spikeFrames.Remove(frame);
-        _spikeFrames.Add(frame);
-        HostLog.Write($"spike: child frame created, name=\"{frame.Name}\"");
-    }
-
-    /// <summary>The probe's text, embedded in this host (WatchParty.Host.csproj).</summary>
-    private static string ReadSpikeProbe()
-    {
-        using Stream? stream = typeof(MainForm).Assembly
-            .GetManifestResourceStream("WatchParty.Host.spike.probe.js");
-        if (stream is null) throw new InvalidOperationException("the spike probe is not embedded in this host");
-        using StreamReader reader = new(stream);
-        return reader.ReadToEnd();
-    }
-
-    /// <summary>
-    /// One spike message, as one <c>site:</c> line: the frame's URL from
-    /// <c>e.Source</c> (the whole point of the spike), then every field the probe
-    /// sent, written as it arrived.
-    /// </summary>
-    private static void LogSpikeMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
-    {
-        string fields;
-        try
-        {
-            using JsonDocument payload = JsonDocument.Parse(e.WebMessageAsJson);
-            fields = string.Join(" ", SpikeFields.Select(
-                name => $"{name}={SpikeFieldText(payload.RootElement, name)}"));
-        }
-        catch (JsonException)
-        {
-            fields = "unreadable payload";
-        }
-
-        HostLog.Write($"site: source={e.Source} {fields}");
-    }
-
-    private static readonly string[] SpikeFields = ["href", "count", "w", "h", "readyState", "duration", "t"];
-
-    private static string SpikeFieldText(JsonElement root, string name)
-    {
-        if (!root.TryGetProperty(name, out JsonElement value)) return "-";
-        return value.ValueKind switch
-        {
-            JsonValueKind.Null or JsonValueKind.Undefined => "-",
-            JsonValueKind.String => value.GetString() ?? "-",
-            _ => value.GetRawText(),
-        };
-    }
-
-    /// <summary>
-    /// E10's command path, asked for through the Debug DevTools endpoint: a
-    /// <c>spikeSetTime</c> message on the top document is forwarded to every
-    /// child frame with <c>CoreWebView2Frame.PostWebMessageAsJson</c>, which the
-    /// engine documents as posting to that iframe's own <c>window.chrome.webview</c>
-    /// message event. The probe in the frame sets <c>currentTime</c> on the
-    /// largest video it sees. Inert unless the spike armed: <c>_spikeUrl</c> is
-    /// null in every normal run.
-    ///
-    /// A frame that refuses the post is a log line carrying the engine's error
-    /// code, never a thrown window: the command exists to be measured.
-    /// </summary>
-    private void ForwardSpikeSetTime(CoreWebView2WebMessageReceivedEventArgs message)
-    {
-        if (_spikeUrl is null) return;
-        double t;
-        try
-        {
-            using JsonDocument parsed = JsonDocument.Parse(message.WebMessageAsJson);
-            JsonElement root = parsed.RootElement;
-            if (root.ValueKind != JsonValueKind.Object
-                || !root.TryGetProperty("t", out JsonElement value)
-                || value.ValueKind != JsonValueKind.Number
-                || !value.TryGetDouble(out t))
-            {
-                HostLog.Write("spike: command ignored — no numeric t");
-                return;
-            }
-        }
-        catch (JsonException)
-        {
-            HostLog.Write("spike: command ignored — unreadable payload");
-            return;
-        }
-
-        string payload = JsonSerializer.Serialize(new { kind = "spikeSetTime", t });
-        int posted = 0;
-        foreach (CoreWebView2Frame frame in _spikeFrames.ToArray())
-        {
-            try
-            {
-                frame.PostWebMessageAsJson(payload);
-                posted++;
-            }
-            catch (Exception error)
-            {
-                HostLog.Write(
-                    $"spike: command to frame failed: {error.Message} (HRESULT 0x{error.HResult:X8})");
-            }
-        }
-
-        // The top document too: a site whose player lives on its own page (4 of
-        // E2's 11) needs the same command, and its probe ignores a document with
-        // no video.
-        try
-        {
-            _site.CoreWebView2.PostWebMessageAsJson(payload);
-            HostLog.Write($"spike: command posted to {posted} child frame(s) and the top document for t={t}");
-        }
-        catch (Exception error)
-        {
-            HostLog.Write(
-                $"spike: command to the top document failed: {error.Message} (HRESULT 0x{error.HResult:X8}); "
-                + $"{posted} child frame(s) posted");
-        }
-    }
-
-    /// <summary>
-    /// E10's top-document half, on the site view: the probe in the page the room
-    /// opened posts here, and the shell's command arrives here too. The app view
-    /// keeps only the picker's own messages.
-    /// </summary>
-    private void OnSpikeWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
-    {
-        switch (MessageKind(e.WebMessageAsJson))
-        {
-            case "spike":
-                LogSpikeMessage(null, e);
-                break;
-            case "spikeSetTime":
-                ForwardSpikeSetTime(e);
-                break;
-        }
-    }
 #endif
 
     private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -666,6 +727,9 @@ public sealed class MainForm : Form
                 break;
             case "probeDone":
                 ConcealPickedFile();
+                break;
+            case "siteCommand":
+                RelayToSite(e.WebMessageAsJson);
                 break;
         }
     }
@@ -784,16 +848,6 @@ public sealed class MainForm : Form
             if (string.Equals(parsed.Host, host, StringComparison.OrdinalIgnoreCase)) return true;
         }
 
-#if DEBUG
-        if (SpikeFilterArmed)
-        {
-            foreach (string host in SpikeBlockedHosts)
-            {
-                if (string.Equals(parsed.Host, host, StringComparison.OrdinalIgnoreCase)) return true;
-            }
-        }
-#endif
-
         return false;
     }
 
@@ -902,6 +956,10 @@ public sealed class MainForm : Form
         HostLog.Write(
             $"navigation completed {_page.CoreWebView2.Source} success={e.IsSuccess} " +
             $"status={e.HttpStatusCode} error={e.WebErrorStatus}");
+#if DEBUG
+        _appLoaded = true;
+        MaybeRunRelaySelfTest();
+#endif
     }
 
     private void OnSiteNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
@@ -909,6 +967,10 @@ public sealed class MainForm : Form
         HostLog.Write(
             $"site navigation completed {_site.CoreWebView2.Source} success={e.IsSuccess} " +
             $"status={e.HttpStatusCode} error={e.WebErrorStatus}");
+#if DEBUG
+        _siteLoaded = true;
+        MaybeRunRelaySelfTest();
+#endif
     }
 
     private void OnSidecarExited()
