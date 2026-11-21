@@ -311,7 +311,7 @@ export interface MembersFrame {
  * and a page whose authority went with its process states the same fact itself;
  * two copies would let the overlay and the chat disagree.
  */
-export const ROOM_OVER_SENTENCE = "The room ended because the file's owner left."
+export const ROOM_OVER_SENTENCE = 'The room ended because its owner left.'
 
 export interface RoomOverFrame {
   type: 'roomOver'

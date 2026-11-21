@@ -179,12 +179,14 @@ export function markOffline(
 /**
  * §4.4's last line, and ADR-024's file half: "a replica held by an app that has
  * not noticed its peers left is discarded when its last connection fails; there
- * is no timer and nothing to clean up." A file room is over when its owner
- * leaves, so everything it held — the file's path, the members, the chat — is
- * dropped here rather than kept as a tombstone (T9b check 3).
+ * is no timer and nothing to clean up." This phase has only file mode, where
+ * the owner's departure ends the room whether or not a file was picked, so
+ * everything it held - the file's path, the members, the chat - is dropped
+ * here rather than kept as a tombstone (T9b check 3).
  *
- * `owner` is `null` afterwards, which is also what makes the room unusable if
- * anything still held a reference: no owner means nobody may pick or control.
+ * `owner` is `null` afterwards, so a reference held past this point cannot
+ * pick or control anything. Website mode's transfer of authority (T22) is a
+ * later mode, not a counter-case.
  */
 export function discardRoom(room: RoomState, now: () => number = Date.now): void {
   // The end is final: a hello that arrives after this is refused by

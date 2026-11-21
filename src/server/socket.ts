@@ -424,9 +424,9 @@ export function attachRoomSocket(
       lastCorrectionAt.delete(member.id)
 
       // §14's "owner leaves in file mode: room ends, everyone told plainly, no
-      // pretend recovery" (ADR-024). Unconditional: a room with no owner can
-      // neither be controlled nor given bytes, whether or not a file was picked.
-      // So this close is the room's last moment.
+      // pretend recovery" (ADR-024). File mode is the only mode this phase has,
+      // so the end fires whether or not a file was picked. Website mode's
+      // transfer of authority (T22) is a later mode, not a counter-case.
       if (room.owner === member.id) {
         // One system line, not "sam left" plus a second line: the room's end is
         // the one fact worth telling, and chat carries it exactly once (§4.6).
