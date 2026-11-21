@@ -37,6 +37,8 @@ interface FakeVideo {
   buffered: { length: number; end(index: number): number }
   played: number
   pausedCalls: number
+  /** T17: the DOM fact the bridge reads on a pause; absent means connected. */
+  isConnected?: boolean
   listeners: Map<string, Listener[]>
   getBoundingClientRect(): { width: number; height: number }
   addEventListener(name: string, listener: Listener): void
@@ -428,6 +430,28 @@ test('a play the bridge started, and a seek it made, both say they were caused',
   })
   moved.listeners.get('seeked')?.[0]?.({ type: 'seeked' })
   assert.equal(eventOf(seekBridge.posted, 'seeked').caused, true)
+})
+
+test('a pause on an element the page removed says the element is gone, and a press does not (T17)', () => {
+  // Blink pauses an element the page took out of the document, and only then:
+  // at that instant the element is disconnected. That is the fact the app view
+  // cannot see from its own reports, and the one that tells it from a press.
+  const removed = video({ paused: false, isConnected: false })
+  const bridge = harness([removed])
+  bridge.posted.length = 0
+  removed.listeners.get('pause')?.[0]?.({ type: 'pause' })
+
+  const pause = eventOf(bridge.posted, 'pause')
+  assert.equal(pause.detached, true, 'the element was already out of the document')
+
+  // A person's press is on a connected element, and the message keeps the shape
+  // every other event has: no field, not `detached: false`.
+  const connected = video({ paused: false, isConnected: true })
+  const person = harness([connected])
+  connected.listeners.get('pause')?.[0]?.({ type: 'pause' })
+  const pressed = eventOf(person.posted, 'pause')
+  assert.equal('detached' in pressed, false, 'a press adds nothing to the message')
+  assert.equal(pressed.caused, false, 'and it is still not ours')
 })
 
 test('a rate the bridge did not make is posted, and says it was not caused', () => {

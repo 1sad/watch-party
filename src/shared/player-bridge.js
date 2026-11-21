@@ -189,7 +189,7 @@
   }
 
   function onPlayback(element, kind) {
-    post({
+    var message = {
       kind: EVENT,
       event: kind,
       id: idOf(element),
@@ -197,7 +197,15 @@
       // T15: `true` when this frame caused it. The app view drops our own
       // events on this, so §6.6's prediction cannot misjudge a hold.
       caused: takeCaused(element, kind),
-    })
+    }
+    // T17: a playing element the page removes from the DOM is paused by the
+    // browser itself, and that pause is not a person's. Blink pauses it only
+    // after the element is detached (RemovedFrom -> OnRemovedFromDocumentTimerFired,
+    // which returns early while isConnected() is still true), so this is the one
+    // fact that tells the two apart, and only this frame can see it. Sent only
+    // when true: every other message keeps the shape it had.
+    if (kind === 'pause' && element.isConnected === false) message.detached = true
+    post(message)
   }
 
   function watch(element) {

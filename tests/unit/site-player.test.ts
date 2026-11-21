@@ -389,6 +389,76 @@ test('a newer plan clears the predictions a superseded one left', () => {
   })
 })
 
+// ---- T17: a site's mirror switch is not a pause --------------------------------
+
+test('a playing element removed produces no outbound room pause', () => {
+  const elected = player({ paused: false, t: 84.01 })
+  // The pause Blink fires when the page takes a playing element out of the
+  // document: the bridge saw it already detached, and it is not `caused` by us.
+  // 07b measured the room taking this as a person's, 7 ms after a mirror switch.
+  const removal: PlayerActionEvent = {
+    source: SOURCE, id: 1, event: 'pause', t: 84.01, caused: false, detached: true,
+  }
+  assert.deepEqual(
+    decidePageEvent(removal, elected, createSiteEchoes(), 100_050, true),
+    { kind: 'echo' },
+    'the controller\'s window sends no pause: the page removed its own player',
+  )
+  // A guest's is dropped too, rather than answered by re-applying the room: there
+  // is nothing to write to until the replacement is elected.
+  assert.deepEqual(
+    decidePageEvent(removal, elected, createSiteEchoes(), 100_050, false),
+    { kind: 'echo' },
+    'and a guest is not corrected for a pause nobody pressed',
+  )
+})
+
+test('a pause a person pressed before a removal still reaches the room', () => {
+  const elected = player({ paused: false, t: 84.01 })
+  // Pressed while the element was still in the document: the swap comes after.
+  const press: PlayerActionEvent = {
+    source: SOURCE, id: 1, event: 'pause', t: 84.01, caused: false, detached: false,
+  }
+  assert.deepEqual(decidePageEvent(press, elected, createSiteEchoes(), 100_000, true), {
+    kind: 'send',
+    command: { type: 'pause', position: 84.01 },
+  }, 'a person\'s press is the room\'s, whether or not a swap follows it')
+
+  // The removal that follows says nothing further: the room already has the
+  // press, and a second pause would be the mirror switch talking.
+  const removal: PlayerActionEvent = {
+    source: SOURCE, id: 1, event: 'pause', t: 84.01, caused: false, detached: true,
+  }
+  assert.deepEqual(decidePageEvent(removal, elected, createSiteEchoes(), 100_000, true), { kind: 'echo' })
+})
+
+test('the replacement\'s realignment still runs: a swap keeps the room\'s time', () => {
+  const now = 100_000
+  const room = playing(600, { updatedAt: now })
+  const replacement = player({ id: 2, t: 0, readyState: 0, paused: true, playing: false })
+
+  // Both shapes of a mirror switch the election reports: the element gone, and
+  // the element reloaded in its own slot.
+  for (const reason of ['removed', 'replaced'] as const) {
+    const step = followerStep({
+      reason,
+      newDocument: false,
+      previewPending: false,
+      unaligned: false,
+      playback: room,
+      revision: 31,
+      stateReason: 'play',
+      elected: replacement,
+      nowMs: now,
+    })
+    assert.ok(step.realign, `${reason}: the new element is put on the room's position`)
+    assert.equal(step.realign.command.id, 2, `${reason}: the replacement, not the element that left`)
+    assert.equal(step.realign.command.target, 600, `${reason}: never the page's own 0`)
+    assert.equal(step.report, false, `${reason}: nothing it measures is the room's news yet`)
+    assert.equal(step.unaligned, false, `${reason}: the apply is the one it needed`)
+  }
+})
+
 // ---- T07: a player is always a follower (ADR-029 rule 1) -----------------------
 
 test('a changed election applies the room position before any report (T07)', () => {

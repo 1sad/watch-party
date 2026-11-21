@@ -358,6 +358,15 @@ export interface PlayerActionEvent extends PlayerTarget {
    * decides before anything predicted from a report.
    */
   caused?: boolean
+  /**
+   * T17: `true` when the element was no longer in its document when the event
+   * fired. That is the browser's own pause for an element the page removed — Blink
+   * runs `RemovedFrom` -> `OnRemovedFromDocumentTimerFired`, which pauses only an
+   * element that is *not* connected — so it is the page's DOM change, not a press,
+   * and `caused` is false for it. Sent only when true, so every other message keeps
+   * its shape.
+   */
+  detached?: boolean
 }
 
 export type PageDecision =
@@ -372,7 +381,9 @@ export type PageDecision =
  * §6.6, at the one place a page event can become a room command. An event whose
  * `(source, id)` is not the elected player is ignored — an ad playing in a
  * neighbouring frame is not somebody's pause. An event the bridge says it caused
- * is the room's, so it is dropped; one no echo entry and no flag accounts for is
+ * is the room's, so it is dropped, and so is the pause a removed element fires
+ * (T17: the page moved its own DOM, nobody pressed); one no echo entry and no
+ * flag accounts for is
  * a person: the controller's becomes a `play`/`pause`/`seek`, and anybody else's
  * is answered by re-applying the room (ADR-030: one writer, and a follower that
  * drifted is corrected rather than obeyed).
@@ -388,6 +399,15 @@ export function decidePageEvent(
     return { kind: 'ignore' }
   }
   const target = { source: event.source, id: event.id }
+  // T17: a removal is not a pause. A playing element the page takes out of the
+  // DOM is paused by the browser itself (Blink pauses a *detached* element), and
+  // 07b measured the room taking that pause as a person's 7 ms after a mirror
+  // switch. The bridge's `detached` names the element gone, so this is the page's
+  // change, dropped like any other event of ours. It is decided before the press
+  // rule below, which still has every connected element: a person who presses
+  // pause just before a swap was connected when they pressed, so their pause is
+  // still the room's.
+  if (event.event === 'pause' && event.detached === true) return { kind: 'echo' }
   // T15: the bridge's own provenance is asked first, because it was measured on
   // the element by the frame that moved it — right even when the report the plan
   // was built from is half a second old. That is the play press whose hold is

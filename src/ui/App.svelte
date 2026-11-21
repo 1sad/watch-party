@@ -808,6 +808,9 @@
         // T15: the bridge says whether its own write caused this, so §6.6's
         // decision does not lean on a report that may be half a second old.
         caused: body.caused === true,
+        // T17: and whether the element was already out of the document, which
+        // is the only thing that separates a removal's pause from a person's.
+        detached: body.detached === true,
       }
       // §6.6 and ADR-030: ours is dropped, the controller's is a command, and a
       // guest's is corrected back rather than sent to a room that would refuse.
