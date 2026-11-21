@@ -1,0 +1,27 @@
+#!/bin/sh
+# The only guardrail (ADR-036): no remote, no CI, so the commit is where a
+# broken test is caught. Keep this fast — a hook over ~20 s gets --no-verify'd
+# and then protects nothing.
+#
+# `npm run check` is deliberately NOT wired here. On the tree this hook was
+# added to, `npm run check` exits 1 (127 errors in 27 files, measured by T8a),
+# and ADR-036 says those errors become tickets, not edits. Wire the typecheck
+# in the same change that makes the baseline green.
+
+set -u
+
+refuse() {
+	printf '\n'
+	printf 'pre-commit: REFUSED — %s\n' "$1"
+	printf 'pre-commit: nothing was committed. Fix it and commit again.\n'
+	printf 'pre-commit: --no-verify would skip this, and it exists, but it\n'
+	printf 'pre-commit: turns off the only check this repository has\n'
+	printf 'pre-commit: (ADR-036). If the check itself is wrong, fix the\n'
+	printf 'pre-commit: check; do not step around it.\n'
+	exit 1
+}
+
+printf 'pre-commit: npm test\n'
+npm test || refuse 'npm test failed'
+
+exit 0

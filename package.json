@@ -8,11 +8,14 @@
     "build:dev": "vite build --mode development",
     "dev": "npm run build && node scripts/run-host.mjs",
     "test": "node --test \"tests/unit/*.test.ts\"",
-    "test:integration": "node --test \"tests/integration/*.test.ts\""
+    "test:integration": "node --test \"tests/integration/*.test.ts\"",
+    "check": "svelte-check --tsconfig ./tsconfig.json"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "svelte": "^5.59.0",
+    "svelte-check": "^4.7.8",
+    "typescript": "^6.0.3",
     "vite": "^8.3.8"
   },
   "dependencies": {

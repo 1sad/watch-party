@@ -1,0 +1,2 @@
+# git runs this file through its own sh; a CRLF line ending breaks it.
+.githooks/* text eol=lf
