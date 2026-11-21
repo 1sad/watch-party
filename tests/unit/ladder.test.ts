@@ -50,7 +50,8 @@ test('§6.3 table: the six bands pick none, nudge, seek or snap', () => {
     rate: number
   }> = [
     { name: '0.05 s drift is inside the deadband', overrides: { drift: 0.05 }, action: 'none', rate: 1 },
-    { name: '0.1 s ahead nudges 0.95', overrides: { drift: 0.1 }, action: 'nudge', rate: 0.95 },
+    { name: '0.1 s ahead sits inside the deadband (ADR-039)', overrides: { drift: 0.1 }, action: 'none', rate: 1 },
+    { name: '0.26 s ahead nudges 0.95', overrides: { drift: 0.26 }, action: 'nudge', rate: 0.95 },
     { name: '1.4 s ahead nudges 0.95', overrides: { drift: 1.4 }, action: 'nudge', rate: 0.95 },
     { name: '2.0 s ahead nudges 0.95', overrides: { drift: 2.0 }, action: 'nudge', rate: 0.95 },
     { name: '4.1 s ahead seeks', overrides: { drift: 4.1 }, action: 'seek', rate: 1 },
@@ -72,19 +73,66 @@ test('§6.3 table: the six bands pick none, nudge, seek or snap', () => {
   }
 })
 
-test('§6.3 bands are inclusive at 0.1 and exclusive at 4 / 1.75-behind', () => {
-  assert.equal(CORRECTION_DEADBAND_SECONDS, 0.1)
+test('§6.3 bands are inclusive at the deadband and exclusive at 4 / 1.75-behind', () => {
+  assert.equal(CORRECTION_DEADBAND_SECONDS, 0.25)
   assert.equal(SEEK_AHEAD_SECONDS, 4)
   assert.equal(SEEK_BEHIND_SECONDS, 1.75)
   assert.equal(SLOW_DOWN_RATE, 0.95)
   assert.equal(SPEED_UP_RATE, 1.05)
 
-  assert.equal(decideCorrection(input({ drift: 0.0999 })).action, 'none', 'strictly under 0.1')
-  assert.equal(decideCorrection(input({ drift: 0.1 })).action, 'nudge', 'exactly 0.1 nudges')
+  assert.equal(decideCorrection(input({ drift: 0.2499 })).action, 'none', 'strictly under the deadband')
+  assert.equal(decideCorrection(input({ drift: 0.25 })).action, 'nudge', 'exactly the deadband nudges')
   assert.equal(decideCorrection(input({ drift: 4 })).action, 'nudge', 'exactly 4 still nudges')
   assert.equal(decideCorrection(input({ drift: 4.0001 })).action, 'seek', 'past 4 seeks')
   assert.equal(decideCorrection(input({ drift: -1.75 })).action, 'nudge', 'exactly 1.75 behind nudges')
   assert.equal(decideCorrection(input({ drift: -1.7501 })).action, 'seek', 'past 1.75 behind seeks')
+})
+
+// ADR-039: the deadband is a quarter of a second, chosen because a healthy
+// window measurably sits 0.086-0.112 s behind. These are the edges that change;
+// the rungs above it are pinned right after them.
+
+test('ADR-039: 0.24 s either way is no correction, 0.26 s is one', () => {
+  assert.equal(CORRECTION_DEADBAND_SECONDS, 0.25, 'one constant, a quarter second')
+
+  for (const drift of [0.24, -0.24, 0.2, -0.2, 0.086, -0.112]) {
+    const decision = decideCorrection(input({ drift }))
+    assert.equal(decision.action, 'none', `drift ${drift} is inside the deadband`)
+    assert.equal(decision.rate, 1, `drift ${drift} keeps rate 1`)
+  }
+
+  const ahead = decideCorrection(input({ drift: 0.26 }))
+  assert.equal(ahead.action, 'nudge', '0.26 s ahead is corrected')
+  assert.equal(ahead.rate, SLOW_DOWN_RATE)
+
+  const behind = decideCorrection(input({ drift: -0.26 }))
+  assert.equal(behind.action, 'nudge', '0.26 s behind is corrected')
+  assert.equal(behind.rate, SPEED_UP_RATE)
+})
+
+test('ADR-039: a correction stops once the gap is back under 0.25 s', () => {
+  const correcting = decideCorrection(input({ drift: 0.4, lastCorrectionAt: NOW - 6000 }))
+  assert.equal(correcting.action, 'nudge', '0.4 s is still being corrected')
+
+  const closed = decideCorrection(input({ drift: 0.24, lastCorrectionAt: NOW - 6000 }))
+  assert.equal(closed.action, 'none', 'inside the deadband again, so the page restores 1')
+  assert.equal(closed.rate, 1, 'restored to playbackRate = 1')
+})
+
+test('ADR-039: the rungs above the deadband are unchanged', () => {
+  // The 1.5 s rung is the same nudge on both sides of it (§6.3: "a bit of
+  // visible lag is preferable to a jump"): 1.4 s and 1.6 s both nudge.
+  for (const drift of [1.4, 1.5, 1.6]) {
+    const decision = decideCorrection(input({ drift }))
+    assert.equal(decision.action, 'nudge', `drift ${drift} is the nudge rung`)
+    assert.equal(decision.rate, SLOW_DOWN_RATE, `drift ${drift} nudges at 0.95`)
+  }
+
+  // The 4 s hard seek and the asymmetric "> 1.75 s behind" trigger.
+  assert.equal(decideCorrection(input({ drift: 4 })).action, 'nudge', 'exactly 4 s ahead still nudges')
+  assert.equal(decideCorrection(input({ drift: 4.0001 })).action, 'seek', 'past 4 s ahead seeks')
+  assert.equal(decideCorrection(input({ drift: -1.75 })).action, 'nudge', 'exactly 1.75 s behind still nudges')
+  assert.equal(decideCorrection(input({ drift: -1.7501 })).action, 'seek', 'past 1.75 s behind seeks')
 })
 
 test('guard 1: one bad report is not enough; the second one corrects', () => {

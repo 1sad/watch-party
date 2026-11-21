@@ -54,7 +54,7 @@
 
   /**
    * How often a held nudge is re-examined. It is a polling interval, not a
-   * §6.3 number: 200 ms is well inside the 0.1 s band's closing time (2 s at
+   * §6.3 number: 200 ms is well inside the deadband's closing time (2 s at
    * 5 %) and cheap enough to run in every window.
    */
   const NUDGE_WATCH_MS = 200
@@ -97,7 +97,7 @@
   let nudgeTimer: ReturnType<typeof setTimeout> | undefined
   /**
    * Watches the two ways a nudge ends without a message: the gap closing
-   * (restore as soon as it is under 0.1 s) and the bound passing (the deadline
+   * (restore as soon as it is back under the deadband) and the bound passing (the deadline
    * timer's job, repeated here because a sleeping window throttles timers and a
    * window must never come back at 0.95×).
    */

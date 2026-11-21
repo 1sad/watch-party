@@ -208,12 +208,15 @@ export function clampToMedia(position: number, duration: number): number {
  * module that appears a second time is a copy). The bands are the spec's:
  *
  * | drift                    | action |
- * | < 0.1 s                  | none   |
- * | 0.1 – 4 s                | nudge  |
+ * | < the deadband           | none   |
+ * | deadband – 4 s           | nudge  |
  * | > 4 s, or > 1.75 behind  | seek   |
  * | paused                   | snap   |
+ *
+ * The deadband is a quarter of a second (ADR-039), not Syncplay's 0.1 s: a
+ * healthy window sits 0.086-0.112 s behind, so 0.1 s fired on jitter alone.
  */
-export const CORRECTION_DEADBAND_SECONDS = 0.1
+export const CORRECTION_DEADBAND_SECONDS = 0.25
 export const SEEK_AHEAD_SECONDS = 4
 export const SEEK_BEHIND_SECONDS = 1.75
 /** §6.3: two consecutive bad reports before any correction. */
@@ -271,7 +274,8 @@ export interface Correction {
  *
  * The nudge's `untilAuthorityMs` is the time the member needs to close the gap
  * at the extra 5 %: `|drift| / 0.05` seconds from now. It is a bound, not the
- * primary stop — the page restores to 1.0 when the gap is under 0.1 s first.
+ * primary stop — the page restores to 1.0 when the gap is back under the
+ * deadband first.
  */
 export function decideCorrection(input: CorrectionInput): Correction {
   const drift = Number.isFinite(input.drift) ? input.drift : 0
