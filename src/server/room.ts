@@ -163,6 +163,28 @@ export function markOffline(
   return true
 }
 
+/**
+ * §4.4's last line, and ADR-024's file half: "a replica held by an app that has
+ * not noticed its peers left is discarded when its last connection fails; there
+ * is no timer and nothing to clean up." A file room is over when its owner
+ * leaves, so everything it held — the file's path, the members, the chat — is
+ * dropped here rather than kept as a tombstone (T9b check 3).
+ *
+ * `owner` is `null` afterwards, which is also what makes the room unusable if
+ * anything still held a reference: no owner means nobody may pick or control.
+ */
+export function discardRoom(room: RoomState, now: () => number = Date.now): void {
+  room.owner = null
+  room.authority = { memberId: '', epoch: room.authority.epoch }
+  room.controllers = []
+  room.page = null
+  room.media = null
+  room.playback = { playing: false, position: 0, updatedAt: now(), rate: 1 }
+  room.members.clear()
+  room.chat = []
+  room.revision += 1
+}
+
 export type CommandOutcome =
   | {
       ok: true

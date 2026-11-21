@@ -297,6 +297,23 @@ export interface MembersFrame {
 }
 
 /**
+ * §14/§7.2/ADR-024: a file room ends when its owner's app does, because the only
+ * copy of the bytes is in that app. The authority says so on the way out, so a
+ * window that is still here is told plainly and never left to guess (T9b).
+ *
+ * The sentence is one constant because the authority posts it as a system line
+ * and a page whose authority went with its process states the same fact itself;
+ * two copies would let the overlay and the chat disagree.
+ */
+export const ROOM_OVER_SENTENCE = "The room ended because the file's owner left."
+
+export interface RoomOverFrame {
+  type: 'roomOver'
+  /** The one reason M1 has: the owner's app is gone, so the room is over. */
+  reason: 'owner_left'
+}
+
+/**
  * Why a `state` was sent (§5, §6.4). `start` is a scheduled start (§6.4, with
  * `Playback.startAt`) and arrives with T8. `join` stays vocabulary until the
  * authority needs to align a joiner with more than the `welcome` snapshot: on
@@ -335,6 +352,7 @@ export type ServerFrame =
   | MembersFrame
   | MediaFrame
   | StateFrame
+  | RoomOverFrame
   | ErrorFrame
   | WarningFrame
   | ChatFrame

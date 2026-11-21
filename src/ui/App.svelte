@@ -3,6 +3,7 @@
 
   import {
     ERROR_SENTENCES,
+    ROOM_OVER_SENTENCE,
     type ChatMessage,
     type CommandFrame,
     type ErrorCode,
@@ -118,6 +119,13 @@
   /** Where the player loads the room's file from, or `null` while the room has none. */
   const playerSrc = $derived(ownerOrigin === null ? null : mediaUrl(ownerOrigin, media))
 
+  /**
+   * §14: a file room ends with its owner's app (ADR-024), because the owner's app
+   * is the only place the bytes exist. This flag is the whole of this window's
+   * answer — an overlay, the room's one system line, and no way back into it (T9b).
+   */
+  let roomEnded = $state(false)
+
   let socket: WebSocket | null = null
   /** True once this page has decided which room it dials; the poll never overrides it. */
   let enteredRoom = false
@@ -200,6 +208,7 @@
     revision = 0
     media = null
     nudge = null
+    roomEnded = false
     // T9a3: this connection's owner — the window and every guest fetch the room's
     // one file from here (`mediaUrl`), never from their own sidecar.
     ownerOrigin = `http://${host}:${port}`
@@ -224,6 +233,9 @@
     socket = opened
     opened.onopen = () => {
       if (opened !== socket) return
+      // T9b: this line is how a check counts joins in a window's own log — one
+      // `hello` per connection, so "zero after the room ended" is countable.
+      if (dev) console.info('[ws] hello')
       // R26: no name, so the member appears as `anonymous`; the roster renames.
       opened.send(JSON.stringify({ type: 'hello', code }))
     }
@@ -241,8 +253,45 @@
       if (opened !== socket) return
       socket = null
       stopPing()
-      if (selfId === null) sentence = UNREACHABLE_ROOM
+      if (selfId === null) {
+        sentence = UNREACHABLE_ROOM
+        return
+      }
+      // §14: a file room ends when its owner's app does (ADR-024). This window's
+      // one connection *is* the owner's app, so its close is the room's end — no
+      // reconnect, no freeze, and no second guess about a room that cannot come
+      // back. Website mode is unbuilt in M1; when it arrives, a guest's close is
+      // the row above this one (authority transfer), and `media`/`page` will say
+      // which kind of room this is.
+      if (!inOwnRoom) endRoom(false)
     }
+  }
+
+  /**
+   * §14's "everyone told plainly, no pretend recovery": one flag ends this
+   * window's room view. `fromAuthority` says whether the authority already posted
+   * the system line — when its process is the thing that went, it could not, so
+   * this page states the one fact it is sure of rather than showing chat that
+   * silently misses the room's end.
+   */
+  function endRoom(fromAuthority: boolean): void {
+    if (roomEnded) return
+    roomEnded = true
+    stopPing()
+    nudge = null
+    if (!fromAuthority) {
+      chat = [
+        ...chat,
+        {
+          id: 'room-over',
+          kind: 'system',
+          name: '',
+          text: ROOM_OVER_SENTENCE,
+          ts: Date.now(),
+        },
+      ]
+    }
+    if (dev) console.info('[room] ended owner-left')
   }
 
   /** The chat refusals are the panel's business; every other error stays a sentence. */
@@ -335,6 +384,10 @@
       if (sample === null) return
       estimate = estimateOffset(sample, estimate)
       clockSeen = { local: t3, authority: authorityNow(t3, estimate) }
+    } else if (frame.type === 'roomOver') {
+      // T9b: the authority's last word before it closes this socket. It already
+      // posted the system line, so this only ends the view.
+      endRoom(true)
     } else if (frame.type === 'warning') {
       notice('warning', frame.message)
     } else if (frame.type === 'error') {
@@ -694,8 +747,17 @@
       {/if}
     </section>
 
+    {#if roomEnded}
+      <!-- §14, T9b: told plainly, with nothing to click that would pretend the
+           room can come back. The chat below keeps the one system line. -->
+      <section class="ended" role="alert">
+        <h2>The room ended</h2>
+        <p>{ROOM_OVER_SENTENCE} There is nothing to reconnect to.</p>
+      </section>
+    {/if}
+
     {#if selfId !== null}
-      {#if playback !== null}
+      {#if playback !== null && !roomEnded}
         <Player
           {playback}
           {revision}
@@ -733,15 +795,16 @@
             <input
               type="text"
               aria-label="Message"
-              placeholder="Message"
+              placeholder={roomEnded ? 'The room ended' : 'Message'}
               autocomplete="off"
+              disabled={roomEnded}
               bind:value={chatDraft}
             />
-            <button type="submit">Send</button>
+            <button type="submit" disabled={roomEnded}>Send</button>
           </form>
         </section>
 
-        {#if members.length > 0}
+        {#if members.length > 0 && !roomEnded}
           <section class="roster">
             <h2>In this room</h2>
             <ul>
@@ -834,6 +897,24 @@
   .sentence.error {
     margin: 0.75rem 0 0;
     color: #ffb3a7;
+  }
+
+  .ended {
+    margin: 1.5rem 0;
+    padding: 1rem 1.25rem;
+    border: 1px solid #6b3a3a;
+    border-radius: 8px;
+    background: #24191a;
+  }
+
+  .ended h2 {
+    margin: 0 0 0.5rem;
+    color: #ffb3a7;
+  }
+
+  .ended p {
+    margin: 0;
+    line-height: 1.5;
   }
 
   .invite {
