@@ -16,6 +16,7 @@ import {
   PLAYER_REPORT_TTL_MS,
   elect,
   mergeReports,
+  reportIsNewer,
   scoreCandidate,
   type FrameReport,
   type PlayerCandidate,
@@ -156,6 +157,7 @@ test('two frames merge into one list, and identity is the frame plus the element
   const top: FrameReport = {
     source: 'https://animex.one/watch/x',
     href: 'https://animex.one/watch/x',
+    doc: 'document-top',
     seq: 3,
     candidates: [candidate({ id: 1, w: 0, h: 0 })],
     receivedAt: 1_000,
@@ -163,6 +165,7 @@ test('two frames merge into one list, and identity is the frame plus the element
   const playerFrame: FrameReport = {
     source: 'https://plyr.animex.one/embed/y',
     href: 'https://plyr.animex.one/embed/y?t=80',
+    doc: 'document-player',
     seq: 4,
     candidates: [candidate({ id: 1 })],
     receivedAt: 1_000,
@@ -179,10 +182,36 @@ test('a frame that stops reporting stops contributing', () => {
   const report: FrameReport = {
     source: 'https://plyr.example/embed/1',
     href: 'https://plyr.example/embed/1?t=80',
+    doc: 'document-one',
     seq: 1,
     candidates: [candidate()],
     receivedAt: 1_000,
   }
   assert.equal(mergeReports([report], 1_000 + PLAYER_REPORT_TTL_MS).length, 1)
   assert.equal(mergeReports([report], 1_000 + PLAYER_REPORT_TTL_MS + 1).length, 0)
+})
+
+test('a reloaded document is news again even though its count restarted (T07, 06b)', () => {
+  // 06b's live run: reloading the site view left both windows at
+  // `player: none reason=replaced` with no later `appeared`, because the new
+  // document's first report said `seq=1` against the old one's thousands and
+  // was thrown away as older news. The document token is what tells them apart.
+  const before: FrameReport = {
+    source: 'https://animex.one/watch/x',
+    href: 'https://animex.one/watch/x',
+    doc: 'document-before',
+    seq: 4_000,
+    candidates: [candidate()],
+    receivedAt: 1_000,
+  }
+
+  assert.equal(reportIsNewer(undefined, { doc: 'document-before', seq: 1 }), true, 'a first report')
+  assert.equal(reportIsNewer(before, { doc: 'document-before', seq: 4_001 }), true, 'the next in order')
+  assert.equal(reportIsNewer(before, { doc: 'document-before', seq: 3_999 }), false, 'older news')
+  assert.equal(reportIsNewer(before, { doc: 'document-before', seq: 4_000 }), false, 'the same report twice')
+  assert.equal(
+    reportIsNewer(before, { doc: 'document-after', seq: 1 }),
+    true,
+    'a new document counts from 1 and is still news',
+  )
 })

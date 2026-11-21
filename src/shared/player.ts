@@ -46,6 +46,13 @@ export interface FrameReport {
   source: string
   /** The frame's own `location.href`, which the line names. */
   href: string
+  /**
+   * Which document of that frame sent it (T07). The bridge is new in every
+   * document, so its `seq` starts again at 1: without this a reload's reports
+   * look older than the last one and are dropped — 06b measured the election
+   * never coming back. Empty when the sender predates the field.
+   */
+  doc: string
   seq: number
   candidates: readonly FrameCandidate[]
   /** This window's clock, for {@link PLAYER_REPORT_TTL_MS}. */
@@ -107,6 +114,25 @@ export function scoreCandidate(
 /** `(source, id)`: two frames can each have an element 1, and they are not the same video. */
 function identity(candidate: Pick<PlayerCandidate, 'source' | 'id'>): string {
   return `${candidate.source}\u0000${candidate.id}`
+}
+
+/**
+ * Whether a frame's report is newer than the one already held (T07).
+ *
+ * Within one document the `seq` ordering is the whole answer. A **different**
+ * document is a different bridge whose counting restarted, so its report is
+ * news whatever its number says: 06b measured a site-view reload losing the
+ * election for good because the new document's `seq=1` was older than the old
+ * document's thousands (`no later reason=appeared`). A sender that names no
+ * document (an older bridge, `''`) keeps the plain rule.
+ */
+export function reportIsNewer(
+  previous: FrameReport | undefined,
+  next: { doc: string; seq: number },
+): boolean {
+  if (previous === undefined) return true
+  if (previous.doc !== next.doc) return true
+  return next.seq > previous.seq
 }
 
 /**

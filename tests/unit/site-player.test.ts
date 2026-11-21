@@ -17,15 +17,21 @@ import assert from 'node:assert/strict'
 
 import type { Playback } from '../../src/shared/protocol.ts'
 import type { PlayerCandidate } from '../../src/shared/player.ts'
+import { elect, mergeReports, reportIsNewer, type FrameReport, type PlayerEvent } from '../../src/shared/player.ts'
 import { ECHO_EXPIRY_MS } from '../../src/shared/echo.ts'
 import {
+  ALIGN_TOLERANCE_MS,
   PLAYER_DRIFT_LOG_INTERVAL_MS,
+  alignmentOverdue,
   createSiteEchoes,
   decidePageEvent,
   driftFromPlayer,
   driftLogDue,
   echoEntries,
+  followerStep,
   planFromState,
+  playbackAfterPageCommit,
+  realignPlan,
   reportFromPlayer,
   type PlayerActionEvent,
   type PlayerReading,
@@ -376,4 +382,175 @@ test('a newer plan clears the predictions a superseded one left', () => {
     command: { type: 'play', position: 601 },
   })
 })
+
+// ---- T07: a player is always a follower (ADR-029 rule 1) -----------------------
+
+test('a changed election applies the room position before any report (T07)', () => {
+  const now = 100_000
+  const room = playing(600, { updatedAt: now })
+  // What a site's own player looks like the moment it is elected: a fresh
+  // element the page started at 0, or has not even given metadata yet.
+  const fresh = player({ t: 0, readyState: 0, paused: true, playing: false })
+
+  const first = followerStep({
+    reason: 'appeared',
+    newDocument: false,
+    previewPending: false,
+    unaligned: false,
+    playback: room,
+    revision: 12,
+    stateReason: 'join',
+    elected: fresh,
+    nowMs: now,
+  })
+
+  assert.equal(first.report, false, "the page's own 0 is not the room's news")
+  assert.ok(first.realign, 'the room position is applied first')
+  assert.equal(first.realign.command.action, 'seek', 'placed before it is allowed to run')
+  assert.equal(first.realign.command.target, 600, 'the room is at 600 s')
+  assert.equal(first.realign.command.resume, true)
+  assert.deepEqual(first.realign.echoes, ['seeked', 'play'], 'the apply is echo-suppressed')
+  assert.equal(first.unaligned, false, 'the apply is the one the page needed')
+
+  // The report after the apply is the first the ladder sees.
+  const second = followerStep({
+    reason: null,
+    newDocument: false,
+    previewPending: false,
+    unaligned: first.unaligned,
+    playback: room,
+    revision: 12,
+    stateReason: 'join',
+    elected: player({ t: 600.1 }),
+    nowMs: now + 500,
+  })
+  assert.equal(second.report, true)
+  assert.equal(second.realign, null, 'nothing left to apply')
+})
+
+test('an election that leaves nobody elected keeps the page quiet (T07, 06b)', () => {
+  const step = followerStep({
+    reason: 'replaced',
+    newDocument: false,
+    previewPending: false,
+    unaligned: false,
+    playback: playing(600),
+    revision: 12,
+    stateReason: 'join',
+    elected: null,
+    nowMs: 100_000,
+  })
+  assert.equal(step.realign, null, 'nothing to aim at yet')
+  assert.equal(step.report, false)
+  assert.equal(step.unaligned, true, 'the next elected player is realigned before it reports')
+})
+
+test('pageCommitted resets to 0, paused, and realigns to nothing (T07, §5)', () => {
+  const committedAt = 120_000
+  const after = playbackAfterPageCommit(committedAt)
+  assert.deepEqual(after, { playing: false, position: 0, updatedAt: committedAt, rate: 1 })
+  assert.ok(Number.isFinite(after.updatedAt), 'the commit instant is the authority\'s, not a position')
+
+  // The new film's player has appeared at 0 and is paused: the room it
+  // realigns to is the beginning too, so there is nothing to write.
+  const settled = realignPlan(after, 13, 'join', player({ t: 0, paused: true, playing: false }), committedAt)
+  assert.equal(settled, null, 'a page change resets; it never realigns to the old film')
+
+  // A page that plays by itself is stopped, and the target is the new film's
+  // beginning - never the position the room held before the commit.
+  const autoplay = realignPlan(after, 13, 'join', player({ t: 0.4, paused: false }), committedAt)
+  assert.ok(autoplay)
+  assert.equal(autoplay.command.action, 'pause')
+  assert.equal(autoplay.command.target, 0)
+})
+
+test('a pending preview is not realigned and sends no report (T07, ADR-032)', () => {
+  const room = playing(600, { updatedAt: 100_000 })
+  const step = followerStep({
+    reason: 'appeared',
+    newDocument: true,
+    previewPending: true,
+    unaligned: false,
+    playback: room,
+    revision: 9,
+    stateReason: 'play',
+    elected: player({ t: 0 }),
+    nowMs: 100_000,
+  })
+  assert.equal(step.realign, null, 'a preview is not a follower yet')
+  assert.equal(step.report, false)
+  assert.equal(step.unaligned, false, 'and it does not start a wait for the old film')
+
+  // On the commit the site view navigates and its new player is elected: that
+  // is when the realignment runs, and it aims at the new film's 0.
+  const committed = followerStep({
+    reason: 'appeared',
+    newDocument: true,
+    previewPending: false,
+    unaligned: true,
+    playback: playbackAfterPageCommit(101_000),
+    revision: 10,
+    stateReason: 'join',
+    elected: player({ t: 0, paused: true, playing: false }),
+    nowMs: 101_000,
+  })
+  assert.equal(committed.report, false)
+  assert.equal(committed.realign, null, 'the room is at 0 and the element is too')
+  assert.equal(committed.unaligned, false)
+})
+
+test('a reloaded site view re-elects its player and realigns it (T07, 06b)', () => {
+  const at = 100_000
+  const frames = new Map<string, FrameReport>()
+  const settle = (doc: string, seq: number, candidate: PlayerCandidate, receivedAt: number): void => {
+    frames.set(SOURCE, { source: SOURCE, href: HREF, doc, seq, candidates: [candidate], receivedAt })
+  }
+
+  // Before: one playing element, elected, and the room a second later in.
+  settle('doc-before', 4_000, player({ t: 600 }), at)
+  const first = elect(null, mergeReports(frames.values(), at))
+  assert.equal(first.reason, 'appeared')
+  const room = playing(601, { updatedAt: at + 900 })
+
+  // 06b's reload: the old document says the element emptied, so the incumbent
+  // is gone and nothing replaces it in that same election.
+  const emptied: PlayerEvent[] = [{ source: SOURCE, id: 1, event: 'emptied', t: 600 }]
+  const replaced = elect(first.elected, mergeReports(frames.values(), at + 100), emptied)
+  assert.equal(replaced.reason, 'replaced')
+  assert.equal(replaced.elected, null, 'the element that went is the one we had')
+
+  // The new document's bridge counts from 1 again. Under the old rule this
+  // report was older news than the 4,000th and was dropped for good.
+  const held = frames.get(SOURCE)
+  assert.ok(held)
+  assert.equal(reportIsNewer(held, { doc: 'doc-after', seq: 1 }), true)
+
+  // Its element is new, at 0, and not yet ready.
+  settle('doc-after', 1, player({ t: 0, readyState: 0, paused: true, playing: false }), at + 900)
+  const again = elect(replaced.elected, mergeReports(frames.values(), at + 900))
+  assert.equal(again.reason, 'appeared', 'the election comes back')
+
+  const step = followerStep({
+    reason: again.reason,
+    newDocument: true,
+    previewPending: false,
+    unaligned: true,
+    playback: room,
+    revision: 20,
+    stateReason: 'play',
+    elected: again.elected,
+    nowMs: at + 900,
+  })
+  assert.equal(step.report, false)
+  assert.equal(step.realign?.command.action, 'seek')
+  assert.equal(step.realign?.command.target, 601, 'the room is at 601 s, not 0')
+})
+
+test('an alignment still out of place after the room\'s tolerance gets one line (T07)', () => {
+  assert.equal(alignmentOverdue(null, 1_000), false, 'nothing is being waited for')
+  assert.equal(alignmentOverdue(1_000, 1_000 + ALIGN_TOLERANCE_MS - 1), false)
+  assert.equal(alignmentOverdue(1_000, 1_000 + ALIGN_TOLERANCE_MS), true)
+  assert.equal(ALIGN_TOLERANCE_MS, 4_000, "§6.3's hard-seek threshold is the room's tolerance")
+})
+
 

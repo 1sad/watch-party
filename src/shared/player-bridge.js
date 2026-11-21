@@ -71,6 +71,23 @@
   var lastSentAt = 0
   var lastShape = null
 
+  // T07: this document's own name. A navigation builds a new document and so a
+  // new bridge, whose `seq` counts from 1 again; the app view cannot tell a
+  // restart from old news by the number alone, and 06b measured the election
+  // never coming back after a reload because of exactly that. Random, not
+  // counted: two frames' documents must not collide, and nothing reads it but
+  // the one window placing the report in order.
+  var doc = (function () {
+    try {
+      if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+        return String(window.crypto.randomUUID())
+      }
+    } catch (error) {
+      // A page that broke crypto gets the fallback below, not a silent bridge.
+    }
+    return String(Date.now()) + '-' + String(Math.random()).slice(2)
+  })()
+
   function idOf(element) {
     var id = ids.get(element)
     if (id === undefined) {
@@ -84,6 +101,9 @@
   function post(message) {
     seq += 1
     message.seq = seq
+    // T07: which document of this frame this is, so a reload's counting can be
+    // told from an out-of-order delivery.
+    message.doc = doc
     message.href = String(location.href)
     try {
       host.postMessage(message)

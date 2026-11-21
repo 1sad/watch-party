@@ -519,3 +519,22 @@ test('a second scheduled play replaces the first beat: one play, at the newer on
   assert.equal(element.played, 1, 'the superseded beat did not play it a second time')
 })
 
+test('every message names its document, so a reload is news and not old news (T07)', () => {
+  const bridge = harness([video()])
+  bridge.advance(1_000)
+  bridge.tick()
+
+  const docs = bridge.posted.map((message) => message.doc)
+  assert.equal(bridge.posted.length, 2, 'one report at ready and one at the poll')
+  assert.equal(typeof docs[0], 'string')
+  assert.ok(String(docs[0]).length > 0, 'the token is not empty')
+  assert.equal(docs[0], docs[1], 'one bridge is one document')
+
+  // A second run is a second document — the reload 06b measured, whose `seq`
+  // starts again at 1 while the old document's had reached thousands.
+  const reloaded = harness([video()])
+  assert.equal(reloaded.posted[0]?.seq, 1, 'the new document counts from 1')
+  assert.notEqual(reloaded.posted[0]?.doc, docs[0], 'and says it is a different document')
+})
+
+

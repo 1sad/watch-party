@@ -42,19 +42,26 @@
     PLAYER_MESSAGE_KINDS,
     elect,
     mergeReports,
+    reportIsNewer,
     type FrameCandidate,
     type FrameReport,
     type PlayerCandidate,
     type PlayerEvent,
+    type PlayerReason,
   } from '../shared/player.ts'
   import {
+    ALIGN_TOLERANCE_MS,
+    alignmentOverdue,
     createSiteEchoes,
     decidePageEvent,
     driftFromPlayer,
     driftLogDue,
     echoEntries,
+    followerStep,
     planFromState,
+    playbackAfterPageCommit,
     reportFromPlayer,
+    type FollowerStep,
     type PagePlan,
     type PlayerActionEvent,
   } from '../shared/site-player.ts'
@@ -195,6 +202,13 @@
    * all; with no file it is the way a room becomes a site.
    */
   const showAddressBar = $derived(selfId !== null && media === null)
+
+  /**
+   * T07 item 2's one line. A page that has not been put on the room's position
+   * within §6.3's hard-seek threshold is visibly behind, and saying so is
+   * better than leaving a window that looks stuck (06b's reload finding).
+   */
+  const ALIGN_LATE_SENTENCE = "The site's player has not caught up with the room yet."
 
   /**
    * §14: a file room ends with its owner's app (ADR-024), because the owner's app
@@ -482,6 +496,25 @@
       if (dev) console.info(`[page] pageCommitted page=${frame.page} previewed=${previewed}`)
       roomPage = frame.page
       pendingPreview = null
+      // T07 item 4, §5's `pageCommitted` row: a new page is a new film, so the
+      // room's playback is at position 0 and paused from this frame on. The
+      // authority reset it (`commitDuePage`) but sends only the page, so this
+      // window makes the same one — otherwise the next realignment would seek
+      // the new film to the old one's position.
+      playback = playbackAfterPageCommit(frame.at)
+      playbackReason = 'join'
+      // The site view is about to navigate (or already has, as a preview). Its
+      // old player is not this page's: nothing it said survives, and the new
+      // document's own election is what realigns - to 0, because the room is.
+      // This frame itself applies nothing: a page change resets, only a player
+      // replacement realigns.
+      playerFrames.clear()
+      playerEvents = []
+      elected = null
+      if (!unaligned) {
+        unaligned = true
+        startAlignWatch()
+      }
       // Ours, or someone else's that replaced ours (ADR-032's cost line): either
       // way the bar goes back to the address the authority actually committed.
       if (wasPending) pageDraft = frame.page
@@ -666,6 +699,16 @@
   /** §10.1's winner: one per room, kept until it goes. */
   let elected: PlayerCandidate | null = null
   /**
+   * T07: the elected player has not been put on the room's position yet, so
+   * nothing it measures or does is the room's news (ADR-029 rule 1). Set by an
+   * election change, by a document of the site view completing, and by the
+   * `pageCommitted` that makes the site view navigate; cleared by the apply.
+   */
+  let unaligned = false
+  /** When this window started waiting for that apply, for the one late line. */
+  let alignWaitingSince: number | null = null
+  let alignTimer: ReturnType<typeof setTimeout> | undefined
+  /**
    * §4.1's controllers, as the last `welcome` stated them. ADR-030's one writer
    * decides, but this window also has to: a guest's click on the site's own
    * player is corrected back rather than sent to a room that would refuse it.
@@ -695,10 +738,16 @@
 
     if (kind === 'playerReport') {
       const seq = typeof body.seq === 'number' ? body.seq : 0
+      // T07: a reloaded document's bridge counts from 1 again, so the number
+      // alone would call it older news and drop it — 06b measured the election
+      // never coming back for exactly that reason. The document token says
+      // which bridge sent it.
+      const doc = typeof body.doc === 'string' ? body.doc : ''
       const known = playerFrames.get(source)
-      // A report that arrives after a newer one is older news, whichever order
-      // the three hops put them in.
-      if (known !== undefined && seq <= known.seq) return
+      if (!reportIsNewer(known, { doc, seq })) return
+      // A document this frame has not shown us before is a navigation that
+      // completed: it earns the same realignment a replacement does (item 2).
+      const newDocument = known !== undefined && known.doc !== doc
       const candidates: FrameCandidate[] = []
       if (Array.isArray(body.candidates)) {
         for (const raw of body.candidates) {
@@ -709,11 +758,13 @@
       playerFrames.set(source, {
         source,
         href: typeof body.href === 'string' && body.href.length > 0 ? body.href : source,
+        doc,
         seq,
         candidates,
         receivedAt: Date.now(),
       })
-      electPlayer()
+      const step = followSite(electPlayer(), newDocument)
+      if (!step.report) return
       // The same report also carries the elected element's playhead, which is
       // §5's `report` (T06 item 2) when this frame holds the winner.
       reportFromSite(source, candidates)
@@ -727,7 +778,7 @@
 
       if (event === 'emptied' || event === 'loadstart') {
         playerEvents.push({ source, id, event, t: typeof body.t === 'number' ? body.t : 0 })
-        electPlayer()
+        followSite(electPlayer())
         return
       }
 
@@ -745,6 +796,10 @@
 
       const playbackEvent = event === 'play' || event === 'pause' || event === 'seeked' ? event : null
       if (playbackEvent === null) return
+      // T07: until the elected player has been put on the room's position it is
+      // not a follower, so what it does on its own is not the room's news - and
+      // a just-loaded page playing from 0 must not become a seek to 0.
+      if (unaligned) return
       const action: PlayerActionEvent = {
         source,
         id,
@@ -793,16 +848,17 @@
   /**
    * §10.1, once per report: score every frame's candidates and keep the winner.
    * Only a change is sent anywhere — the host writes one `player:` line per
-   * election, and 06 is the first reader of the value that line names.
+   * election, and 06 is the first reader of the value that line names. The
+   * reason comes back because T07 treats a change as "unaligned".
    */
-  function electPlayer(): void {
+  function electPlayer(): PlayerReason | null {
     const result = elect(elected, mergeReports(playerFrames.values(), Date.now()), playerEvents)
     playerEvents = []
     // Kept even when nothing changed: the winner is the element as its latest
     // report describes it, and a reload can only be `replaced` if the snapshot
     // we hold knows the element was playing (05b measured the placeholder).
     elected = result.elected
-    if (result.reason === null) return
+    if (result.reason === null) return null
     postToHost({
       kind: 'playerElected',
       reason: result.reason,
@@ -815,6 +871,55 @@
             duration: result.elected.duration,
           },
     })
+    return result.reason
+  }
+
+  /**
+   * T07: take one step of the follower rule, with this window's own room view
+   * filled in. The apply goes out with its echoes recorded first (§6.6), and no
+   * report follows until the page is on the room's position — the page's own
+   * `currentTime` is never sent while it is unaligned (ADR-029 rule 1).
+   */
+  function followSite(reason: PlayerReason | null, newDocument = false): FollowerStep {
+    const step = followerStep({
+      reason,
+      newDocument,
+      previewPending: pendingPreview !== null,
+      unaligned,
+      playback,
+      revision,
+      stateReason: playbackReason,
+      elected,
+      nowMs: authorityClock(),
+    })
+    if (step.unaligned && !unaligned) startAlignWatch()
+    if (!step.unaligned) stopAlignWatch()
+    unaligned = step.unaligned
+    if (step.realign !== null) postToSite(step.realign)
+    return step
+  }
+
+  /**
+   * The one line T07 allows when the page has not caught up: it is said only
+   * once per wait, and only after the room's own tolerance has passed, so a
+   * reload that realigns in half a second says nothing at all.
+   */
+  function startAlignWatch(): void {
+    if (alignTimer !== undefined) clearTimeout(alignTimer)
+    const startedAt = performance.now()
+    alignWaitingSince = startedAt
+    alignTimer = setTimeout(() => {
+      alignTimer = undefined
+      if (!unaligned || alignWaitingSince !== startedAt) return
+      if (!alignmentOverdue(startedAt, performance.now())) return
+      notice('warning', ALIGN_LATE_SENTENCE)
+    }, ALIGN_TOLERANCE_MS)
+  }
+
+  function stopAlignWatch(): void {
+    if (alignTimer !== undefined) clearTimeout(alignTimer)
+    alignTimer = undefined
+    alignWaitingSince = null
   }
 
   /** Whether this window is one the room will listen to (ADR-024, ADR-030). */

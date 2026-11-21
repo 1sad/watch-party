@@ -15,7 +15,7 @@
  */
 
 import type { CommandFrame, Playback, PlaybackReason, ReportFrame } from './protocol.ts'
-import type { PlayerCandidate } from './player.ts'
+import type { PlayerCandidate, PlayerReason } from './player.ts'
 import { SEEK_SKIP_SECONDS, expected } from './timing.ts'
 import { createEchoSet, type EchoKind } from './echo.ts'
 
@@ -199,6 +199,155 @@ export function planFromState(
       ...(mustPlay ? (['play'] as const) : []),
     ],
     beatMs: leadMs ?? 0,
+  }
+}
+
+/**
+ * T07, ADR-029 rule 1: what a **newly elected** player is asked, before it is
+ * allowed to say anything to the room. The room's expected position, written
+ * into the page whatever the page chose — the page's own `currentTime` is never
+ * adopted. This is `planFromState`'s sibling with one difference: a paused room
+ * carries the target too, because a player that has just appeared is at 0, and
+ * the only thing allowed to start there is a new film (§5's `pageCommitted`).
+ *
+ * A `readyState` below 1 is still a seek if the position is off: an element
+ * with no metadata reports `t = 0` whether it is at the beginning or not, and a
+ * `currentTime` written before metadata becomes the default start position.
+ *
+ * The reason is the caller's last `state`, so the one `player: applied` line
+ * names the room state that asked for the apply rather than a word invented
+ * here.
+ */
+export function realignPlan(
+  playback: Playback,
+  revision: number,
+  reason: PlaybackReason,
+  elected: PlayerCandidate | null,
+  nowMs: number,
+): PagePlan | null {
+  if (elected === null) return null
+
+  const startAt = playback.startAt
+  const scheduled =
+    playback.playing && typeof startAt === 'number' && Number.isFinite(startAt) && startAt > nowMs
+  const target = expected(playback, scheduled ? startAt : nowMs)
+  const leadMs = scheduled ? startAt - nowMs : undefined
+  const offTarget = elected.readyState < 1 || Math.abs(elected.t - target) > SEEK_SKIP_SECONDS
+  const first = { source: elected.source, href: elected.href, id: elected.id, reason, revision }
+
+  if (!playback.playing) {
+    // §6.3's paused row, and the target with it: the playhead snaps and the
+    // element stops. The bridge writes `target` for a pause as well, so one
+    // command covers an autoplaying page that has to be moved and stopped.
+    const mustPause = !elected.paused
+    if (!offTarget && !mustPause) return null
+    return {
+      command: { ...first, kind: 'playerCommand', action: 'pause', ...(offTarget ? { target } : {}) },
+      echoes: [...(offTarget ? (['seeked'] as const) : []), ...(mustPause ? (['pause'] as const) : [])],
+      beatMs: 0,
+    }
+  }
+
+  // A playing room: place the playhead, then play at the beat (§6.4). An
+  // element the page started by itself is moved before it is allowed to run.
+  const mustPlay = scheduled || elected.paused
+  if (!offTarget && !mustPlay) return null
+  return {
+    command: {
+      ...first,
+      kind: 'playerCommand',
+      action: offTarget ? 'seek' : 'play',
+      ...(offTarget ? { target, resume: true } : {}),
+      ...(leadMs === undefined ? {} : { leadMs }),
+    },
+    echoes: [
+      ...(scheduled && !elected.paused ? (['pause'] as const) : []),
+      ...(offTarget ? (['seeked'] as const) : []),
+      ...(mustPlay ? (['play'] as const) : []),
+    ],
+    beatMs: leadMs ?? 0,
+  }
+}
+
+/**
+ * T07 item 4, §5's `pageCommitted` row: "the room's playback resets to position
+ * 0, paused — a new page is a new film". The frame carries the authority's
+ * commit instant and not the reset playback, so the app view makes the same one
+ * the authority made (`commitDuePage`). A realignment afterwards therefore aims
+ * at nothing, which is the rule: a page change resets, a player replacement
+ * realigns.
+ */
+export function playbackAfterPageCommit(at: number): Playback {
+  return { playing: false, position: 0, updatedAt: at, rate: 1 }
+}
+
+/**
+ * The room's tolerance for a follower that is visibly out of place: §6.3's
+ * hard-seek threshold, past which the ladder jumps rather than nudges. An
+ * alignment still outstanding after it is worth one line in the app view.
+ */
+export const ALIGN_TOLERANCE_MS = 4000
+
+/** Whether an alignment that started at `startedAtMs` has taken too long. */
+export function alignmentOverdue(startedAtMs: number | null, nowMs: number): boolean {
+  return startedAtMs !== null && nowMs - startedAtMs >= ALIGN_TOLERANCE_MS
+}
+
+/** What one report means for the follower (T07). */
+export interface FollowerInput {
+  /** The election's reason, `null` when the winner did not change. */
+  reason: PlayerReason | null
+  /** The report came from a document this window had not seen for that frame: a navigation completed. */
+  newDocument: boolean
+  /** ADR-032 as amended: a staged change is pending, so this page is a preview — not a follower. */
+  previewPending: boolean
+  /** This window was already waiting to put the elected player on the room. */
+  unaligned: boolean
+  playback: Playback | null
+  revision: number
+  /** The last `state`'s reason, which the apply's one line repeats. */
+  stateReason: PlaybackReason
+  elected: PlayerCandidate | null
+  nowMs: number
+}
+
+export interface FollowerStep {
+  /** The apply to make: record its echoes, then post it. `null` when nothing needs writing. */
+  realign: PagePlan | null
+  /** Whether §5's `report` may go to the room from this page yet. */
+  report: boolean
+  /** Carried into the next step. */
+  unaligned: boolean
+}
+
+/**
+ * T07's one rule, in one place: a player that has just been elected, or whose
+ * document has just navigated, is **unaligned**. It is put on the room's
+ * position first, and the first report the ladder sees is the one after that.
+ * The page's own position is never sent, so it can never be adopted (ADR-029
+ * rule 1). A pending preview is the exception ADR-032 keeps: it is not a
+ * follower until the commit, and the commit's own page starts the wait.
+ */
+export function followerStep(input: FollowerInput): FollowerStep {
+  if (input.previewPending) {
+    // No apply and no report from a preview; the flag is left as it was so the
+    // committed page still has to be found and realigned.
+    return { realign: null, report: false, unaligned: input.unaligned }
+  }
+
+  const waiting = input.unaligned || input.reason !== null || input.newDocument
+  if (!waiting) return { realign: null, report: true, unaligned: false }
+
+  // Nothing to aim at yet: no room state, or nobody elected. Keep waiting and
+  // keep quiet — a position measured on the page is not the room's.
+  if (input.playback === null || input.elected === null) {
+    return { realign: null, report: false, unaligned: true }
+  }
+
+  return {
+    realign: realignPlan(input.playback, input.revision, input.stateReason, input.elected, input.nowMs),
+    report: false,
+    unaligned: false,
   }
 }
 
