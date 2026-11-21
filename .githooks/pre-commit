@@ -1,12 +1,13 @@
 #!/bin/sh
 # The only guardrail (ADR-036): no remote, no CI, so the commit is where a
-# broken test is caught. Keep this fast — a hook over ~20 s gets --no-verify'd
-# and then protects nothing.
+# broken test or a broken type is caught. Keep this fast — a hook over ~20 s
+# gets --no-verify'd and then protects nothing.
 #
-# `npm run check` is deliberately NOT wired here. On the tree this hook was
-# added to, `npm run check` exits 1 (127 errors in 27 files, measured by T8a),
-# and ADR-036 says those errors become tickets, not edits. Wire the typecheck
-# in the same change that makes the baseline green.
+# Two steps, in this order: `npm test` (the timing maths) and `npm run check`
+# (svelte-check over src/tests; wired here since T8a2 made the baseline green —
+# on the tree the hook was first added to it exited 1 with 127 errors). A step
+# that passes prints one line; a step that fails prints its whole output,
+# because that is the part someone has to read.
 
 set -u
 
@@ -21,7 +22,26 @@ refuse() {
 	exit 1
 }
 
-printf 'pre-commit: npm test\n'
-npm test || refuse 'npm test failed'
+# node --test's spec reporter prints the count as "ℹ pass 73"; three fields,
+# the middle one "pass". Nothing else in its output has that shape.
+test_out=$(npm test 2>&1) || {
+	printf 'pre-commit: npm test — failed\n'
+	printf '%s\n' "$test_out"
+	refuse 'npm test failed'
+}
+passed=$(printf '%s\n' "$test_out" | awk '$2 == "pass" && NF == 3 { n = $3 } END { print n }')
+printf 'pre-commit: npm test — %s passed\n' "${passed:--}"
+
+# svelte-check ends with "svelte-check found 0 errors and 2 warnings in 1 file",
+# coloured even when piped, so the escape byte is stripped before matching.
+# Exit 0 from the checker already means zero errors; the count is read out so
+# the line says so rather than asserting it.
+check_out=$(npm run check 2>&1) || {
+	printf 'pre-commit: npm run check — failed\n'
+	printf '%s\n' "$check_out"
+	refuse 'npm run check failed'
+}
+errors=$(printf '%s\n' "$check_out" | tr -d '\033' | sed -n 's/.*svelte-check found \{1,\}\([0-9]\{1,\}\) error.*/\1/p' | tail -n 1)
+printf 'pre-commit: npm run check — %s errors\n' "${errors:-0}"
 
 exit 0
