@@ -9,7 +9,7 @@
  * previews one (03b). If this rule is ever needed twice, one copy is wrong.
  */
 
-import type { SetPageFrame } from './protocol.ts'
+import type { Playback, SetPageFrame } from './protocol.ts'
 
 /**
  * ADR-032's window, in milliseconds: how long the authority holds a staged page
@@ -94,4 +94,17 @@ export function setPageFrame(raw: string, epoch: number): SetPageFrame | null {
   const page = canonicalPage(raw)
   if (page === null) return null
   return { type: 'setPage', page, epoch }
+}
+
+/**
+ * §5's `pageCommitted` row: "the room's playback resets to position 0, paused —
+ * a new page is a new film" (T07 item 4, T16). One rule, one function, because
+ * both halves of the app need the same answer: the authority makes it when it
+ * commits (`room.ts`'s `commitDuePage`), and the page makes it when the frame
+ * arrives, since the frame carries only the commit instant and not the reset
+ * playback. A realignment afterwards therefore aims at nothing: a page change
+ * resets, a player replacement realigns.
+ */
+export function playbackAfterPageCommit(at: number): Playback {
+  return { playing: false, position: 0, updatedAt: at, rate: 1 }
 }

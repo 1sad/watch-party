@@ -19,6 +19,13 @@ import type { Playback } from '../../src/shared/protocol.ts'
 import type { PlayerCandidate } from '../../src/shared/player.ts'
 import { elect, mergeReports, reportIsNewer, type FrameReport, type PlayerEvent } from '../../src/shared/player.ts'
 import { ECHO_EXPIRY_MS } from '../../src/shared/echo.ts'
+import { playbackAfterPageCommit } from '../../src/shared/page.ts'
+import {
+  SEEK_AHEAD_SECONDS,
+  STRIKES_BEFORE_CORRECTION,
+  decideCorrection,
+  type CorrectionInput,
+} from '../../src/shared/timing.ts'
 import {
   ALIGN_TOLERANCE_MS,
   PLAYER_DRIFT_LOG_INTERVAL_MS,
@@ -30,7 +37,6 @@ import {
   echoEntries,
   followerStep,
   planFromState,
-  playbackAfterPageCommit,
   realignPlan,
   reportFromPlayer,
   type PlayerActionEvent,
@@ -551,6 +557,35 @@ test('an alignment still out of place after the room\'s tolerance gets one line 
   assert.equal(alignmentOverdue(1_000, 1_000 + ALIGN_TOLERANCE_MS - 1), false)
   assert.equal(alignmentOverdue(1_000, 1_000 + ALIGN_TOLERANCE_MS), true)
   assert.equal(ALIGN_TOLERANCE_MS, 4_000, "§6.3's hard-seek threshold is the room's tolerance")
+})
+
+test('the tolerance and the ladder are one number, so neither can move alone (T16)', () => {
+  // The one home is `SEEK_AHEAD_SECONDS` in `timing.ts`; the tolerance is derived
+  // from it, so a threshold change moves both in this same run.
+  assert.equal(ALIGN_TOLERANCE_MS, SEEK_AHEAD_SECONDS * 1000, 'one edit moves both')
+
+  // And the same boundary read through the ladder: past the tolerance §6.3 jumps,
+  // below it §6.3 nudges. A tolerance that stopped being the ladder's threshold
+  // would fail one of these two, whatever the constants were called.
+  const input = (drift: number): CorrectionInput => ({
+    drift,
+    playing: true,
+    readyState: 4,
+    driftStrikes: STRIKES_BEFORE_CORRECTION,
+    lastCorrectionAt: null,
+    nowMs: 0,
+    target: 0,
+  })
+  assert.equal(
+    decideCorrection(input(ALIGN_TOLERANCE_MS / 1000 + 0.01)).action,
+    'seek',
+    'a drift past the tolerance is a hard seek',
+  )
+  assert.equal(
+    decideCorrection(input(ALIGN_TOLERANCE_MS / 1000 - 0.5)).action,
+    'nudge',
+    'a drift below it is still only a nudge',
+  )
 })
 
 

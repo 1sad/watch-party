@@ -16,7 +16,7 @@
 
 import type { CommandFrame, Playback, PlaybackReason, ReportFrame } from './protocol.ts'
 import type { PlayerCandidate, PlayerReason } from './player.ts'
-import { SEEK_SKIP_SECONDS, expected } from './timing.ts'
+import { SEEK_AHEAD_SECONDS, SEEK_SKIP_SECONDS, expected } from './timing.ts'
 import { createEchoSet, type EchoKind } from './echo.ts'
 
 /** Across frames, a player's identity is `(source, id)` — `player.ts`'s own key. */
@@ -270,23 +270,13 @@ export function realignPlan(
 }
 
 /**
- * T07 item 4, §5's `pageCommitted` row: "the room's playback resets to position
- * 0, paused — a new page is a new film". The frame carries the authority's
- * commit instant and not the reset playback, so the app view makes the same one
- * the authority made (`commitDuePage`). A realignment afterwards therefore aims
- * at nothing, which is the rule: a page change resets, a player replacement
- * realigns.
- */
-export function playbackAfterPageCommit(at: number): Playback {
-  return { playing: false, position: 0, updatedAt: at, rate: 1 }
-}
-
-/**
- * The room's tolerance for a follower that is visibly out of place: §6.3's
- * hard-seek threshold, past which the ladder jumps rather than nudges. An
+ * The room's tolerance for a follower that is visibly out of place, in
+ * milliseconds — and the same quantity as §6.3's hard-seek threshold, past which
+ * the ladder jumps rather than nudges, not a second 4. It is derived from
+ * `SEEK_AHEAD_SECONDS`, the ladder's one home, so one edit moves both: an
  * alignment still outstanding after it is worth one line in the app view.
  */
-export const ALIGN_TOLERANCE_MS = 4000
+export const ALIGN_TOLERANCE_MS = SEEK_AHEAD_SECONDS * 1000
 
 /** Whether an alignment that started at `startedAtMs` has taken too long. */
 export function alignmentOverdue(startedAtMs: number | null, nowMs: number): boolean {

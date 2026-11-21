@@ -25,7 +25,7 @@
     mediaUrl,
     type LoadRefusal,
   } from '../shared/media.ts'
-  import { PAGE_STAGE_MS, setPageFrame } from '../shared/page.ts'
+  import { PAGE_STAGE_MS, playbackAfterPageCommit, setPageFrame } from '../shared/page.ts'
   import { previewHolds, type PendingPreview } from './preview.ts'
   import {
     POPUP_NOTICE_MS,
@@ -59,7 +59,6 @@
     echoEntries,
     followerStep,
     planFromState,
-    playbackAfterPageCommit,
     reportFromPlayer,
     type FollowerStep,
     type PagePlan,

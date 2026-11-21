@@ -14,7 +14,7 @@ import type {
 import { ANONYMOUS, displayNames } from '../shared/names.ts'
 import { pushChat } from '../shared/chat.ts'
 import { contentTypeFor } from '../shared/media.ts'
-import { canonicalPage, PAGE_STAGE_MS } from '../shared/page.ts'
+import { canonicalPage, PAGE_STAGE_MS, playbackAfterPageCommit } from '../shared/page.ts'
 import { clampToMedia, expected, scheduledStartAt, seekIsDuplicate } from '../shared/timing.ts'
 
 /** §12: five people is a constraint of the design, not a setting. */
@@ -281,7 +281,9 @@ export interface PageCommit {
  *
  * §5's `pageCommitted` row is the whole of it here: the page becomes the room's,
  * `media` is cleared (§4.2: the two kinds never coexist), and playback resets to
- * position 0, paused — a new page is a new film.
+ * position 0, paused — a new page is a new film. That reset is `page.ts`'s
+ * `playbackAfterPageCommit`, the same function the page calls on the frame (T16),
+ * so the two cannot disagree about what a commit does.
  */
 export function commitDuePage(room: RoomState, now: () => number = Date.now): PageCommit | null {
   const pending = room.pendingPage
@@ -291,7 +293,7 @@ export function commitDuePage(room: RoomState, now: () => number = Date.now): Pa
 
   room.page = pending.page
   room.media = null
-  room.playback = { playing: false, position: 0, updatedAt: at, rate: 1 }
+  room.playback = playbackAfterPageCommit(at)
   room.pendingPage = null
   room.revision += 1
   return { page: pending.page, by: pending.by, at }
