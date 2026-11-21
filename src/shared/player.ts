@@ -66,7 +66,7 @@ export interface PlayerEvent {
 export const PLAYER_REPORT_TTL_MS = 5000
 
 export interface Election {
-  /** The winner, or null when nothing on the page is a player. */
+  /** The winner as the latest report describes it, or null when nothing on the page is a player. */
   elected: PlayerCandidate | null
   /**
    * Why the winner changed. `null` means nothing changed, and that is the
@@ -160,7 +160,10 @@ export function elect(
 
   if (replaced) return { elected: winner, reason: 'replaced', score: winnerScore }
   if (winner !== null && identity(winner) === incumbent) {
-    return { elected: previous, reason: null, score: winnerScore }
+    // Same element, and the current reading of it: a winner that was elected
+    // before it had a source must still be recognised as playing when the page
+    // later reloads it (05b measured the placeholder case on bingebang.sx).
+    return { elected: winner, reason: null, score: winnerScore }
   }
   // Gone from its frame's own DOM: the element was removed (a mirror switch
   // that rebuilds the player), so whatever is left is a fresh election.

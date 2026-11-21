@@ -721,8 +721,11 @@
   function electPlayer(): void {
     const result = elect(elected, mergeReports(playerFrames.values(), Date.now()), playerEvents)
     playerEvents = []
-    if (result.reason === null) return
+    // Kept even when nothing changed: the winner is the element as its latest
+    // report describes it, and a reload can only be `replaced` if the snapshot
+    // we hold knows the element was playing (05b measured the placeholder).
     elected = result.elected
+    if (result.reason === null) return
     postToHost({
       kind: 'playerElected',
       reason: result.reason,

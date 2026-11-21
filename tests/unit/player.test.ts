@@ -118,6 +118,30 @@ test('replaced: emptied or loadstart on a playing incumbent re-elects; before pl
   assert.equal(untouched.reason, null)
 })
 
+test('the winner is the element as it is now, so a player that starts playing is still replaceable', () => {
+  // Measured on `bingebang.sx` (05b): the election lands on the page's placeholder
+  // `<video>` half a second after the navigation, before it has a source, so the
+  // first snapshot says playing=false and duration=0. Keeping that snapshot
+  // frozen made `emptied` after 100 s of playback mean nothing, and left every
+  // later reading (size, duration) at the value from that instant.
+  const placeholder = candidate({ id: 1, readyState: 0, hasSrc: false, playing: false, duration: 0, t: 0 })
+  const first = elect(null, [placeholder])
+  assert.equal(first.reason, 'appeared')
+
+  const playing = candidate({ id: 1 })
+  const steady = elect(first.elected, [playing])
+  assert.equal(steady.reason, null, 'the same element is not a new election')
+  assert.equal(steady.elected?.playing, true, 'the winner is the element as it is now')
+  assert.equal(steady.elected?.duration, 1420.0436, 'and carries the duration the page has by now')
+
+  const switched = elect(
+    steady.elected,
+    [candidate({ id: 1, readyState: 0, hasSrc: false, playing: false, duration: 0, t: 0 })],
+    [{ source: playing.source, id: 1, event: 'emptied', t: 90 }],
+  )
+  assert.equal(switched.reason, 'replaced', 'a reload of the playing element is a replacement')
+})
+
 test('outscored: a bigger candidate outranks a healthy incumbent', () => {
   const incumbent = candidate({ id: 1, w: 320, h: 180 })
   const bigger = candidate({ id: 2, w: 842, h: 474 })
