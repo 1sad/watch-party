@@ -515,7 +515,7 @@
       // page write: without it the file picture stays up, the bar's absence keeps
       // the room one-way, and T26's gate on site events would silence the view
       // this commit just asked for.
-      const committed = pageCommitFields(frame.page)
+      const committed = pageCommitFields({ page: roomPage, media }, frame.page)
       roomPage = committed.page
       media = committed.media
       pendingPreview = null

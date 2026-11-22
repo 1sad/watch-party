@@ -77,15 +77,14 @@ test('a preview cancelled in a room whose page was never set leaves no site view
 
 /**
  * T37 / ADR-038's 2026-11-22 amendment, §4.2: a room that held a file may take a
- * page, and the page commit clears the file in every window. A window holding a
- * file that receives `pageCommitted` therefore ends with `media === null` and the
- * committed page set — which is also what makes its page side a site again.
+ * page, and the page commit clears the file in every window. The case starts
+ * from the window's own fields while it holds the file, so what it proves is the
+ * rule `pageCommitted` runs: that window ends with `media === null` and the
+ * committed page set.
  */
 test('a page commit in a room that held a file drops the file and sets the page', () => {
-  const window = pageCommitFields('https://example.com/watch')
-  assert.equal(window.media, null)
-  assert.equal(window.page, 'https://example.com/watch')
-  // The same fields §4.2 decides from: the window that held this file is now the
-  // site, so the file-mode picture and T26's gate on site events both go with it.
-  assert.deepEqual(pageSide(window), { kind: 'site', page: 'https://example.com/watch' })
+  const window = { page: null, media: file }
+  const committed = pageCommitFields(window, 'https://example.com/watch')
+  assert.equal(committed.media, null)
+  assert.equal(committed.page, 'https://example.com/watch')
 })

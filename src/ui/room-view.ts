@@ -63,9 +63,12 @@ export function pageSide(room: RoomPageFields): PageSide {
  * the page and drops its own `media` in the same step — from that instant the
  * room is a site, the file picture is gone, and T26's gate on site events no
  * longer silences the view the commit asks for.
+ *
+ * The window's current fields are a parameter so the rule is the thing the case
+ * holds: a window that holds a file goes into the commit and comes out a site.
  */
-export function pageCommitFields(page: string): RoomPageFields {
-  return { page, media: null }
+export function pageCommitFields(room: RoomPageFields, page: string): RoomPageFields {
+  return { ...room, page, media: null }
 }
 
 /** Where the site view goes when a staged preview ends without committing. */
