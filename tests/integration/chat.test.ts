@@ -6,6 +6,7 @@ import { WebSocket } from 'ws'
 
 import { createRoom } from '../../src/server/room.ts'
 import { attachRoomSocket } from '../../src/server/socket.ts'
+import { settle, waitFor } from './harness.ts'
 
 // T4's checks against a real socket: the chat frame, the two limits that
 // matter over the wire, the one order everyone sees, and §4.6's system lines.
@@ -18,7 +19,9 @@ interface Frame {
   [key: string]: any
 }
 
-async function openRoom(options: { now?: () => number } = {}): Promise<{
+async function openRoom(
+  options: { now?: () => number; log?: (line: string) => void } = {},
+): Promise<{
   room: ReturnType<typeof createRoom>
   port: number
   close: () => Promise<void>
@@ -284,6 +287,47 @@ test('joins, a leave and a seek make exactly the system entries and nothing else
       late.socket.close()
       await closedLate
     }
+  } finally {
+    await fixture.close()
+  }
+})
+
+test('one accepted message is one ASCII [chat] line with sender, id and length; a refusal is none', async () => {
+  // T22b: T22's sidecar line is a claim, not only a run that happened to be ASCII.
+  const lines: string[] = []
+  const fixture = await openRoom({ log: (line) => lines.push(line) })
+  const chatLines = () => lines.filter((line) => line.startsWith('[chat]'))
+  const sam = connect(fixture.port)
+  const alex = connect(fixture.port)
+  try {
+    await sam.ready
+    await sam.hello(CODE, 'sam')
+    await alex.ready
+    await alex.hello(CODE, 'alex')
+
+    // Two members seated, then one message. 'héllo ✓' is seven UTF-16 units and
+    // ten UTF-8 bytes, so `chars=7` also says the count is the length, not bytes.
+    const text = 'héllo ✓'
+    sam.send({ type: 'chat', text })
+    const posted = await sam.next((frame) => frame.type === 'chat' && frame.kind === 'user')
+    await waitFor(() => chatLines().length > 0, 2000, 'the [chat] line')
+    assert.equal(chatLines().length, 1, 'one accepted message, exactly one line')
+    const line = chatLines()[0]!
+    assert.equal(
+      line,
+      `[chat] m=${posted.id} from=${posted.memberId} chars=7`,
+      'the line is the sender, the message id and the length, in that shape',
+    )
+    assert.doesNotMatch(line, /[^\x20-\x7e]/, 'ASCII whatever was typed (AGENTS.md rule 10)')
+    assert.ok(!line.includes('héllo'), 'never the text')
+    assert.ok(!line.includes('✓'), 'not even the character that is not ASCII')
+
+    // A message the sidecar refuses is not a message: no [chat] line for it.
+    sam.send({ type: 'chat', text: 'x'.repeat(3000) })
+    const refusal = await sam.next((frame) => frame.type === 'error')
+    assert.equal(refusal.code, 'chat_too_long')
+    await settle(150)
+    assert.equal(chatLines().length, 1, 'the refusal logged nothing')
   } finally {
     await fixture.close()
   }
