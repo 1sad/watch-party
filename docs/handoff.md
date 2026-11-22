@@ -34,25 +34,25 @@ Every person who might host, on their own home network:
 **Fail case that matters:** CGNAT. That person cannot host at all, and there is no free fix; they can still join
 someone else's room. If it is more than one person, ADR-023 needs revisiting before a line of code is written.
 
-**Results (2026-11-17 — owner's PC, Windows, NetCologne): FAIL for this host.**
+**Results (2026-11-17 - owner's PC, Windows): FAIL for this host.**
 
-- Router LAN `192.168.10.1`. UPnP service **on**, and demonstrably working: a live redirect already exists
-  (`UDP 41641 → 192.168.10.44`), created by Tailscale asking for it. So the "can the router open a door" half of
+- Router LAN `<router LAN>`. UPnP service **on**, and demonstrably working: a live redirect already exists
+  (`UDP <port> -> <host LAN>`), created by Tailscale asking for it. So the "can the router open a door" half of
   E1 is answered **yes**.
-- **The blocker is one level up.** The router's own WAN address is `10.0.33.122` with gateway `10.0.0.1`, and a
-  NAT-PMP public-address request returns that same `10.0.33.122`. The router therefore has no public address of its
-  own; it sits behind the provider's NAT. What the world sees (`213.168.126.33`, confirmed both by an external IP
+- **The blocker is one level up.** The router's own WAN address is a private `<router WAN>` with gateway `<gateway>`,
+  and a NAT-PMP public-address request returns that same private address. The router therefore has no public address of
+  its own; it sits behind the provider's NAT. What the world sees (`<public IP>`, confirmed both by an external IP
   lookup and by the router's own "Public IP" field) is shared with other subscribers. No IPv6.
-- This connection is a **public city hotspot** (`hotspot.koeln`, WISP mode), not a normal home line.
+- This connection is a **public city hotspot** in WISP mode, not a normal home line.
 - **Consequence:** inbound connections cannot reach this machine, and no router setting fixes it. The owner cannot
   be the one whose PC keeps the room. Either a member with a normal connection hosts, or ADR-023's "no service" rule
   is revisited (`open-questions.md` A1).
 - **Still to record:** the same three answers for each friend. One normal connection in the group is enough for v1.
-- **Context added 2026-11-17:** the owner is on a public hotspot because of temporary accommodation (a container
-  camp), not because of their own network. The assumption is that other members have ordinary home lines, and
+- **Context added 2026-11-17:** the owner's connection at the time was a shared hotspot, not a home line of their own.
+  The assumption is that other members have ordinary home lines, and
   supporting evidence is that the group has hosted peer-to-peer games before. Treat that as **provisional pass**,
   not proof: games commonly succeed through hole-punching or the game's own relay rather than a reachable port.
-  One targeted question settles it — *did the host ever forward a port, or did it just work?* — and a "just worked"
+  One targeted question settles it - *did the host ever forward a port, or did it just work?* - and a "just worked"
   answer is exactly the UPnP-plus-real-address case this architecture needs.
 
 ### E2 — Does the app approach work? (gates ADR-022)
