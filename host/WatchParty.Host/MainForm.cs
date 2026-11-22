@@ -58,6 +58,14 @@ public sealed class MainForm : Form
     /// <summary>The instant of the last fullscreen transition (T08's echo window).</summary>
     private DateTime _siteFullAt = DateTime.MinValue;
 
+    /// <summary>
+    /// T26: the site view was cleared on purpose because the room took a file, so
+    /// the blank document it now holds is the host's own act: its navigation is
+    /// not a <c>site:</c> line and nothing it says is relayed. The next real
+    /// address (<see cref="NavigateSite"/>) clears this again.
+    /// </summary>
+    private bool _siteCleared;
+
     private readonly WebView2 _page = new() { Dock = DockStyle.Fill };
     private readonly WebView2 _site = new() { Dock = DockStyle.Fill };
     private readonly Panel _topStrip = new() { Dock = DockStyle.Top };
@@ -600,6 +608,11 @@ public sealed class MainForm : Form
     {
         string? kind = MessageKind(json);
 
+        // T26 / ADR-038: with no site view there is nothing of the site to hear.
+        // A report already in flight when the room took a file, or a word from
+        // the document being unloaded, is not the room's news.
+        if (!_site.Visible) return;
+
         // T08, ADR-028: the page's fullscreen intent is the host's own business
         // - the layout is a window decision - so it is read here and goes no
         // further. The relay's whitelist below has no reason to learn this kind.
@@ -779,6 +792,8 @@ public sealed class MainForm : Form
         }
 
         ShowSiteView();
+        // T26: a real address ends the cleared state HideSiteView left behind.
+        _siteCleared = false;
         HostLog.Write($"site: navigate {address}");
         _site.CoreWebView2.Navigate(address);
 #if DEBUG
@@ -1064,6 +1079,9 @@ public sealed class MainForm : Form
                 break;
             case "siteCommand":
                 RelayToSite(e.WebMessageAsJson);
+                break;
+            case "hideSite":
+                HideSiteView();
                 break;
             case "playerElected":
                 LogPlayerElection(e.WebMessageAsJson);
@@ -1452,6 +1470,38 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
+    /// T26 and ADR-038's other half: with no page there is no site view. The room
+    /// took a file, so the pane goes and the app view fills the window exactly as
+    /// in M1. The site view is not drawn and its document is unloaded, so nothing
+    /// of the page is left running beside the file; the view is shown and
+    /// navigated again only when the room sets another page (03c).
+    /// </summary>
+    private void HideSiteView()
+    {
+        if (!_site.Visible) return;
+
+        // ADR-028: a window that was full has no full layout to come back to once
+        // the site view is gone, so the exit is taken first and logged as one.
+        if (_siteFull) SetFullscreenLayout(false);
+
+        _site.Visible = false;
+        _topStrip.Visible = false;
+        // The app view takes the whole window back (ADR-038's file-mode picture).
+        _page.Dock = DockStyle.Fill;
+        // Docking follows Visible, but not before the message returns.
+        PerformLayout();
+        HostLog.Write($"layout: file mode - site view hidden, the {_page.Width} px app view fills the window");
+
+        // T26: the player goes with the pane. A hidden engine keeps running its
+        // page - its timers, its reports and, if it was playing, its sound - so
+        // the site's document is unloaded rather than merely not drawn. The room
+        // has no page and this view has nothing of one left; the room's next page
+        // navigates it again (`NavigateSite`).
+        _siteCleared = true;
+        _site.CoreWebView2?.Navigate("about:blank");
+    }
+
+    /// <summary>
     /// ADR-028: fullscreen is a layout decision and the app owns it (T08). The
     /// picture fills our window and our UI stays: on enter the reserved top strip
     /// goes, which gives the site view the column's whole height while the app
@@ -1560,6 +1610,9 @@ public sealed class MainForm : Form
 
     private void OnSiteNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
     {
+        // T26: the blank document HideSiteView loads is the host's own teardown,
+        // not a site navigation, so it borrows no popup's count and writes nothing.
+        if (_siteCleared) return;
         // T04: a navigation is the unit the count is reported in, so the tally
         // restarts here, before the new document asks for anything.
         _siteCancelled = 0;
@@ -1570,6 +1623,8 @@ public sealed class MainForm : Form
 
     private void OnSiteNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
     {
+        // T26: the cleared view's blank document (see HideSiteView) says nothing.
+        if (_siteCleared) return;
         HostLog.Write(
             $"site navigation completed {_site.CoreWebView2.Source} success={e.IsSuccess} " +
             $"status={e.HttpStatusCode} error={e.WebErrorStatus}");

@@ -27,6 +27,7 @@
   } from '../shared/media.ts'
   import { PAGE_STAGE_MS, playbackAfterPageCommit, setPageFrame } from '../shared/page.ts'
   import { previewHolds, type PendingPreview } from './preview.ts'
+  import { pageSide, HIDE_SITE_MESSAGE } from './room-view.ts'
   import {
     POPUP_NOTICE_MS,
     expirePopup,
@@ -461,9 +462,13 @@
       // T03c item 5: the snapshot already carries the room's page, so a window
       // that arrives late — a guest, or this one reconnecting — lands on what
       // everyone is watching instead of waiting for the next change.
-      roomPage = frame.room.page
+      // T26: and a snapshot that carries a file is a room with no page, so a
+      // window that was already showing a site view takes it away (ADR-038).
+      const side = pageSide(frame.room)
+      roomPage = side.kind === 'site' ? side.page : null
       pendingPreview = null
-      if (roomPage !== null) moveSiteView(roomPage)
+      if (side.kind === 'site') moveSiteView(side.page)
+      else if (side.kind === 'file') hideSiteView()
       realign += 1
       // A late joiner's panel is the ring buffer the authority sent (R5).
       chat = [...frame.chatTail]
@@ -542,6 +547,15 @@
       // player gets a new source and is put on the room's position (invariant 9),
       // exactly as a `welcome` that carried the same field would.
       media = frame.media
+      // T26 / ADR-038: a pick is the room turning into a file. `setMedia` cleared
+      // the page and the frame above is the only one that says so, so the page
+      // side goes here — no page, no preview — and the host takes the site view
+      // away rather than leaving a file squeezed into a column.
+      if (pageSide({ page: null, media: frame.media }).kind === 'file') {
+        roomPage = null
+        pendingPreview = null
+        hideSiteView()
+      }
       realign += 1
     } else if (frame.type === 'nudge') {
       // §6.3, to this window only: a rate and the authority instant it ends by.
@@ -772,6 +786,10 @@
    * to keep the shape honest.
    */
   function onSiteEvent(message: object): void {
+    // T26 / ADR-038: a room with a file has no site view, so nothing the hidden
+    // one still says describes what the room plays. A report in flight at the
+    // switch must not elect a player, realign it, or write a `player:` line.
+    if (media !== null) return
     const source = (message as { source?: unknown }).source
     const payload = (message as { payload?: unknown }).payload
     if (typeof source !== 'string' || source.length === 0) return
@@ -1256,6 +1274,30 @@
     notePageLeft()
     postToHost({ kind: 'siteCommand', payload: { kind: 'navigate', url: page } })
     if (dev) console.info(`[page] site view -> ${page}`)
+  }
+
+  /**
+   * T26 / ADR-038's other half: with no page there is no site view. The room
+   * holds a file, so the host hides the pane and the app view fills the window
+   * exactly as in M1. Everything this window held about the site goes with it:
+   * the documents the hidden view still holds are the page the room has left, so
+   * a report in flight from one of them is refused (T18); the elected player,
+   * its events and its rate hold belong to that page, not to the file; and an
+   * alignment this window was waiting for can never arrive, so it is dropped
+   * rather than said about a player that no longer matters.
+   */
+  function hideSiteView(): void {
+    endSiteNudge()
+    notePageLeft()
+    playerFrames.clear()
+    playerEvents = []
+    elected = null
+    unaligned = false
+    stopAlignWatch()
+    // ADR-038 keeps the host the only owner of the layout, so this is a
+    // window-internal command: nothing crosses the wire (§5 has no such frame).
+    postToHost(HIDE_SITE_MESSAGE)
+    if (dev) console.info('[page] site view hidden')
   }
 
   /**
