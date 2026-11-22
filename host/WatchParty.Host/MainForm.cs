@@ -269,6 +269,15 @@ public sealed class MainForm : Form
         {
             await EnsureViewsAsync();
         }
+        catch (WebView2RuntimeNotFoundException)
+        {
+            // T47b: neither engine can be used. One plain sentence names both ways
+            // forward; the engine line EnsureViewsAsync wrote names what was tried.
+            ShowFailure("Watch Party cannot open its browser window because its engine is missing: "
+                + "use the larger build that carries its own engine, or install the WebView2 runtime "
+                + "from Microsoft.");
+            return;
+        }
         catch (Exception error)
         {
             HostLog.Write($"webview2 unavailable: {error}");
@@ -372,10 +381,27 @@ public sealed class MainForm : Form
         string options = debugPort is null
             ? autoplayPolicy
             : $"{autoplayPolicy} --remote-debugging-port={debugPort}".Trim();
-        CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(
-            fixedEngine, userData, new CoreWebView2EnvironmentOptions(options));
-        await _page.EnsureCoreWebView2Async(environment);
-        await _site.EnsureCoreWebView2Async(environment);
+        CoreWebView2Environment environment;
+        try
+        {
+            environment = await CoreWebView2Environment.CreateAsync(
+                fixedEngine, userData, new CoreWebView2EnvironmentOptions(options));
+            await _page.EnsureCoreWebView2Async(environment);
+            await _site.EnsureCoreWebView2Async(environment);
+        }
+        catch (WebView2RuntimeNotFoundException error)
+        {
+            // T47b: no engine at all. One ASCII line names the folder this start
+            // looked for - the absent fixed folder, or the one it found - beside
+            // the machine's runtime, so the sentence OnLoad shows can be read back
+            // from the log too. A localized engine message is flattened to ASCII.
+            string fixedTried = fixedEngine is null
+                ? $"{WebView2Engine.FixedFolder(_root)} (absent)"
+                : fixedEngine;
+            HostLog.Write($"engine: none usable; fixed folder={fixedTried}; "
+                + $"evergreen={evergreen ?? "none"}; {Ascii(error.Message)}");
+            throw;
+        }
     }
 
     private void InstallRequestFilter(WebView2 view, string name, string listNote)
@@ -1743,6 +1769,16 @@ public sealed class MainForm : Form
     /// </summary>
     private void ShowFolderSentence(string sentence)
     {
+        ShowSentence(sentence);
+    }
+
+    /// <summary>
+    /// The one plain sentence drawn on a window no view can draw in: the title and
+    /// the body both name it, so it is legible and can be photographed. Used by the
+    /// folder failure (T46c) and the no-engine failure (T47b).
+    /// </summary>
+    private void ShowSentence(string sentence)
+    {
         Text = sentence;
         _page.Visible = false;
         _site.Visible = false;
@@ -1761,13 +1797,20 @@ public sealed class MainForm : Form
         notice.BringToFront();
     }
 
+    /// <summary>AGENTS.md rule 10: log lines stay ASCII, and an engine's message may not.</summary>
+    private static string Ascii(string text) =>
+        new(text.Select(character => character is >= ' ' and <= '~' ? character : '?').ToArray());
+
     private void ShowFailure(string sentence)
     {
         HostLog.Write($"failure page: {sentence}");
 
         if (_page.CoreWebView2 is null)
         {
-            Text = sentence;
+            // No engine means no view to navigate, so the sentence goes on the
+            // window itself rather than into a title bar a person cannot read
+            // (T47b). The window still waits for the person to close it.
+            ShowSentence(sentence);
             return;
         }
 

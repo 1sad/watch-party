@@ -37,12 +37,19 @@ internal static class WebView2Engine
     private const string EvergreenClientId = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}";
 
     /// <summary>
+    /// The folder a full payload puts the fixed engine in, whether or not it is there. The
+    /// no-engine log line names it, so the folder this start looked for is in the record even
+    /// when it was absent (T47b).
+    /// </summary>
+    public static string FixedFolder(string programRoot) => Path.Combine(programRoot, FixedFolderName);
+
+    /// <summary>
     /// The fixed engine folder inside a program root, or null when there is none - a developer
     /// build, or a <c>portable</c> copy, which uses the machine's runtime exactly as before.
     /// </summary>
     public static string? FindFixed(string programRoot)
     {
-        string folder = Path.Combine(programRoot, FixedFolderName);
+        string folder = FixedFolder(programRoot);
         return File.Exists(Path.Combine(folder, EngineExecutable)) ? folder : null;
     }
 
