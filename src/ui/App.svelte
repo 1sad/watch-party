@@ -1515,6 +1515,15 @@
     }
   }
 
+  /**
+   * T67: the router's own LAN address, carried in `detail` as `gateway <ip>`.
+   * It is the page a person opens to forward a port by hand, and the sidecar
+   * looks it up even when mapping is off, so the fallback panel can name it.
+   */
+  function gatewayOf(detail: string): string | null {
+    return /gateway ([\d.]+)/.exec(detail)?.[1] ?? null
+  }
+
   async function copy(): Promise<void> {
     const text = payload?.invite?.primary
     if (text === undefined) return
@@ -1640,6 +1649,30 @@
               <p class="label fallback">On this network:</p>
               <p class="link raw">{payload.invite.lanRaw}</p>
             {/if}
+          </section>
+        {/if}
+
+        {#if payload.result.kind !== 'ok'}
+          <!-- T67, spec §14's last row: no public link exists, so the two
+               fallbacks are named — the same-wifi link above, and this
+               machine's own port to forward. -->
+          <section class="manual">
+            <h3>Open the port yourself</h3>
+            {#if gatewayOf(payload.result.detail) !== null}
+              <p>
+                Sign in to your router's settings page at
+                <span class="link raw">http://{gatewayOf(payload.result.detail)}/</span>
+                and add one port forward:
+              </p>
+            {:else}
+              <p>Sign in to your router's settings page and add one port forward:</p>
+            {/if}
+            <ul>
+              <li>Port <strong>{payload.result.localPort}</strong></li>
+              <li>Protocol <strong>TCP</strong></li>
+              <li>Send it to this computer at <strong>{payload.lanIp ?? 'the address the router shows'}</strong></li>
+            </ul>
+            <p class="label fallback">The link above still works for everyone on your own network.</p>
           </section>
         {/if}
 
@@ -1937,6 +1970,38 @@
     border: 1px solid #2c2d36;
     border-radius: 8px;
     background: #1a1b22;
+  }
+
+  .manual {
+    padding: 1rem 1.25rem;
+    margin: 0 0 1.5rem;
+    border: 1px solid #2c2d36;
+    border-radius: 8px;
+    background: #1a1b22;
+  }
+
+  .manual h3 {
+    margin: 0 0 0.5rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #c8c8d2;
+  }
+
+  .manual p {
+    margin: 0 0 0.5rem;
+    line-height: 1.5;
+    color: #9a9aab;
+  }
+
+  .manual ul {
+    margin: 0 0 0.5rem;
+    padding-left: 1.1rem;
+    line-height: 1.7;
+  }
+
+  .manual strong {
+    font-family: Consolas, monospace;
+    color: #e9e9ef;
   }
 
   .label {

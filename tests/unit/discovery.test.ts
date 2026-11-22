@@ -2,8 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 
-import { classifyAddress, classifyMapping, discover, releaseMapping } from '../../src/server/discovery.ts'
-import type { MappingOutcome } from '../../src/server/discovery.ts'
+import { classifyAddress, classifyMapping, discover, releaseMapping, sentenceFor } from '../../src/server/discovery.ts'
+import type { DiscoveryKind, MappingOutcome } from '../../src/server/discovery.ts'
 
 const DESCRIPTION = `<?xml version="1.0"?>
 <root xmlns="urn:schemas-upnp-org:device-1-0">
@@ -160,4 +160,35 @@ test('172.16/12 is private too, and 172.32 is not', () => {
   assert.equal(classifyAddress('172.16.0.1'), 'private')
   assert.equal(classifyAddress('172.31.255.254'), 'private')
   assert.equal(classifyAddress('172.32.0.1'), 'public')
+})
+
+test('each reason gets its own sentence, and only a public address offers the world (T67)', () => {
+  const cases: Array<[string, DiscoveryKind, string]> = [
+    ['no gateway answered', 'timeout', 'no answer within 8 seconds; gateway 192.168.10.1'],
+    [
+      'gateway answered and refused, with its own code',
+      'upnp_unavailable',
+      'UPnP: router refused with code 718 (ConflictInMappingEntry); gateway 192.168.10.1',
+    ],
+    ['mapped, but the address is private or shared', 'cgnat', 'router reported 100.64.1.5 (cgnat); gateway 192.168.10.1'],
+    ['mapped and public', 'ok', 'router reported 203.0.113.9 (public); gateway 192.168.10.1'],
+  ]
+
+  const texts = cases.map(([reason, kind, detail]) => {
+    const text = sentenceFor(kind, detail)
+    console.log(`SENTENCE: ${reason} -> ${text}`)
+    return text
+  })
+
+  // No two reasons share a sentence: the reader can tell them apart.
+  assert.equal(new Set(texts).size, 4)
+  // The router's own code is carried through, not replaced by "did not answer".
+  assert.match(texts[1], /718/)
+  // The CGNAT case names the address the router reported.
+  assert.match(texts[2], /100\.64\.1\.5/)
+  assert.doesNotMatch(texts[2], /Share the invite link/)
+  // Only the public verdict promises an outside visitor.
+  assert.match(texts[3], /Share the invite link/)
+  assert.doesNotMatch(texts[0], /Share the invite link/)
+  assert.doesNotMatch(texts[1], /Share the invite link/)
 })

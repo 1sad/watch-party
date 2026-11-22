@@ -73,17 +73,35 @@ export function classifyMapping(outcome: MappingOutcome): {
   return { kind: addressClass === 'public' ? 'ok' : 'cgnat', addressClass }
 }
 
-/** The one plain sentence per state (spec §14, T2 item 7). No jargon. */
-export function sentenceFor(kind: DiscoveryKind): string {
+/**
+ * One plain sentence per reason (spec §14, T2 item 7, T67). Four distinct
+ * endings: no router answered; the router answered and refused, with its own
+ * code; a mapping was made but the address it reports is itself private or
+ * shared (ADR-023's CGNAT case); and a public address, which is the only one
+ * that gets no warning. The router's code and the address it reported travel
+ * in `detail`, so nothing is guessed here.
+ */
+export function sentenceFor(kind: DiscoveryKind, detail = ''): string {
+  const code = /code[ =](\d+)/.exec(detail)?.[1]
+  const reported = /router reported ([\d.]+)/.exec(detail)?.[1]
+  const sameNetwork = 'Everyone on the same network can join with the link above'
+  const manual = `, or you can open the port yourself with the steps below.`
+
   switch (kind) {
     case 'ok':
       return 'This connection can accept visitors. Share the invite link with your friends.'
     case 'cgnat':
-      return 'This connection cannot accept visitors — your provider shares your address. Everyone on the same network can still join using the local link below.'
+      return `The port was opened, but the address your router reports (${reported ?? 'a private or shared one'}) is itself private or shared: your provider sits between you and the internet, so nothing on this computer can fix that. ${sameNetwork}; the steps below show the port to forward if you have a public address to forward it to.`
     case 'upnp_unavailable':
-      return 'Your router did not open a port. Look for "UPnP" (or "NAT-PMP") in the router settings and turn it on, then try again. Everyone on the same network can still join using the local link below.'
+      if (detail.includes('WATCHPARTY_NO_MAP')) {
+        return `Port mapping is turned off for this run (WATCHPARTY_NO_MAP), so no public address was made. ${sameNetwork}${manual}`
+      }
+      if (code !== undefined) {
+        return `Your router answered and refused to open the port, with its own error code ${code}. Friends on other networks cannot join yet. ${sameNetwork}${manual}`
+      }
+      return `Your router did not open the port and gave no error code. Friends on other networks cannot join yet. ${sameNetwork}${manual}`
     case 'timeout':
-      return 'Your router did not answer within 8 seconds. Check that UPnP is turned on in the router settings, then try again. Everyone on the same network can still join using the local link below.'
+      return `No router answered: neither way of asking produced a reply. Friends on other networks cannot join yet. ${sameNetwork}${manual}`
   }
 }
 
@@ -143,25 +161,31 @@ export async function discover(options: DiscoverOptions): Promise<DiscoveryResul
   // attempt that made it (ADR-045).
   await releaseMapping()
 
+  // The router's own LAN address is the page a person opens to forward a port
+  // by hand, so it is looked up before the branches that skip mapping (T67).
+  const gatewayIp = options.natPmpGateways !== undefined
+    ? (options.natPmpGateways[0] ?? null)
+    : await findDefaultGateway(t0)
+
   if (options.map === false) {
     trace(t0, 'map=disabled reason=WATCHPARTY_NO_MAP')
-    return finish({ type: 'refused', detail: 'port mapping is disabled (WATCHPARTY_NO_MAP)' }, options, t0, [])
+    return finish({ type: 'refused', detail: 'port mapping is disabled (WATCHPARTY_NO_MAP)' }, options, t0, [], gatewayIp)
   }
 
   if (options.lanIp === null) {
     trace(t0, 'map=skipped reason=no-lan-ip')
-    return finish({ type: 'refused', detail: 'no local network address to map' }, options, t0, [])
+    return finish({ type: 'refused', detail: 'no local network address to map' }, options, t0, [], gatewayIp)
   }
 
   let step: AttemptStep
   try {
-    step = await mapPort(options, timeoutMs, t0)
+    step = await mapPort(options, timeoutMs, t0, gatewayIp)
   } catch (error) {
     // mapPort catches everything it knows about; this is the last belt.
     trace(t0, `map=error ${describeError(error)}`)
     step = { outcome: { type: 'refused', detail: messageOf(error) }, silent: ['unexpected'] }
   }
-  return finish(step.outcome, options, t0, step.silent)
+  return finish(step.outcome, options, t0, step.silent, gatewayIp)
 }
 
 function finish(
@@ -169,23 +193,27 @@ function finish(
   options: DiscoverOptions,
   t0: number,
   silent: string[],
+  gatewayIp: string | null,
 ): DiscoveryResult {
-  const result = toResult(outcome, options)
+  const result = toResult(outcome, options, gatewayIp)
   const mappedPort = result.mappedPort === null ? 'none' : String(result.mappedPort)
   const silentSteps = silent.length === 0 ? 'none' : [...new Set(silent)].join(',')
   trace(t0, `verdict=${result.kind} address_class=${result.addressClass} mapped_port=${mappedPort} silent=${silentSteps}`)
   return result
 }
 
-function toResult(outcome: MappingOutcome, options: DiscoverOptions): DiscoveryResult {
+function toResult(outcome: MappingOutcome, options: DiscoverOptions, gatewayIp: string | null): DiscoveryResult {
   const { kind, addressClass } = classifyMapping(outcome)
+  // `detail` is also where the screen reads the router's page address from
+  // when it offers the manual port-forward door (T67).
+  const detail = gatewayIp === null ? outcome.detail : `${outcome.detail}; gateway ${gatewayIp}`
   const result: DiscoveryResult = {
     kind,
     mappedPort: outcome.type === 'mapped' ? outcome.mappedPort : null,
     localPort: options.localPort,
-    detail: outcome.detail,
+    detail,
     addressClass,
-    sentence: sentenceFor(kind),
+    sentence: sentenceFor(kind, detail),
   }
   if (outcome.type === 'mapped') result.externalIp = outcome.externalIp
   return result
@@ -222,7 +250,12 @@ const UPNP_LISTEN_MS = 2_500
  * this app through `upnp.ts` because the library's client binds UDP 1900,
  * which Windows' SSDP service already holds (ADR-045).
  */
-async function mapPort(options: DiscoverOptions, timeoutMs: number, t0: number): Promise<AttemptStep> {
+async function mapPort(
+  options: DiscoverOptions,
+  timeoutMs: number,
+  t0: number,
+  gatewayIp: string | null,
+): Promise<AttemptStep> {
   const localPort = options.localPort
   const lanIp = options.lanIp as string
   const deadline = Date.now() + timeoutMs
@@ -230,13 +263,7 @@ async function mapPort(options: DiscoverOptions, timeoutMs: number, t0: number):
   const silent: string[] = []
   let sawTimeout = false
 
-  let candidates: string[]
-  if (options.natPmpGateways !== undefined) {
-    candidates = options.natPmpGateways
-  } else {
-    const gatewayIp = await findDefaultGateway(t0)
-    candidates = gatewayIp === null ? [] : [gatewayIp]
-  }
+  const candidates: string[] = options.natPmpGateways ?? (gatewayIp === null ? [] : [gatewayIp])
 
   if (candidates.length === 0) {
     silent.push('gateway')
