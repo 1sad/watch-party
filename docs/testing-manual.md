@@ -55,11 +55,15 @@ which window.
 2. Open B with `node scripts/run-host.mjs --cdp-port 9223`. Join it with A's link.
 3. Press play in A and let both run. Check A's roster shows two people.
 4. Scrub A's player to the middle. B must be at the same position, within a fraction of a second, without a reload.
-5. Stall one window on purpose — the dev switch T7b2 added — and leave it stalled for at least ten seconds.
+5. Stall one window on purpose — the dev switch T7b2 added. On this build the frozen window is pulled back by §6.3's
+   four-second hard-seek rule, so the stall lasts about four seconds whatever the switch is set to (measured
+   2026-11-22, ticket 49: `drift=-4.203 … action=seek` at the fourth second, the healthy window untouched). Do not
+   fight it; the stall's job is the next step.
 6. Watch the other window for the whole stall: **it must not jump.** A small rate change is allowed and intended; a
    jump, a freeze, or a double restart is a failure.
-7. Drag the scrubber several times, quickly, in both windows. Each drag must move the other window once, not a stream
-   of corrections (R6).
+7. Drag the scrubber several times, quickly, in the **owner's** window: each drag must send one command, not a stream
+   of corrections (R6), and the other window must arrive at that position once. A **guest's** drag sends nothing — one
+   write per action (ADR-030) — and is undone locally; its evidence is the absence of a command, not a correction.
 8. Ten minutes of that, with one stall in the middle, is the gate.
 
 What a healthy run looked like on this machine (recorded, not imagined): a pause in one window stopped the other in
@@ -172,7 +176,9 @@ powershell -NoProfile -File scripts/window-shot.ps1 .scratch/pair.png -Pids 1234
 It prints each window's pid, rectangle and capture instant plus the PNG's own size, so a cropped or stale picture shows
 in its output rather than in your judgement. `-Pid`/`-Pids` pick by process, which is what two windows need: they share
 a title, so the plain form only ever photographs the topmost. `-Place` stacks them first and never puts one back, so run
-it last.
+it last. A window restored from the taskbar draws again, but its page stays scrolled where it was: scrolled to the
+top, this page puts the invite panel where the player should be (measured 2026-11-22, ticket 49), so scroll each
+window to its player before the shot.
 
 ### The rig for a live check
 
@@ -199,6 +205,10 @@ These traps have each cost a re-run, on 06b, on 07b, on 09b and on 21b. Do these
    `PrintWindow` its last *composited* frame: on 2026-11-22 (21b) two windows photographed 0.9 s apart showed scenes about
    a minute apart while their logs put both players within half a second of each other. A picture proves layout, chrome and
    error text; the `player: drift` lines prove that two windows were at the same moment.
+9. **A ten-minute gate runs on the user's own machine, so tell them before it starts.** On 2026-11-22 (ticket 49) the
+   user hid a window to the taskbar and scrolled inside both while the run was in progress; that run happened to be
+   clean, but its numbers would have had to be thrown away and the ten minutes paid again. Say when it starts and when
+   it ends, and ask them not to touch the windows until it does.
 
 ### The probe page the repository owns
 
@@ -223,6 +233,21 @@ The page carries `#fullscreen`, a `#playpause` button that writes what it receiv
 The fullscreen button reports what it sends; it does not prove a grant. This window never grants `requestFullscreen()`
 (ADR-028): a real press in the visible site view is heard and logged as `site: fullscreen=enter w=... h=...` while
 `document.fullscreenElement` stays `null`. Quote that intent line, not a fullscreen element.
+
+### A file long enough for a timed gate
+
+`tests/fixtures/fixture.mp4` is **60 seconds**, which is right for the probe page and wrong for any check that runs for
+minutes. On 2026-11-22 (ticket 50b) a ten-minute gate on it held two one-minute stretches, because the room paused
+itself at the end of the film twice. Generate a long file once and keep it in the phase folder:
+
+```
+ffmpeg -y -f lavfi -i "testsrc2=size=640x360:rate=10:duration=720" -c:v libx264 -preset ultrafast -crf 32 -pix_fmt yuv420p <folder>\gate-720s.mp4
+```
+
+That yields 720.0 s and 44.5 MB (measured 2026-11-22, `.scratch/phase-3-m7/gate-720s.mp4`) and needs no network. If
+ffmpeg is not installed, any long video will do. Point `WATCHPARTY_PICK_PATHS` at it and **read the host log's
+`[media] registered ... duration=<n>` line before starting the clock** - a duration line costs a second, ten minutes on
+the wrong file costs the run. The picture moves, so two windows can be compared by eye as well as by number.
 
 ## 8. If something is wrong
 
