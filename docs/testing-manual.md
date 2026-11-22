@@ -104,7 +104,10 @@ Website mode adds one prefix per speaker, quoted from a real run on 2026-11-21 (
   number a replaced-mirror check quotes. Since ticket 06 two command shapes share the prefix, both in both builds:
   `player: applied reason=play target=83.500 from=80.120` when the room's command reached the site's player, and
   `player: drift expected=83.500 actual=83.608 delta=108` at most once a second for the elected player. A live sync
-  check quotes those two lines rather than reading a picture.
+  check quotes those two lines rather than reading a picture. Both are the **site** player's lines. File mode has no
+  site player to elect, so the same comparison is printed by the ladder as `[dev] correction member=<id> drift=<ms>`
+  (measuring build only, ticket 09c): a file-mode sync check quotes that line instead, and a website-mode check that
+  finds no `player: drift` line has a bridge fault, not a timing fault.
 - `site:` is the site view reporting to the host. A `bridge report` line is one frame's candidate list and is
   **measuring build only** (two lines a second per frame in a busy page); the ad-filter lines are in both builds.
 
@@ -146,7 +149,14 @@ and exits 1 — it never hangs.
 and the page's `document.activeElement`; add `--double` for a double click. Use it whenever a page will only act on a
 person's gesture: a `requestFullscreen()` reached by a real press is granted, while the same call from `eval` is
 refused. A press grants that trust for about five seconds only, so prove a scripted call is refused in a freshly written
-document, or at least six seconds after the last press (measured 2026-11-22, ticket 19).
+document, or at least six seconds after the last press (measured 2026-11-22, ticket 19). **That grant did not
+reproduce in this app's own two views** on 2026-11-22 (ticket 23): there a trusted press is refused with `TypeError: not
+granted` while `document.fullscreenEnabled` reads `true` and no permissions policy is sent, because this window owns
+fullscreen itself (ADR-028). See "The probe page the repository owns" below.
+
+A press also proves nothing while its document is hidden: `cdp.mjs click` waits on the page's next animation frame, so a
+hidden view swallows the press and the call times out after 10 s (`Runtime.evaluate got no answer`) instead of failing.
+Check `document.visibilityState` before believing a refusal (ticket 23).
 
 Anything a person would read off the screen, ask the page for instead. That is what makes a check cheap and what makes
 it possible for the lead to check a worker's claim without repeating the mouse work.
@@ -188,6 +198,30 @@ These traps have each cost a re-run, on 06b, on 07b, on 09b and on 21b. Do these
    `PrintWindow` its last *composited* frame: on 2026-11-22 (21b) two windows photographed 0.9 s apart showed scenes about
    a minute apart while their logs put both players within half a second of each other. A picture proves layout, chrome and
    error text; the `player: drift` lines prove that two windows were at the same moment.
+
+### The probe page the repository owns
+
+`tests/fixtures/probe.html` is the page to point a live check at when the check needs a page this project controls. Do
+not rebuild another throwaway one on `127.0.0.1:8099`: tickets 08, 08b and 09a each rebuilt and lost one, and a
+rebuilt page differs from the last in ways nobody records.
+
+```
+node tests/fixtures/serve.ts
+```
+
+It prints `probe page on http://127.0.0.1:8123/probe.html`; `PROBE_PORT` or a port argument moves it, and it binds
+loopback only. Load it with `node scripts/cdp.mjs eval <index> 'location.href = "http://127.0.0.1:8123/probe.html"'`, or
+start a window with `WATCHPARTY_SPIKE_URL` set to that URL. Pick the view by its `href` from `cdp.mjs targets`, not by
+index: with no spike URL the app view is index 0 and the site view index 1, and the order reverses when a spike URL is
+set (ticket 23).
+
+The page carries `#fullscreen`, a `#playpause` button that writes what it received into `#label`, and a 60-second
+`tests/fixtures/fixture.mp4`. `seekable` reads `60.00 of 60.00` because the server answers `Range` with `206` and a real
+`Content-Range` (trap 3 above); `tests/unit/probe-server.test.ts` holds it to that under `npm test`.
+
+The fullscreen button reports what it sends; it does not prove a grant. This window never grants `requestFullscreen()`
+(ADR-028): a real press in the visible site view is heard and logged as `site: fullscreen=enter w=... h=...` while
+`document.fullscreenElement` stays `null`. Quote that intent line, not a fullscreen element.
 
 ## 8. If something is wrong
 
