@@ -113,7 +113,7 @@ export type ErrorCode =
 /** One sentence per code, shown as written (§5: "a refusal is explicit"). */
 export const ERROR_SENTENCES: Record<ErrorCode, string> = {
   bad_room: 'That room code does not match this room.',
-  room_full: 'This room is full — five people is the limit.',
+  room_full: 'This room is full — ten people is the limit.',
   not_controller: 'Only the person who started the room can change this.',
   bad_media: 'That file cannot be played — it is missing from this machine, or its path is not absolute.',
   unsupported_media: 'File mode plays MP4, M4V, WebM and MOV files only.',

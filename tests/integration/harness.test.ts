@@ -189,34 +189,34 @@ test('R5: a 120-message burst leaves exactly the last 100 in a late joiner’s t
   }
 })
 
-test('§12: five members is the ceiling, so a sixth hello is refused and the room still holds five', async () => {
-  // The ticket's bullet says "a fourth client is refused"; §12 and
-  // `MAX_MEMBERS` say five is the ceiling, so what is refused is the sixth.
-  const harness = await startHarness({ clients: 5 })
+test('§12: ten members is the ceiling, so an eleventh hello is refused and the room still holds ten', async () => {
+  // ADR-044 raised the cap from five to ten; `MAX_MEMBERS` is the one reader, so
+  // what is refused is the eleventh.
+  const harness = await startHarness({ clients: 10 })
   try {
-    // The five seated members were told about each other, not about a sixth.
-    const five = await waitFor(
+    // The ten seated members were told about each other, not about an eleventh.
+    const ten = await waitFor(
       () => {
-        const latest = harness.clients[4]!.frames.filter((record) => record.frame.type === 'members').pop()
+        const latest = harness.clients[9]!.frames.filter((record) => record.frame.type === 'members').pop()
         const members = latest?.frame.type === 'members' ? latest.frame.members : []
-        return members.length === 5 ? members : null
+        return members.length === 10 ? members : null
       },
       2000,
-      'the fifth member sees a full roster',
+      'the tenth member sees a full roster',
     )
-    assert.equal(five.length, 5)
+    assert.equal(ten.length, 10)
 
-    const outcome = await ScriptedClient.attempt(harness.port, CODE, 'sixth')
+    const outcome = await ScriptedClient.attempt(harness.port, CODE, 'eleventh')
     assert.equal(outcome.ok, false)
     if (!outcome.ok) assert.equal(outcome.error.code, 'room_full')
 
-    assert.equal(harness.room.members.size, 5, 'the refusal changed no membership')
+    assert.equal(harness.room.members.size, 10, 'the refusal changed no membership')
     await settle(150)
     for (const client of harness.clients) {
       assert.equal(
-        client.frames.some((record) => record.frame.type === 'members' && record.frame.members.length > 5),
+        client.frames.some((record) => record.frame.type === 'members' && record.frame.members.length > 10),
         false,
-        'nobody was ever shown a sixth member',
+        'nobody was ever shown an eleventh member',
       )
     }
   } finally {

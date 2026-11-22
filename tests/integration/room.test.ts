@@ -170,28 +170,28 @@ test('two sams become sam and sam (2); renaming one to null re-broadcasts anonym
   }
 })
 
-test('five members is the ceiling: the sixth hello is room_full and members still has five', async () => {
+test('ten members is the ceiling: the eleventh hello is room_full and members still has ten', async () => {
   const fixture = await openRoom()
   const joined = []
   try {
-    for (let index = 0; index < 5; index += 1) {
+    for (let index = 0; index < 10; index += 1) {
       const client = connect('127.0.0.1', fixture.port)
       await client.ready
       await client.hello(CODE, `friend ${index + 1}`)
       joined.push(client)
     }
 
-    const sixth = connect('127.0.0.1', fixture.port)
-    await sixth.ready
-    sixth.send({ type: 'hello', code: CODE, name: 'sixth' })
-    const refusal = await sixth.next((frame) => frame.type === 'error')
+    const eleventh = connect('127.0.0.1', fixture.port)
+    await eleventh.ready
+    eleventh.send({ type: 'hello', code: CODE, name: 'eleventh' })
+    const refusal = await eleventh.next((frame) => frame.type === 'error')
     assert.equal(refusal.code, 'room_full')
 
-    const five = await joined[0]!.next((frame) => frame.type === 'members' && frame.members.length === 5)
-    assert.equal(five.members.length, 5)
-    assert.equal(fixture.room.members.size, 5)
+    const ten = await joined[0]!.next((frame) => frame.type === 'members' && frame.members.length === 10)
+    assert.equal(ten.members.length, 10)
+    assert.equal(fixture.room.members.size, 10)
     assert.equal(
-      joined[0]!.inbox.some((frame) => frame.type === 'members' && frame.members.length > 5),
+      joined[0]!.inbox.some((frame) => frame.type === 'members' && frame.members.length > 10),
       false,
     )
   } finally {

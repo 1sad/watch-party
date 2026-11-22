@@ -17,8 +17,13 @@ import { contentTypeFor } from '../shared/media.ts'
 import { canonicalPage, PAGE_STAGE_MS, playbackAfterPageCommit } from '../shared/page.ts'
 import { clampToMedia, expected, scheduledStartAt, seekIsDuplicate } from '../shared/timing.ts'
 
-/** §12: five people is a constraint of the design, not a setting. */
-export const MAX_MEMBERS = 5
+/**
+ * ADR-044: the room seats ten. The number is a setting, not a property of the
+ * design - nothing on the control path scales with members (ADR-023): only chat
+ * and play/pause/seek travel, kilobytes per second, so a tenth seat costs the
+ * host's uplink nothing measurable.
+ */
+export const MAX_MEMBERS = 10
 
 /**
  * ADR-032: the authority holds a pending room change for two seconds. The value
