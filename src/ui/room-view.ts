@@ -1,9 +1,14 @@
 /**
- * T26 and ADR-038: a room is either a site or a file, never both, and "with no
- * page, there is no site view". A pick clears the room's page in the sidecar
- * (`setMedia`, §4.2) and the authority then sends **only** a `media` frame — no
- * `state` ever carries `page: null` — so the window has to read the rule off the
- * room's own fields and tell the host to take the pane away.
+ * T26 and ADR-038: a room's committed state is either a site or a file, and with
+ * no page there is no site view — except for the staged preview. A room that
+ * holds a file may take a page (ADR-038, amended 2026-11-22), and for the
+ * stage's two seconds both views are up while the room's fields still say file
+ * (`page` is `null`, `media` is set): the staged page is a window-local preview
+ * of a page the room has not committed, not a second kind of media. A pick
+ * clears the room's page in the sidecar (`setMedia`, §4.2) and the authority
+ * then sends **only** a `media` frame — no `state` ever carries `page: null` —
+ * so the window has to read the rule off the room's own fields and tell the host
+ * to take the pane away.
  *
  * The state itself lives in the app view (`roomPage`, `pendingPreview`, `media`);
  * the decision lives here so a unit test can hold it. This project has no DOM
@@ -22,9 +27,11 @@ export interface RoomPageFields {
 /**
  * What the page side of the window is:
  *
- * - `file` — the room holds a file, so there is no page, no preview and no site
- *   view (ADR-038); the host is told to hide it and the app view fills the
- *   window exactly as in M1.
+ * - `file` — the room holds a file, so it has no committed page; at rest the
+ *   host is told to hide the site view and the app view fills the window
+ *   exactly as in M1 (ADR-038). A `file` side is not "no preview", though: a
+ *   page staged over the file room shows at once, with the file's picture docked
+ *   beside it, until the commit or the cancel.
  * - `site` — the room is on this page and the site view shows it.
  * - `none` — a room that has neither yet: nothing to show, and no pane to hide.
  */
