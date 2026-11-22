@@ -118,7 +118,8 @@ language without re-downloading the picture.
 engine. There is no separate server to install, rent or run anywhere.
 
 **WebView2** — the browser engine Windows already ships (the same one Edge uses), which the app borrows instead of
-bundling a whole browser. If it is missing, the installer offers it.
+bundling a whole browser. The `portable` build uses the machine's copy; `portable-full` carries its own engine; with
+neither, the window says one plain sentence (ADR-041, ADR-042).
 
 **Ad filtering** — blocking requests to known ad and tracker addresses before they leave the app. Not a nicety on
 these sites; it is why the app exists rather than a browser add-on.
@@ -249,13 +250,14 @@ don't collide.
 **Picture-in-Picture (PiP)** — the small floating player some sites offer. Nothing can be drawn on top of it, so
 chat is unavailable while it's in use.
 
-**Portable build** - the one file a friend runs. `portable` carries the .NET runtime, the Node runtime and the page, and
+**Portable build** — the one file a friend runs. `portable` carries the .NET runtime, the Node runtime and the page, and
 uses the WebView2 runtime the machine already has; `portable-full` carries the browser engine too. Neither is an
 installer (ADR-041).
 
-**Payload** - the zip inside a portable executable: the pinned Node runtime, the room's sources and their production
-dependencies, the page and the ad list. It is unpacked once per version and payload hash under `%LOCALAPPDATA%`, and
-that folder becomes the program root (ADR-042).
+**Payload** — the zip inside a portable executable: the pinned Node runtime, the room's sources and their production
+dependencies, the page and the ad list. It is unpacked once per version and payload hash into the exe's own folder,
+`<exe folder>\runtime\<version>-<hash8>\`, which becomes the program root; the profile and the logs sit beside it and
+nothing is written under `%LOCALAPPDATA%` (ADR-042, as amended by ADR-043).
 
-**Measuring flavour** (`portable-debug`) - the portable build made with the Debug host and the development page, so the
+**Measuring flavour** (`portable-debug`) — the portable build made with the Debug host and the development page, so the
 two-window gate can be run and read without a mouse. It is never handed to anyone (ADR-042).
