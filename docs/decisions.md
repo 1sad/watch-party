@@ -856,6 +856,11 @@ loopback. ADR-022 (WebView2, not a bundled browser) is unchanged and now names w
 >
 > **Amended 2026-11-21 (ADR-037):** type declarations only — `@types/node`, `@types/ws`, `vite/client` — are added
 > and are not counted against this list. They ship nothing and change no runtime.
+>
+> **Amended 2026-11-22 (ADR-040):** the licence constraint at the foot of this ADR binds **code** dependencies, and a
+> shipped **data file** may be share-alike: `data/ad-hosts.txt` is CC BY-SA 3.0, carrying its attribution and licence
+> in the file, because share-alike binds the list and not the program that reads it. "Permissive" is unchanged for
+> every dependency in the table, and the GPL/AGPL refusal is unchanged.
 
 **Decision.** M1 adds the following and nothing else. Already decided elsewhere and only cited here: `ws`
 (ADR-012), TypeScript (ADR-012), Vite + Svelte + `@sveltejs/vite-plugin-svelte` (ADR-012), hls.js (not loaded before
@@ -1038,11 +1043,12 @@ EasyList's `easylist_adservers.txt` at commit `f49a0ca` (2026-11-21), from
 filter reads it (R20, ADR-034) and treats a bare host as that host and its subdomains. The file's first line carries
 the source, the commit and the licence, so the provenance travels with the data.
 
-**Licence.** EasyList is dual-licensed **GPLv3 or CC BY-SA 3.0**. This project takes **CC BY-SA 3.0** for the list:
-it is neither GPL nor AGPL, so ADR-035's "Permissive licences only - anything GPL or AGPL in the app itself is
-refused" is met as written. The list is redistributed as a data file with its attribution and licence in the file,
-which is what CC BY-SA asks of a redistributed copy. Share-alike binds the list itself, not the program that reads
-it: a request filter that loads a host list creates no adaptation of the list.
+**Licence.** EasyList is dual-licensed **GPLv3 or CC BY-SA 3.0**. This project takes **CC BY-SA 3.0** for the list.
+ADR-035's licence constraint is met as **amended 2026-11-22 by this ADR**: "permissive" binds code dependencies, a
+shipped data file may be share-alike when it carries its own attribution and licence, and neither the GPL nor the
+AGPL refusal moves. The list is redistributed as a data file with its attribution and licence in the file, which is
+what CC BY-SA asks of a redistributed copy. Share-alike binds the list itself, not the program that reads it: a
+request filter that loads a host list creates no adaptation of the list.
 
 **Why not the alternatives.** (a) Hand-write a list: 43,021 hosts is maintenance nobody here will do, and a short
 list blocks few ads. (b) Ship no list: R20 is unmet, and ads in the site view are the first thing the user sees.
