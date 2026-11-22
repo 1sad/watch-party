@@ -201,7 +201,8 @@
   const playerSrc = $derived(ownerOrigin === null ? null : mediaUrl(ownerOrigin, media))
 
   /**
-   * T03b: §5's address bar follows §4.2 — a room is a site or a file, never both.
+   * T03b: §5's address bar follows §4.2 — the room's committed state is a site or
+   * a file, never both, and a staged preview does not change it.
    * T37 / ADR-038's amendment: a room that holds a file **may take a page**, so
    * the bar stays available while a file plays and that transition has a route;
    * only membership decides it (`selfId`), never whether a file is playing.
@@ -558,8 +559,11 @@
       media = frame.media
       // T26 / ADR-038: a pick is the room turning into a file. `setMedia` cleared
       // the page and the frame above is the only one that says so, so the page
-      // side goes here — no page, no preview — and the host takes the site view
-      // away rather than leaving a file squeezed into a column.
+      // side goes here — no committed page — and the host takes the site view
+      // away rather than leaving a file squeezed into a column. That side is the
+      // room's state, not "no preview": a file room may stage a page (ADR-038,
+      // amended 2026-11-22), and this line is what ends such a preview when
+      // another window picks a file (`pendingPreview` is cleared below).
       if (pageSide({ page: null, media: frame.media }).kind === 'file') {
         roomPage = null
         pendingPreview = null
