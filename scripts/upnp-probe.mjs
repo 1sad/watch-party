@@ -6,6 +6,7 @@
 // interface, with every answer's description URL printed.
 //
 //   node scripts/upnp-probe.mjs [--port 1900]
+//   node scripts/upnp-probe.mjs --map
 //
 // stdout carries the answer and nothing else, one value per line:
 //
@@ -13,10 +14,21 @@
 //   PROBE: st=<1|2> answers=<n> location=<url|none>
 //   ANSWER: search=<1|2> from=<ip> via=<ip> reply_st=<urn|none> location=<url>
 //
-// A silent router prints `location=none` for that search; that is an answer,
-// not a failure. Exit is non-zero only when no socket would open at all - the
-// state in which the app's own client yields no gateway for a reason that has
-// nothing to do with the router.
+// `--map` (T66b) drives the app's own module instead of this probe's sockets:
+// the same ephemeral-port search, the description, `AddPortMapping`,
+// `GetExternalIPAddress`, then `DeletePortMapping`. It maps the port of a
+// throwaway listener the way the app maps its room's port, and always removes
+// the mapping before it exits. Its lines are the module's own `discovery:`
+// trace plus one summary:
+//
+//   PROBE: map local_port=<n> internal=<ip> listener=<port>
+//   SOAP: map=<code> external=<ip|none> class=<public|private|cgnat|unknown> delete=<code|none>
+//
+// A `<code>` is the HTTP status the router answered with, or `fault<errorCode>`
+// when it returned a SOAP fault - the router's own code, never ours. Exit is
+// non-zero only when no socket would open at all - the state in which the app's
+// own client yields no gateway for a reason that has nothing to do with the
+// router.
 //
 // The default port is 1900 because that is what the library binds (reuseAddr,
 // `dist/src/upnp/discovery.js:40`), so this run is the app's own situation and
@@ -25,7 +37,11 @@
 // port, which tells a router that says nothing from a reply this machine never
 // got. Nothing here is shipped code and it adds no dependency (ADR-035).
 import { createSocket } from 'node:dgram'
+import { createServer } from 'node:net'
 import { networkInterfaces } from 'node:os'
+
+import { classifyAddress, findLanIp } from '../src/server/discovery.ts'
+import { mapPort, searchGateways } from '../src/server/upnp.ts'
 
 const SEARCH_HOST = '239.255.255.250'
 const SEARCH_PORT = 1900
@@ -166,8 +182,70 @@ async function sendAndCollect(sockets, entry) {
   out(`PROBE: st=${entry.search} answers=${locations.length} location=${locations.length === 0 ? 'none' : locations.join(',')}`)
 }
 
+/** `200` for a mapped port, `fault718` for the router's own refusal. */
+function codeOf(answer) {
+  if (answer === null) return 'none'
+  if (answer.faultCode !== null) return `fault${answer.faultCode}`
+  return String(answer.status)
+}
+
+/**
+ * `--map`: the app's own arm, end to end. A throwaway listener stands in for
+ * the room (the app maps the port it listens on), the module searches from an
+ * ephemeral port, maps, reads the router's address, and the mapping is deleted
+ * before this returns however the mapping ended.
+ */
+async function mapFlow(t0) {
+  const lanIp = findLanIp()
+  if (lanIp === null) {
+    out('PROBE: map skipped reason=no-lan-ip')
+    out('SOAP: map=none external=none class=unknown delete=none')
+    return
+  }
+
+  const listener = createServer((socket) => socket.end())
+  await new Promise((resolve) => listener.listen(0, '0.0.0.0', resolve))
+  const localPort = listener.address().port
+  out(`PROBE: map local_port=${localPort} internal=${lanIp} listener=${localPort}`)
+
+  let mapCode = 'none'
+  let external = 'none'
+  let deleteCode = 'none'
+  try {
+    const gateways = await searchGateways({ timeoutMs: 2_500, t0 })
+    if (gateways.length === 0) {
+      out('PROBE: map result=no-gateway')
+    }
+    for (const gateway of gateways) {
+      const result = await mapPort({ gateway, localPort, lanIp, timeoutMs: 6_000, t0 })
+      const outcome = result.outcome
+      mapCode =
+        outcome.type === 'mapped'
+          ? String(outcome.status)
+          : outcome.type === 'timeout'
+            ? 'timeout'
+            : outcome.faultCode !== null
+              ? `fault${outcome.faultCode}`
+              : `http${outcome.status}`
+      if (outcome.type === 'mapped') external = outcome.externalIp
+      if (result.release !== null) deleteCode = codeOf(await result.release())
+      if (outcome.type === 'mapped') break
+    }
+  } finally {
+    await new Promise((resolve) => listener.close(() => resolve(undefined)))
+  }
+
+  const addressClass = external === 'none' ? 'unknown' : classifyAddress(external)
+  out(`SOAP: map=${mapCode} external=${external} class=${addressClass} delete=${deleteCode}`)
+}
+
 async function main() {
-  const port = bindPort(process.argv.slice(2))
+  const argv = process.argv.slice(2)
+  if (argv.includes('--map')) {
+    await mapFlow(Date.now())
+    return
+  }
+  const port = bindPort(argv)
   const addresses = localAddresses()
   if (addresses.length === 0) {
     out('PROBE: none reason=no-ipv4-interface')

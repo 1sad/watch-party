@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { portLine } from '../shared/port.ts'
 import { newRoomCode } from '../shared/room.ts'
 import { createSidecarServer } from './app.ts'
-import { discover, findLanIp } from './discovery.ts'
+import { discover, findLanIp, releaseMapping } from './discovery.ts'
 import type { DiscoveryResult } from './discovery.ts'
 import { buildInviteLinks } from './invite.ts'
 import type { InviteLinks } from './invite.ts'
@@ -159,3 +159,13 @@ server.listen(0, '0.0.0.0', () => {
   log('[media] none set - the room opens with no file')
   void runDiscovery()
 })
+
+// T66b: the room's mapping is taken down when this process stops, so a
+// participant's router does not keep the port open (ADR-045). The host kills
+// the sidecar's tree without a signal, which is why the mapping also carries a
+// lease; these are the paths where there is time to undo it.
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGBREAK'] as const) {
+  process.once(signal, () => {
+    void releaseMapping().finally(() => process.exit(0))
+  })
+}
