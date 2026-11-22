@@ -4,7 +4,9 @@ namespace WatchParty.Host;
 /// Finds the folder that holds <c>package.json</c>: the sidecar's entry point and
 /// the built page both live under it. Launched via <c>npm run dev</c> that folder
 /// is the working directory, but a host started from its own <c>bin</c> folder
-/// still has to find it, so the search walks up from the executable.
+/// still has to find it, so the search walks up from the executable. A portable
+/// exe (ADR-042) has no <c>package.json</c> above it at all: its program root is
+/// the folder <see cref="Payload"/> unpacks from the resource it carries.
 /// </summary>
 internal static class ProgramRoot
 {
@@ -14,6 +16,12 @@ internal static class ProgramRoot
         if (!string.IsNullOrWhiteSpace(configured) && File.Exists(Path.Combine(configured, "package.json")))
         {
             return Path.GetFullPath(configured);
+        }
+
+        // Packaged only: a developer build carries no payload resource (M7, ADR-042).
+        if (Payload.IsPresent)
+        {
+            return Payload.ExtractOnce();
         }
 
         DirectoryInfo? directory = new(AppContext.BaseDirectory);

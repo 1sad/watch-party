@@ -227,6 +227,13 @@ public sealed class MainForm : Form
 
         HostLog.Write($"host started; program folder {_root}");
 
+        // Packaged only (ADR-042): the one line that says which unpacked payload
+        // this window is running, beside the log file that sits under it.
+        if (Payload.IsPresent)
+        {
+            HostLog.Write($"payload: runtime folder {Payload.RuntimeBase}; program root {_root}");
+        }
+
         // R20's list, before either view can ask for a request (T04). The file is
         // data that ships beside the program; an unreadable one is a log line and
         // an empty set, so the window still opens.
@@ -1324,7 +1331,7 @@ public sealed class MainForm : Form
         ProcessStartInfo start;
         try
         {
-            start = new ProcessStartInfo(NodePath.Resolve())
+            start = new ProcessStartInfo(NodePath.Resolve(_root))
             {
                 WorkingDirectory = _root,
                 UseShellExecute = false,
@@ -1341,6 +1348,14 @@ public sealed class MainForm : Form
         }
 
         start.ArgumentList.Add("src/server/main.ts");
+
+        // ADR-042: a packaged copy runs the production sidecar. `main.ts` reads
+        // NODE_ENV only to decide whether to print its `[dev]` diagnostic lines,
+        // which the production page does not need (the bridge line is the host's).
+        if (Payload.IsPresent)
+        {
+            start.Environment["NODE_ENV"] = "production";
+        }
 
         Process sidecar = new() { StartInfo = start, EnableRaisingEvents = true };
         sidecar.OutputDataReceived += (_, line) =>
