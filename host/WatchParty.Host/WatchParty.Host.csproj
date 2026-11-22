@@ -19,4 +19,11 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
   </ItemGroup>
 
+  <!-- M7 (ADR-042): the one zip `npm run portable` embeds as the payload. A
+       developer build passes no WatchPartyPayload, so nothing is embedded and
+       `dotnet build host/WatchParty.Host` is unchanged. -->
+  <ItemGroup Condition="'$(WatchPartyPayload)' != ''">
+    <EmbeddedResource Include="$(WatchPartyPayload)" LogicalName="WatchParty.Payload.zip" />
+  </ItemGroup>
+
 </Project>
