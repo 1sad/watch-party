@@ -332,5 +332,9 @@ if ($duplicate) {
 
 Write-Output ''
 Write-Output ("windows left up and visible: {0}" -f (($results | ForEach-Object { $_.Pid }) -join ', '))
-Write-Output 'stop them with: Stop-Process -Id <pid>; then kill any leftover node by path *\runtime\node.exe'
+# ADR-043: the payload root is runtime\<version>-<hash8>\, so node.exe sits one
+# level deeper than the exe's own folder. The pattern below names this run's own
+# copies, so it can never sweep up a node from another folder or a later run.
+$nodePattern = '{0}\copy-*\runtime\*\node.exe' -f $root
+Write-Output ("stop them with: Stop-Process -Id <pid>; then kill any leftover node by path {0}" -f $nodePattern)
 exit 0
