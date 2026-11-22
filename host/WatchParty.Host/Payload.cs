@@ -7,10 +7,14 @@ namespace WatchParty.Host;
 /// <summary>
 /// M7 (ADR-042): <c>npm run portable</c> embeds one zip under the resource name
 /// <c>WatchParty.Payload.zip</c>; this class unpacks it once per version and
-/// payload hash into <c>%LOCALAPPDATA%\watch-party\runtime\&lt;version&gt;-&lt;hash8&gt;\</c>
+/// payload hash into <c>&lt;the exe's own folder&gt;\runtime\&lt;version&gt;-&lt;hash8&gt;\</c>
 /// and hands that folder back as the program root. A build without the resource
 /// (every developer build) never reaches this class, so the walk-up for
 /// <c>package.json</c> and the <c>PATH</c> lookup for node are unchanged.
+///
+/// ADR-043: the whole app is the folder the exe sits in - the payload, the
+/// browser profile and the host log all live there, and nothing is written under
+/// <c>%LOCALAPPDATA%</c> or <c>%APPDATA%</c>.
 ///
 /// The folder is written under a <c>.tmp-&lt;pid&gt;</c> name and renamed when the
 /// last file is in place; the stamp file is written last of all, so a crash or a
@@ -34,16 +38,44 @@ internal static class Payload
     public static bool IsPresent => PresentCheck.Value;
 
     /// <summary>
-    /// <c>%LOCALAPPDATA%\watch-party</c>: the one folder a packaged copy writes
-    /// to, so nothing lands beside the exe (ADR-042). The runtime folders, the
-    /// browser profile and the host log all live under it (T46).
+    /// The folder the running executable sits in: what "portable" means since
+    /// ADR-043 - copy the folder and the state goes with it, delete it and
+    /// nothing is left behind. <see cref="Environment.ProcessPath"/> is the exe
+    /// itself in a single-file build; the base folder is the same folder for the
+    /// host started from its own <c>bin</c>.
     /// </summary>
-    public static string UserFolder => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "watch-party");
+    public static string Folder
+    {
+        get
+        {
+            string? executable = Environment.ProcessPath;
+            string folder = string.IsNullOrWhiteSpace(executable)
+                ? AppContext.BaseDirectory
+                : Path.GetDirectoryName(executable)!;
+            return Path.GetFullPath(folder);
+        }
+    }
 
-    /// <summary>Where every unpacked payload lives; the profile and log sit above it.</summary>
-    public static string RuntimeBase => Path.Combine(UserFolder, "runtime");
+    /// <summary>Where every unpacked payload lives: <c>&lt;folder&gt;\runtime\</c>.</summary>
+    public static string RuntimeBase => Path.Combine(Folder, "runtime");
+
+    /// <summary>
+    /// The engine's browser profile: <c>&lt;folder&gt;\profile</c>, one per folder
+    /// (ADR-043). Not keyed by pid any more - a fresh key per run is what signed a
+    /// returning host out of the site every evening.
+    /// </summary>
+    public static string ProfileFolder => Path.Combine(Folder, "profile");
+
+    /// <summary>
+    /// Thrown when the folder the exe sits in cannot be written: <c>Program Files</c>
+    /// or a read-only stick. Carries the one plain sentence the window shows.
+    /// </summary>
+    public sealed class FolderNotWritableException(string folder, Exception cause)
+        : Exception(
+            $"Watch Party cannot write in the folder it was started from ({folder}). "
+            + "Copy the program to a folder you can write in, such as one under your Documents folder, "
+            + "and start it from there.",
+            cause);
 
     /// <summary>
     /// Returns the folder holding the unpacked payload, extracting it first if this
@@ -51,6 +83,11 @@ internal static class Payload
     /// </summary>
     public static string ExtractOnce()
     {
+        // ADR-043: the folder must be writable - a read-only stick is no longer a
+        // goal. Probed before anything is unpacked, so a copy in Program Files says
+        // one plain sentence instead of half-running.
+        EnsureFolderWritable();
+
         using Stream resource = typeof(Payload).Assembly.GetManifestResourceStream(ResourceName)
             ?? throw new FileNotFoundException($"the executable carries no {ResourceName}");
 
@@ -70,6 +107,24 @@ internal static class Payload
 
         PruneOtherFolders(folder);
         return folder;
+    }
+
+    /// <summary>
+    /// Proves the exe's folder accepts a new file: created next to the exe and
+    /// removed at once, so a writable folder is left exactly as it was found.
+    /// </summary>
+    private static void EnsureFolderWritable()
+    {
+        string probe = Path.Combine(Folder, $".write-probe-{Environment.ProcessId}");
+        try
+        {
+            using (File.Create(probe)) { }
+            File.Delete(probe);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            throw new FolderNotWritableException(Folder, error);
+        }
     }
 
     private static void Extract(ZipArchive zip, string folder, string version, string hash8)

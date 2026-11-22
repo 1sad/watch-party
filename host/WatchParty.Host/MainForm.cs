@@ -216,7 +216,17 @@ public sealed class MainForm : Form
         try
         {
             _root = ProgramRoot.Find();
-            HostLog.Open(_root);
+            // ADR-043: the host log lives in the folder the exe sits in, one level
+            // above the unpacked payload. A developer build keeps the log beside
+            // the repository's package.json, exactly as before.
+            HostLog.Open(Payload.IsPresent ? Payload.Folder : _root);
+        }
+        catch (Payload.FolderNotWritableException error)
+        {
+            // Nothing in the folder can be written, so no log file exists: the one
+            // sentence on the window is the record (ADR-043, T46c item 3).
+            ShowFolderSentence(error.Message);
+            return;
         }
         catch (Exception error)
         {
@@ -227,11 +237,12 @@ public sealed class MainForm : Form
 
         HostLog.Write($"host started; program folder {_root}");
 
-        // Packaged only (ADR-042): the one line that says which unpacked payload
-        // this window is running, beside the log file that sits under it.
+        // Packaged only (ADR-043): the one line that says which unpacked payload
+        // this window is running, and the folder it sits in - which is also where
+        // the log file and the profile are.
         if (Payload.IsPresent)
         {
-            HostLog.Write($"payload: runtime folder {Payload.RuntimeBase}; program root {_root}");
+            HostLog.Write($"payload: runtime folder {_root}; program folder {Payload.Folder}");
         }
 
         // R20's list, before either view can ask for a request (T04). The file is
@@ -312,29 +323,26 @@ public sealed class MainForm : Form
         string? debugPort = null;
 #endif
 
-        // The engine's own profile (T46). A packaged copy must write nothing
-        // beside its exe - that is what makes a read-only stick work - and two
-        // copies must not share one profile, so theirs sits under
-        // %LOCALAPPDATA%\watch-party\ and is keyed by the CDP port when the
-        // measuring build was given one, otherwise by this process. The key
-        // cannot be the room's port: this environment is created before the
-        // sidecar starts, so that port does not exist yet. A developer build
-        // asked for a CDP port keeps its %TEMP%\watchparty-dev-<port> folder
-        // (parity with every earlier ticket).
+        // The engine's own profile (T46, moved by ADR-043). A packaged copy keeps
+        // it at <exe folder>\profile: the whole app is the folder it was copied
+        // into, so the site's cookies travel with the folder, and a returning host
+        // stays signed in - a fresh pid-keyed folder every evening is what signed
+        // it out. One folder is one installation, so two copies in the same folder
+        // share this profile by design. A developer build asked for a CDP port
+        // keeps its %TEMP%\watchparty-dev-<port> folder (parity with every earlier
+        // ticket).
         string? userData = null;
-        if (debugPort is not null && !Payload.IsPresent)
+        if (Payload.IsPresent)
+        {
+            userData = Payload.ProfileFolder;
+            Directory.CreateDirectory(userData);
+        }
+        else if (debugPort is not null)
         {
             // Its own profile: WebView2 refuses a second controller in the
             // browser process another window already owns (0x8007139F), and
             // two windows on one debugging port could not be told apart.
             userData = Path.Combine(Path.GetTempPath(), $"watchparty-dev-{debugPort}");
-        }
-        else if (Payload.IsPresent)
-        {
-            string key = debugPort
-                ?? Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            userData = Path.Combine(Payload.UserFolder, $"profile-{key}");
-            Directory.CreateDirectory(userData);
         }
 
         if (userData is not null) HostLog.Write($"profile: {userData}");
@@ -1707,6 +1715,31 @@ public sealed class MainForm : Form
         _portTimeout.Stop();
         HostLog.Write("sidecar did not report a port within 20 s");
         ShowFailure("Watch Party's room process did not report a port, so there is no page to show.");
+    }
+
+    /// <summary>
+    /// ADR-043, T46c item 3: the folder cannot be written, so nothing - not even
+    /// the log - can be created. The one plain sentence is drawn on the window
+    /// itself and the window stops there, rather than half-running.
+    /// </summary>
+    private void ShowFolderSentence(string sentence)
+    {
+        Text = sentence;
+        _page.Visible = false;
+        _site.Visible = false;
+        _topStrip.Visible = false;
+        Label notice = new()
+        {
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleCenter,
+            ForeColor = Color.FromArgb(0xE9, 0xE9, 0xEF),
+            BackColor = Color.FromArgb(0x14, 0x15, 0x1A),
+            Font = new Font("Segoe UI", 12f),
+            Padding = new Padding(32),
+            Text = sentence,
+        };
+        Controls.Add(notice);
+        notice.BringToFront();
     }
 
     private void ShowFailure(string sentence)

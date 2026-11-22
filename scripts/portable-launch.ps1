@@ -10,8 +10,8 @@
 #     so a node.exe or dotnet on this machine cannot be what makes it work;
 #     only the variables Windows itself needs (SystemRoot, TEMP, the user
 #     folders, PATHEXT, COMSPEC) are put back;
-#   - waits for that copy's own host log under
-#     %LOCALAPPDATA%\watch-party\runtime\ -- the file name carries the pid, so a
+#   - waits for that copy's own host log inside the copied folder itself,
+#     <copy folder>\logs\ -- the file name carries the pid, so a
 #     log from another window can never be mistaken for this one -- and for the
 #     "parsed sidecar PORT <n>" line inside it;
 #   - prints one block: the exe, its folder, its pid, its log path, the runtime
@@ -41,7 +41,7 @@
 #
 # Copies start one at a time and each one's PORT line is waited for before the
 # next starts, so the first run's payload extraction has finished before the
-# second copy shares the same runtime folder (ADR-042).
+# second copy unpacks its own (ADR-043: every copy owns the folder it sits in).
 #
 # The ports this rig assigns are the engine's DevTools ports
 # (WATCHPARTY_CDP_PORT), 9222 upwards, one per copy. The room's own port cannot
@@ -180,7 +180,6 @@ $kept = [ordered]@{
   'OS'                  = 'Windows_NT'
 }
 
-$runtimeGlob = Join-Path $env:LOCALAPPDATA 'watch-party\runtime'
 $results = @()
 
 for ($i = 0; $i -lt $Count; $i++) {
@@ -223,10 +222,11 @@ for ($i = 0; $i -lt $Count; $i++) {
   }
 
   # The log's name carries the pid, so this can only ever be this copy's file.
+  # ADR-043: the log is in the copy's own folder, under logs\.
   $deadline = (Get-Date).AddSeconds($WaitSec)
   $log = $null
   while (-not $log -and (Get-Date) -lt $deadline) {
-    $found = Get-ChildItem -Path (Join-Path $runtimeGlob ('*\logs\host-*-{0}.log' -f $proc.Id)) -File -ErrorAction SilentlyContinue |
+    $found = Get-ChildItem -Path (Join-Path $folder ('logs\host-*-{0}.log' -f $proc.Id)) -File -ErrorAction SilentlyContinue |
       Select-Object -First 1
     if ($found) { $log = $found.FullName; break }
     if ($proc.HasExited) { break }
@@ -265,7 +265,7 @@ for ($i = 0; $i -lt $Count; $i++) {
   $runtimeFolder = $null
   $profileLine = $null
   foreach ($line in $lines) {
-    if (-not $runtimeFolder -and $line -match 'payload: runtime folder .+; program root (.+)$') {
+    if (-not $runtimeFolder -and $line -match 'payload: runtime folder (.+); program folder .+$') {
       $runtimeFolder = $Matches[1].Trim()
     }
     if (-not $profileLine -and $line -match 'profile: (.+)$') {
@@ -283,7 +283,7 @@ for ($i = 0; $i -lt $Count; $i++) {
     Write-Output ("  log:            {0}" -f $log)
   }
   else {
-    Write-Output ("  log:            (none found under {0} within {1} s)" -f $runtimeGlob, $WaitSec)
+    Write-Output ("  log:            (none found under {0} within {1} s)" -f (Join-Path $folder 'logs'), $WaitSec)
   }
   if ($runtimeFolder) {
     Write-Output ("  runtime folder: {0}" -f $runtimeFolder)
@@ -332,5 +332,5 @@ if ($duplicate) {
 
 Write-Output ''
 Write-Output ("windows left up and visible: {0}" -f (($results | ForEach-Object { $_.Pid }) -join ', '))
-Write-Output 'stop them with: Stop-Process -Id <pid>; then kill any leftover node by path *watch-party\runtime*'
+Write-Output 'stop them with: Stop-Process -Id <pid>; then kill any leftover node by path *\runtime\node.exe'
 exit 0
