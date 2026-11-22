@@ -51,7 +51,9 @@ The SDK is **not on PATH** in a fresh shell: add `%LOCALAPPDATA%\Microsoft\dotne
 
 A pre-commit hook runs `npm test`, then `npm run check` (`.githooks/pre-commit`, ADR-036), printing one line per step when
 it passes and the full output when it refuses. It is the only automated guardrail — there is no
-CI and no remote — so **do not commit with `--no-verify`**. If the hook itself is wrong, fix the hook.
+CI and no remote — so **do not commit with `--no-verify`**. If the hook itself is wrong, fix the hook. **In
+PowerShell its progress lines arrive on stderr and surface as a `NativeCommandError` with exit 1 while the commit
+lands** - confirm with `git log --oneline -1` before believing a commit failed (every worker in phase 3 hit this).
 
 ```
 host/            the .NET window: window and WebView2 lifetime, request filtering, fullscreen
