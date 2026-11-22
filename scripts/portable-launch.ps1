@@ -19,16 +19,25 @@
 #     the first lines of the log;
 #   - leaves the window up, visible and not minimised, and leaves the copied
 #     folder on disk, so a later check can photograph the window and read the
-#     same log. Each copy's console output is drained and dropped; the host log
+#     same log. The host is a WinExe and starts its sidecar with a hidden
+#     console, so a copy writes nothing to this script's console: the host log
 #     is the record.
 #
-# Run it from a console. When a caller captures its output through a pipe, the
-# windows it deliberately leaves running keep that pipe open after the script
-# has exited (measured 2026-11-22, T46), so the caller waits until they close:
-# redirect to a file and wait for the process instead, for example
-#   Start-Process powershell -ArgumentList '-NoProfile','-File',
-#     'scripts\portable-launch.ps1','-Exe','release\WatchParty-0.1.0-portable.exe',
-#     '-Count','2' -RedirectStandardOutput $out -RedirectStandardError $err -Wait
+# Run it from a console, or capture its output - both return. Each copy is
+# created by the Windows process service (Win32_Process.Create) with the
+# environment below carried in a startup record, not by this script, so the
+# copy inherits none of the rig's handles: whatever captures this script's
+# output (a pipe, a file, Start-Process -Wait) is released when the script
+# exits, not when the windows it leaves open are closed (T46b, measured
+# 2026-11-22: a copy started with Process.Start kept the caller's pipe open
+# long after the rig had exited; a process-service copy does not). The caller
+# has to do nothing to keep the windows up - exiting the rig does not touch
+# them, and each block printed below names its pid. The way to provoke the
+# failure path is any exe that never logs a host PORT, e.g.
+#   powershell -NoProfile -File scripts/portable-launch.ps1 -Exe C:\Windows\System32\notepad.exe -WaitSec 8
+#
+#   powershell -NoProfile -File scripts/portable-launch.ps1 -Exe <path> -Count 2 | Out-String
+#   powershell -NoProfile -File scripts/portable-launch.ps1 -Exe <path> -Count 2 > out.txt
 #
 # Copies start one at a time and each one's PORT line is waited for before the
 # next starts, so the first run's payload extraction has finished before the
@@ -82,6 +91,15 @@ public static class WpLaunchWin32 {
     public static extern bool ShowWindowAsync(IntPtr hwnd, int command);
 }
 '@
+
+# The copies are created through the Windows process service rather than by
+# Process.Start, because a child started by this script - with or without
+# redirected output - inherits every inheritable handle the rig holds,
+# including the caller's pipe, and keeps that pipe open for as long as the
+# window lives (T46b, measured 2026-11-22). The service is a different process,
+# so nothing of the rig's is handed on.
+$wmiProcess = [wmiclass]'Win32_Process'
+$wmiStartup = [wmiclass]'Win32_ProcessStartup'
 
 function Stop-Rig([string]$Message) {
   [Console]::Error.WriteLine("portable-launch: $Message")
@@ -164,7 +182,6 @@ $kept = [ordered]@{
 
 $runtimeGlob = Join-Path $env:LOCALAPPDATA 'watch-party\runtime'
 $results = @()
-$drains = @()
 
 for ($i = 0; $i -lt $Count; $i++) {
   $copyNo = $i + 1
@@ -173,34 +190,37 @@ for ($i = 0; $i -lt $Count; $i++) {
   $copyExe = Join-Path $folder (Split-Path -Leaf $Exe)
   Copy-Item -LiteralPath $Exe -Destination $copyExe -Force
 
-  $psi = New-Object System.Diagnostics.ProcessStartInfo
-  $psi.FileName = $copyExe
-  $psi.WorkingDirectory = $folder
-  $psi.UseShellExecute = $false
-  $psi.CreateNoWindow = $false
-  # The window's console output is drained and dropped: the log is the record,
-  # and a child that kept this script's own stdout open would make any caller
-  # that captures the rig's output wait for the windows to close (T46).
-  $psi.RedirectStandardOutput = $true
-  $psi.RedirectStandardError = $true
-  $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
-  $psi.EnvironmentVariables.Clear()
+  # The environment this copy runs with: the kept set and nothing else, so a
+  # WATCHPARTY_* left in this shell cannot change what is measured, plus the
+  # DevTools port this run assigns to this copy.
+  $copyEnv = @()
   foreach ($name in $kept.Keys) {
-    if ($kept[$name]) { $psi.EnvironmentVariables[$name] = [string]$kept[$name] }
+    if ($kept[$name]) { $copyEnv += ('{0}={1}' -f $name, $kept[$name]) }
   }
-  $psi.EnvironmentVariables['WATCHPARTY_CDP_PORT'] = [string]$cdpPorts[$i]
+  $copyEnv += ('WATCHPARTY_CDP_PORT={0}' -f $cdpPorts[$i])
 
+  # Created by the process service, not by this script (T46b): the copy runs
+  # with $copyEnv and none of the rig's handles, so a caller that captured this
+  # script's output gets it back as soon as the script exits, window or no
+  # window. This script's own console is not touched.
+  $created = $null
   $proc = $null
   try {
-    $proc = [System.Diagnostics.Process]::Start($psi)
+    $startup = $wmiStartup.CreateInstance()
+    $startup.ShowWindow = 1                     # SW_SHOWNORMAL: visible
+    $startup.EnvironmentVariables = $copyEnv
+    $created = $wmiProcess.Create(('"{0}"' -f $copyExe), $folder, $startup)
   }
   catch {
     Stop-Rig ("copy {0} would not start: {1}" -f $copyNo, $_.Exception.Message)
   }
-  # Keep the drain tasks alive for as long as this rig runs; they empty the two
-  # pipes so neither a window's console output nor the pipe itself outlives us.
-  $drains += $proc.StandardOutput.ReadToEndAsync()
-  $drains += $proc.StandardError.ReadToEndAsync()
+  if (-not $created -or $created.ReturnValue -ne 0) {
+    Stop-Rig ("copy {0} would not start: the process service returned {1}" -f $copyNo, $created.ReturnValue)
+  }
+  $proc = Get-Process -Id $created.ProcessId -ErrorAction SilentlyContinue
+  if (-not $proc) {
+    Stop-Rig ("copy {0} (pid {1}) was created and is gone already" -f $copyNo, $created.ProcessId)
+  }
 
   # The log's name carries the pid, so this can only ever be this copy's file.
   $deadline = (Get-Date).AddSeconds($WaitSec)
