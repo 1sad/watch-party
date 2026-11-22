@@ -46,8 +46,18 @@ function keyOf(target: PlayerTarget): string {
 export interface SiteEchoes {
   /** Record the events `entries` are about to cause, before the command is posted. */
   expect(target: PlayerTarget, entries: readonly EchoEntry[]): void
-  /** True and consumed when this event is one of ours; false means it is real. */
-  consume(target: PlayerTarget, kind: EchoKind, atMs: number): boolean
+  /**
+   * True and consumed when this event is one of ours; false means it is real.
+   *
+   * T21: `position` is the event's own `currentTime`. A `seeked` at the position
+   * this element was last moved **to** is ours even when it lands after §6.6's
+   * window — 09b measured a replaced mirror firing it 2.33 s after the write, past
+   * both that window and the bridge's own `caused` entry, and the seek that
+   * landed was still the one the page performed to get on the room's position
+   * (ADR-029). A listen-for-the-event entry cannot carry that: it is a guess
+   * about *when*, and a slow mirror does not keep the appointment.
+   */
+  consume(target: PlayerTarget, kind: EchoKind, atMs: number, position?: number): boolean
   /**
    * Forget what `target` still owes (T15). One plan is in flight per element and
    * a newer command supersedes it, so a cancelled hold's predicted `play` cannot
@@ -60,10 +70,22 @@ export interface SiteEchoes {
 export interface EchoEntry {
   kind: EchoKind
   atMs: number
+  /**
+   * For `seeked`, the media position the write aimed at (T21). The event's own
+   * `t` is matched against it, so a seek that lands late is still claimed.
+   */
+  t?: number
 }
 
 export function createSiteEchoes(): SiteEchoes {
   const sets = new Map<string, ReturnType<typeof createEchoSet>>()
+  /**
+   * The positions this element was moved to, per key: one write, one landing
+   * (T21). Each is honoured for as long as the app calls an alignment overdue —
+   * past that the write is not coming, and a person's seek to the same place is
+   * theirs again.
+   */
+  const seeks = new Map<string, Array<{ t: number; atMs: number }>>()
   return {
     expect(target, entries) {
       const key = keyOf(target)
@@ -72,14 +94,35 @@ export function createSiteEchoes(): SiteEchoes {
         set = createEchoSet()
         sets.set(key, set)
       }
-      for (const entry of entries) set.expect(entry.kind, entry.atMs)
+      for (const entry of entries) {
+        set.expect(entry.kind, entry.atMs)
+        if (entry.kind === 'seeked' && typeof entry.t === 'number') {
+          const declared = seeks.get(key)
+          if (declared === undefined) seeks.set(key, [{ t: entry.t, atMs: entry.atMs }])
+          else declared.push({ t: entry.t, atMs: entry.atMs })
+        }
+      }
     },
-    consume(target, kind, atMs) {
-      const set = sets.get(keyOf(target))
+    consume(target, kind, atMs, position) {
+      const key = keyOf(target)
+      const set = sets.get(key)
+      if (kind === 'seeked' && typeof position === 'number') {
+        const live = (seeks.get(key) ?? []).filter((one) => atMs - one.atMs < ALIGN_TOLERANCE_MS)
+        if (live.length === 0) seeks.delete(key)
+        else seeks.set(key, live)
+        const index = live.findIndex((one) => Math.abs(one.t - position) <= SEEK_SKIP_SECONDS)
+        if (index !== -1) {
+          live.splice(index, 1)
+          // The predict-the-instant entry this write also left has done its job.
+          if (set !== undefined) set.consume('seeked', atMs)
+          return true
+        }
+      }
       return set === undefined ? false : set.consume(kind, atMs)
     },
     clear(target) {
       sets.delete(keyOf(target))
+      seeks.delete(keyOf(target))
     },
   }
 }
@@ -138,9 +181,13 @@ export interface PagePlan {
  * entry recorded for "now" would be gone before the play it describes.
  */
 export function echoEntries(plan: PagePlan, localNowMs: number): EchoEntry[] {
+  const target = plan.command.target
   return plan.echoes.map((kind) => ({
     kind,
     atMs: kind === 'play' && plan.beatMs > 0 ? localNowMs + plan.beatMs : localNowMs,
+    // T21: a seek also declares *where* it went, which is what a slow mirror's
+    // late `seeked` is matched on.
+    ...(kind === 'seeked' && typeof target === 'number' ? { t: target } : {}),
   }))
 }
 
@@ -325,8 +372,20 @@ export interface SiteNudge {
    * when the gap is back under §6.3's deadband — the two ways a nudge ends
    * without a message. A replacement element cannot be judged against another
    * element's hold, so it never shortens one; the deadline still ends it.
+   *
+   * T21: `readingAgeMs` is how old `elected`'s numbers are — the element reports
+   * at most once a second, and it is the last report, not a fresh look. The gap
+   * belongs to the instant the numbers describe (`nowMs - readingAgeMs`), so the
+   * age is not charged to the drift. Without that, a 1.151 s lead read as about
+   * 0.2 s at a tick a second after its report, the rate went back to 1 four
+   * seconds in, and 09b measured exactly that every five seconds for 100 s.
    */
-  step(elected: PlayerCandidate | null, playback: Playback | null, nowMs: number): PlayerPageCommand[]
+  step(
+    elected: PlayerCandidate | null,
+    playback: Playback | null,
+    nowMs: number,
+    readingAgeMs: number,
+  ): PlayerPageCommand[]
   /**
    * The room moved the playhead (a `state`: pause, seek or snap), so the rate
    * goes back to exactly 1 with it. Returns the restore once, then nothing.
@@ -389,18 +448,23 @@ export function createSiteNudge(): SiteNudge {
     elected: PlayerCandidate | null,
     playback: Playback | null,
     nowMs: number,
+    readingAgeMs: number,
   ): PlayerPageCommand[] {
     const current = held
     if (current === null) return []
     // The bound first: a late tick must not keep a stale rate alive.
     if (nudgeRateAt(current.hold, nowMs) !== current.hold.rate) return end()
     const target = current.target
+    // T21: the reading describes an earlier instant, so the room's position is
+    // taken there too (see `step`'s contract). A reading that is not this
+    // element's says nothing about this hold.
+    const readingAt = nowMs - Math.max(0, readingAgeMs)
     if (
       elected !== null &&
       playback !== null &&
       elected.source === target.source &&
       elected.id === target.id &&
-      Math.abs(elected.t - expected(playback, nowMs)) <= CORRECTION_DEADBAND_SECONDS
+      Math.abs(elected.t - expected(playback, readingAt)) <= CORRECTION_DEADBAND_SECONDS
     ) {
       return end()
     }
@@ -554,7 +618,7 @@ export function decidePageEvent(
   // was built from is half a second old. That is the play press whose hold is
   // the app's pause, not a second person's. The set is still spent, so an entry
   // this event has just made good cannot sit here and swallow a person's next.
-  const predicted = event.event === 'rate' ? false : echoes.consume(target, event.event, nowMs)
+  const predicted = event.event === 'rate' ? false : echoes.consume(target, event.event, nowMs, event.t)
   if (event.caused === true || predicted) return { kind: 'echo' }
   // A rate is not a room command: §6.3's rate is the ladder's own, and ADR-030
   // keeps a personal speed in this window. Only `caused` has anything to say.

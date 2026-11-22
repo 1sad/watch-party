@@ -991,6 +991,20 @@
   }
 
   /**
+   * T21: how old the elected element's numbers are, in millis. `elected` is the
+   * snapshot of its last report, not a fresh look - a site reports at most once a
+   * second - so a gap compared against `expected` at a later tick charges the
+   * reading's own age to the drift. 09b measured it: a 1.151 s lead read as about
+   * 0.2 s, the rate went back to 1 four seconds in, again every five seconds for
+   * 100 s.
+   */
+  function electedReadingAgeMs(): number {
+    if (elected === null) return 0
+    const known = playerFrames.get(elected.source)
+    return known === undefined ? 0 : Math.max(0, Date.now() - known.receivedAt)
+  }
+
+  /**
    * §6.3's nudge, on the elected site player only (T14). The deadline is the
    * hold's own `untilAuthorityMs` — the frame's number, or the older hold's when
    * a frame held nothing — on this window's clock. The watch is the file
@@ -1009,7 +1023,7 @@
     if (live === null) return
     siteNudgeTimer = setTimeout(() => {
       siteNudgeTimer = undefined
-      postRateCommands(siteNudge.step(elected, playback, authorityClock()))
+      postRateCommands(siteNudge.step(elected, playback, authorityClock(), electedReadingAgeMs()))
       if (siteNudge.current() === null) stopSiteNudge()
     }, Math.max(0, live.hold.untilAuthorityMs - now))
     siteNudgeWatch = setInterval(() => {
@@ -1017,7 +1031,7 @@
         stopSiteNudge()
         return
       }
-      postRateCommands(siteNudge.step(elected, playback, authorityClock()))
+      postRateCommands(siteNudge.step(elected, playback, authorityClock(), electedReadingAgeMs()))
       if (siteNudge.current() === null) stopSiteNudge()
     }, NUDGE_WATCH_MS)
   }

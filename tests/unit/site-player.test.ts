@@ -3,13 +3,13 @@
  *
  * `src/shared/site-player.ts` is the only place that decides what a `state`
  * frame makes the elected element do, and whether one of its events is ours
- * (§6.6). The cases below are the ticket's own:
+ * (В§6.6). The cases below are the ticket's own:
  *
  * - a command the room posted produces no outbound room frame (the echo is
  *   recorded before the command leaves and consumed by the event it causes);
  * - a page event without a matching echo does produce one, as the controller's,
  *   and a guest's is corrected back instead (ADR-030);
- * - the bridge's report fields map onto §5's `report` shape, field names and all.
+ * - the bridge's report fields map onto В§5's `report` shape, field names and all.
  */
 
 import test from 'node:test'
@@ -213,7 +213,7 @@ test('a page event with no echo is a person\'s: the controller\'s is a room comm
   })
 })
 
-test('a seek the page made carries §5\'s wasPlaying', () => {
+test('a seek the page made carries В§5\'s wasPlaying', () => {
   const echoes = createSiteEchoes()
   const elected = player()
   const event: PlayerActionEvent = { source: SOURCE, id: 1, event: 'seeked', t: 12.5, wasPlaying: true }
@@ -271,7 +271,7 @@ test('an echo recorded for a beat still expires a second after it', () => {
   assert.equal(echoes.consume({ source: SOURCE, id: 1 }, 'play', 2_500 + ECHO_EXPIRY_MS), false)
 })
 
-test('the bridge\'s report fields map onto §5\'s report shape, by name', () => {
+test('the bridge\'s report fields map onto В§5\'s report shape, by name', () => {
   const reading: PlayerReading = { t: 83.61, paused: true, readyState: 4, buffered: 1400.5, rate: 1 }
   const frame = reportFromPlayer(reading, { duration: 1420.0436, origin: 'https://x.example', rtt: 3 })
 
@@ -367,7 +367,7 @@ test('the bridge\'s caused-event flag reaches the decision for play, pause, seek
   assert.deepEqual(
     decidePageEvent(person('rate'), elected, createSiteEchoes(), 100_000, true),
     { kind: 'ignore' },
-    'a rate has no room command: §6.3\'s rate is the ladder\'s own',
+    'a rate has no room command: В§6.3\'s rate is the ladder\'s own',
   )
 })
 
@@ -433,6 +433,60 @@ test('a pause a person pressed before a removal still reaches the room', () => {
     source: SOURCE, id: 1, event: 'pause', t: 84.01, caused: false, detached: true,
   }
   assert.deepEqual(decidePageEvent(removal, elected, createSiteEchoes(), 100_000, true), { kind: 'echo' })
+})
+
+/*
+ * Ticket 21: a realignment is not a choice (09b, measured).
+ *
+ * The ZEN press made a new mirror the elected player at 00:31:12.353 and the
+ * page put it on the room's 69.064 the same instant. The slow mirror fired
+ * `seeked` at 69.064 **2.33 s later** вЂ” after В§6.6's one-second window and after
+ * the bridge's `caused` entry had expired вЂ” so the page wrote
+ * `state rev=5 reason=seek position=69.068` and pulled the guest back 2.3 s
+ * (`logs/host-20261122-002932-866-4276.log`). The seek the page performed to
+ * catch up is not the controller's, however long the element takes to land it.
+ */
+test('a realignment\'s seek that lands after the echo window writes no room frame (T21)', () => {
+  const now = 100_000
+  const replacement = player({ id: 2, t: 60.129, readyState: 1, paused: false, playing: true })
+  const room = playing(69.064, { updatedAt: now })
+  const echoes = createSiteEchoes()
+  const target = { source: replacement.source, id: replacement.id }
+
+  const plan = realignPlan(room, 4, 'play', replacement, now)
+  assert.ok(plan, 'the replacement is put on the room position')
+  assert.equal(plan.command.target, 69.064)
+  echoes.expect(target, echoEntries(plan, now))
+
+  // 2.33 s later the mirror has finished moving. The bridge's own `caused` entry
+  // expired with the same one-second window, so only the position says whose seek
+  // this was.
+  const landed: PlayerActionEvent = {
+    source: replacement.source,
+    id: replacement.id,
+    event: 'seeked',
+    t: 69.064,
+    wasPlaying: true,
+    caused: false,
+  }
+  assert.deepEqual(
+    decidePageEvent(landed, replacement, echoes, now + 2330, true),
+    { kind: 'echo' },
+    'the page\'s own catch-up seek is not a room frame, however late it lands',
+  )
+
+  // A person's move to somewhere else is still the room's news.
+  assert.deepEqual(
+    decidePageEvent({ ...landed, t: 40 }, replacement, echoes, now + 2330, true),
+    { kind: 'send', command: { type: 'seek', position: 40, wasPlaying: true } },
+    'only the position the page asked for is spent',
+  )
+  // And the same position a second time is a person's: one write, one echo.
+  assert.deepEqual(
+    decidePageEvent(landed, replacement, echoes, now + 2330, true),
+    { kind: 'send', command: { type: 'seek', position: 69.064, wasPlaying: true } },
+    'the declaration is spent by the event it described, not held forever',
+  )
 })
 
 test('the replacement\'s realignment still runs: a swap keeps the room\'s time', () => {
@@ -524,7 +578,7 @@ test('an election that leaves nobody elected keeps the page quiet (T07, 06b)', (
   assert.equal(step.unaligned, true, 'the next elected player is realigned before it reports')
 })
 
-test('pageCommitted resets to 0, paused, and realigns to nothing (T07, §5)', () => {
+test('pageCommitted resets to 0, paused, and realigns to nothing (T07, В§5)', () => {
   const committedAt = 120_000
   const after = playbackAfterPageCommit(committedAt)
   assert.deepEqual(after, { playing: false, position: 0, updatedAt: committedAt, rate: 1 })
@@ -629,7 +683,7 @@ test('an alignment still out of place after the room\'s tolerance gets one line 
   assert.equal(alignmentOverdue(null, 1_000), false, 'nothing is being waited for')
   assert.equal(alignmentOverdue(1_000, 1_000 + ALIGN_TOLERANCE_MS - 1), false)
   assert.equal(alignmentOverdue(1_000, 1_000 + ALIGN_TOLERANCE_MS), true)
-  assert.equal(ALIGN_TOLERANCE_MS, 4_000, "§6.3's hard-seek threshold is the room's tolerance")
+  assert.equal(ALIGN_TOLERANCE_MS, 4_000, "В§6.3's hard-seek threshold is the room's tolerance")
 })
 
 test('the tolerance and the ladder are one number, so neither can move alone (T16)', () => {
@@ -637,8 +691,8 @@ test('the tolerance and the ladder are one number, so neither can move alone (T1
   // from it, so a threshold change moves both in this same run.
   assert.equal(ALIGN_TOLERANCE_MS, SEEK_AHEAD_SECONDS * 1000, 'one edit moves both')
 
-  // And the same boundary read through the ladder: past the tolerance §6.3 jumps,
-  // below it §6.3 nudges. A tolerance that stopped being the ladder's threshold
+  // And the same boundary read through the ladder: past the tolerance В§6.3 jumps,
+  // below it В§6.3 nudges. A tolerance that stopped being the ladder's threshold
   // would fail one of these two, whatever the constants were called.
   const input = (drift: number): CorrectionInput => ({
     drift,
@@ -662,7 +716,7 @@ test('the tolerance and the ladder are one number, so neither can move alone (T1
 })
 
 /*
- * Ticket 14: §6.3's nudge reaches the site's elected player.
+ * Ticket 14: В§6.3's nudge reaches the site's elected player.
  *
  * The hold is the file player's (`Player.svelte`'s `held`/`nudgeTimer`/
  * `nudgeWatch`), with a page command where the local write was. The four cases
@@ -694,14 +748,14 @@ test('the rate is restored to exactly 1 at the end time', () => {
   const playback = playing(600)
 
   assert.equal(nudge.apply(SPEED_UP_RATE, 101_000, elected, 100_000).length, 1)
-  assert.deepEqual(nudge.step(elected, playback, 100_999), [], 'the hold is still in force')
-  const restore = nudge.step(elected, playback, 101_000)
+  assert.deepEqual(nudge.step(elected, playback, 100_999, 0), [], 'the hold is still in force')
+  const restore = nudge.step(elected, playback, 101_000, 0)
   assert.equal(restore.length, 1, 'one restore at the bound')
   assert.equal(restore[0].action, 'rate')
   assert.equal(restore[0].rate, 1, 'exactly 1, not a stopped rate')
   assert.equal(restore[0].id, elected.id)
   assert.equal(nudge.current(), null)
-  assert.deepEqual(nudge.step(elected, playback, 101_001), [], 'one restore, one owner')
+  assert.deepEqual(nudge.step(elected, playback, 101_001, 0), [], 'one restore, one owner')
 
   // A nudge that arrives already past its bound holds nothing at all.
   assert.deepEqual(createSiteNudge().apply(SPEED_UP_RATE, 99_000, elected, 100_000), [])
@@ -714,7 +768,7 @@ test('a nudge produces no outbound room frame', () => {
   const target = { source: elected.source, id: elected.id }
 
   for (const command of nudge.apply(SPEED_UP_RATE, 120_000, elected, 100_000)) {
-    assert.equal(command.kind, 'playerCommand', 'a page message, not a §5 room frame')
+    assert.equal(command.kind, 'playerCommand', 'a page message, not a В§5 room frame')
     assert.equal('type' in command, false, 'no room frame is ever built here')
   }
 
@@ -740,7 +794,7 @@ test('a pause or seek during a nudge does not leave the rate at 1.05', () => {
   nudge.apply(SPEED_UP_RATE, 140_000, elected, 100_000)
 
   // A `state` (pause, seek or snap) is the room moving the playhead, so the hold
-  // ends with it — `postToSite` calls this before the plan goes out.
+  // ends with it вЂ” `postToSite` calls this before the plan goes out.
   const restore = nudge.end()
   assert.equal(restore.length, 1)
   assert.equal(restore[0].rate, 1)
@@ -757,9 +811,9 @@ test('the hold ends when the gap is back under the deadband, not only at the bou
   nudge.apply(SPEED_UP_RATE, 140_000, player({ t: 601 }), 100_000)
 
   // 0.6 s out still: the rate holds.
-  assert.deepEqual(nudge.step(player({ t: 601 }), playback, 100_400), [])
-  // Back within §6.3's quarter second: restore, well before the bound.
-  const restore = nudge.step(player({ t: 600.9 }), playback, 100_800)
+  assert.deepEqual(nudge.step(player({ t: 601 }), playback, 100_400, 0), [])
+  // Back within В§6.3's quarter second: restore, well before the bound.
+  const restore = nudge.step(player({ t: 600.9 }), playback, 100_800, 0)
   assert.equal(restore.length, 1)
   assert.equal(restore[0].rate, 1)
 })
@@ -772,12 +826,56 @@ test('a replaced element inherits nothing, and the deadline restores the one tha
 
   // The replacement is never written to, and cannot be judged against a hold on
   // another element, so it cannot shorten or extend one either.
-  assert.deepEqual(nudge.step(replacement, playing(600), 100_500), [])
-  const restore = nudge.step(replacement, playing(600), 130_000)
+  assert.deepEqual(nudge.step(replacement, playing(600), 100_500, 0), [])
+  const restore = nudge.step(replacement, playing(600), 130_000, 0)
   assert.equal(restore.length, 1)
   assert.equal(restore[0].rate, 1)
   assert.equal(restore[0].id, first.id, 'the element that was rated is the one restored')
   assert.equal(restore[0].source, first.source)
+})
+
+/*
+ * Ticket 21: a hold lasts until a reading closes the gap (09b, measured).
+ *
+ * A site's bridge reports at most once a second, so at a watch tick the elected
+ * element's numbers are up to a second old. Comparing that reading against
+ * `expected` at the tick's own instant charges the reading's age to the gap: the
+ * live run's 1.151 s lead read as about 0.2 s, the rate went back to 1 four
+ * seconds in at the same drift, and it did that every five seconds for 100 s
+ * (`logs/host-20261122-002932-866-4276.log`). The gap belongs to the instant the
+ * reading describes, which is the reading's own age away.
+ */
+test('a 1 s lead holds the rate past five seconds, until a reading closes it (T21)', () => {
+  const start = 100_000
+  const room = playing(600, { updatedAt: start })
+  // 1 s ahead at the start, and closing by exactly what 0.95 buys: 5 % a second.
+  const reports = Array.from({ length: 21 }, (_, k) => ({ at: start + k * 1000, t: 601 + 0.95 * k }))
+  const bound = start + 20_000 // |1 s| / 5 %, the authority's own bound
+
+  const nudge = createSiteNudge()
+  nudge.apply(SLOW_DOWN_RATE, bound, player({ t: 601 }), start)
+
+  let restoredAt: number | null = null
+  for (let now = start; now <= start + 25_000 && restoredAt === null; now += 200) {
+    let reading = reports[0]
+    for (const one of reports) if (one.at <= now) reading = one
+    const commands = nudge.step(player({ t: reading.t }), room, now, now - reading.at)
+    if (commands.length > 0) {
+      assert.equal(commands[0].rate, 1, 'the end writes exactly 1')
+      restoredAt = now
+    }
+  }
+
+  if (restoredAt === null) assert.fail('the hold never ended: a reading or the bound must restore the rate')
+  assert.ok(
+    restoredAt >= start + 5000,
+    `the rate held for five seconds: restored at ${restoredAt - start} ms, with the gap still open`,
+  )
+  assert.ok(
+    restoredAt <= start + 16_000,
+    `and it ended on a reading inside the deadband, not on the ${bound - start} ms bound: ${restoredAt - start} ms`,
+  )
+  assert.equal(nudge.current(), null, 'one end, one owner')
 })
 
 
