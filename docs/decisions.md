@@ -1106,6 +1106,11 @@ release; and one behaviour to decide at build time - the `watchparty://` invite 
 portable copy either writes that registration on first run (a small trace) or runs without one-click links. Nothing
 else moves: the room, the page and the host keep their current shapes, which is what makes this M7 and not a rewrite.
 
+> **Amended 2026-11-22 (ADR-042):** the `watchparty://` registration is not an installer's job, and there is no
+> installer (the Decision above). ADR-042 leaves the registration exactly as it is: it is already rewritten on every
+> start from the running executable's own path, and ticket 50 measured a packaged copy taking its own invite link back.
+> The Cost paragraph's "decide at build time" is the state before that answer.
+
 
 
 
