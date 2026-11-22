@@ -1,6 +1,6 @@
 # Testing by hand
 
-Two windows, read from their own logs. This page is the recipe for the phase gate in `spec.md` §7 C, and for any
+Two windows, read from their own logs. This page is the recipe for the phase gate in `spec.md` §13, and for any
 check that needs a real window rather than a test. It is written so that the next person does not have to rediscover
 it: every command below was run on 2026-11-21 and its output is quoted.
 
@@ -10,7 +10,7 @@ same moment" (T7b2), and the difference was only visible by comparing the clock 
 
 ## 1. What the gate is
 
-`spec.md` §7 C, the milestone gate: one file, two app windows on this machine, about ten minutes, one window stalled on
+`spec.md` §13, the milestone gate: one file, two app windows on this machine, about ten minutes, one window stalled on
 purpose. The gap must never be audible and the healthy window must never jump. **Two windows on this one machine** is
 the gate; "on the other machine" needs a second machine on the LAN and is recorded as unproven, not skipped.
 
