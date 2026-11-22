@@ -17,6 +17,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
+import { ECHO_EXPIRY_MS } from '../../src/shared/echo.ts'
 import { PLAYER_MESSAGE_KINDS } from '../../src/shared/player.ts'
 
 const source = readFileSync(new URL('../../src/shared/player-bridge.js', import.meta.url), 'utf8')
@@ -691,6 +692,22 @@ test('a player that watches the promise still sees the engine\'s refusal (T08)',
   // The wrapper is not allowed to turn a refusal into a success: a site that
   // reads its own promise must be able to tell, or it paints an icon that lies.
   await assert.rejects(bridge.fullscreen.request(), /not granted/)
+})
+
+test('the bridge believes a caused event for exactly as long as the echo set does (T33)', () => {
+  // The bridge is injected as text and cannot import the TS constant, so its
+  // `CAUSED_EXPIRY_MS` is a second copy of `ECHO_EXPIRY_MS` (its own comment
+  // says "the same second `echo.ts` allows"). Two windows for one event: the
+  // echo set drops our command's event, the bridge's `caused` flag says it was
+  // ours. Let them drift and a caused event is judged a person's, or an echo is
+  // dropped late - either way a pause becomes a no-op (spec.md §6.6).
+  const declared = /var CAUSED_EXPIRY_MS = (\d+)/.exec(source)
+  assert.ok(declared, 'player-bridge.js still declares a numeric CAUSED_EXPIRY_MS')
+  assert.equal(
+    Number(declared[1]),
+    ECHO_EXPIRY_MS,
+    'CAUSED_EXPIRY_MS in src/shared/player-bridge.js must equal ECHO_EXPIRY_MS in src/shared/echo.ts',
+  )
 })
 
 
