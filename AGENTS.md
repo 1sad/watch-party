@@ -120,6 +120,7 @@ The docs are honest about where they are thin:
 | What to do next, and how to test it | `docs/handoff.md` |
 | Prior art, numbers, links | `docs/research.md` |
 | How to test by hand, and the two-window gate | `docs/testing-manual.md` |
+| Costs, per session and per phase | `.scratch/COSTS.md` - `verify-cost.ps1` in the agent kit reads them from the local API and rewrites the file with `-Write` |
 | Vocabulary | `docs/glossary.md` |
 
 ## Definition of v1
