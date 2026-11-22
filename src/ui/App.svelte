@@ -104,6 +104,12 @@
   }
 
   let payload = $state<StartPayload | null>(null)
+  /**
+   * T64: this window joined from a link (or the box), so the room it shows is
+   * someone else's. `/discovery` no longer answers a guest (`app.ts`), and a
+   * guest's page must not be drawn as the host's own start screen.
+   */
+  let fromLink = $state(false)
   let unreachable = $state(false)
   let copied = $state(false)
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -260,8 +266,11 @@
   let pingTimer: ReturnType<typeof setTimeout> | undefined
 
   // The window's own room keeps the whole start screen; a room someone else
-  // started does not have this window's invite link to show.
-  const inOwnRoom = $derived(roomCode === null || payload === null || roomCode === payload.roomCode)
+  // started does not have this window's invite link to show. A window that
+  // joined from a link is never in its own room, whatever a frame says (T64).
+  const inOwnRoom = $derived(
+    !fromLink && (roomCode === null || payload === null || roomCode === payload.roomCode),
+  )
 
   function stopPing(): void {
     if (pingTimer !== undefined) clearTimeout(pingTimer)
@@ -1231,7 +1240,32 @@
       return
     }
     enteredRoom = true
+    // T64: a page with no start state of its own is a guest's, and `/discovery`
+    // answers only loopback now (`app.ts`). The room it just joined is what it
+    // shows; the start screen's discovery fields stay empty because this window
+    // has no answer of its own to put there.
+    if (payload === null) {
+      fromLink = true
+      payload = joinedFrom({ code: target.code, port: target.port })
+    }
     connect(target.host, target.port, target.code)
+  }
+
+  /**
+   * T64: the start screen of a window that joined from a link - the room's code
+   * and nothing else. `inOwnRoom` is false for such a window, so none of
+   * `result`, `invite` or `status` is ever read; they are here because
+   * `StartPayload` is the one shape the screen renders.
+   */
+  function joinedFrom(target: { code: string; port: number }): StartPayload {
+    return {
+      status: 'ready',
+      roomCode: target.code,
+      lanIp: null,
+      localPort: target.port,
+      result: null,
+      invite: null,
+    }
   }
 
   /**
@@ -1500,17 +1534,31 @@
 
   onMount(() => {
     // R26's no-typing path: `?join=<encoded link>` is parsed before the first
-    // discovery answer can claim this window's own room.
-    const prefilled = new URLSearchParams(location.search).get('join')
-    if (prefilled !== null) {
+    // discovery answer can claim this window's own room. T64: the invite link's
+    // own form (`/join?c=<code>`) carries the room in this window's address, so
+    // the same parser reads it from there - either way the code in the link is
+    // the room. A window with a link never asks `/discovery`, which now answers
+    // only loopback (`app.ts`); a guest is not loopback.
+    const params = new URLSearchParams(location.search)
+    const pasted = params.get('join')
+    if (pasted !== null) joinText = pasted
+    const target = pasted !== null
+      ? parseJoinLink(pasted)
+      : params.has('c')
+        ? parseJoinLink(location.href)
+        : null
+
+    if (pasted !== null && target === null) sentence = UNREADABLE_LINK
+
+    if (target === null) {
+      void refresh()
+    } else {
+      fromLink = true
       enteredRoom = true
-      joinText = prefilled
-      const target = parseJoinLink(prefilled)
-      if (target === null) sentence = UNREADABLE_LINK
-      else connect(target.host, target.port, target.code)
+      payload = joinedFrom({ code: target.code, port: target.port })
+      connect(target.host, target.port, target.code)
     }
 
-    void refresh()
     host?.addEventListener('message', onHostMessage)
     return () => {
       host?.removeEventListener('message', onHostMessage)

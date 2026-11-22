@@ -47,6 +47,22 @@ export interface SidecarOptions {
   retryDiscovery?: () => void
 }
 
+/**
+ * T64, ADR-044: the room code is the key, and these three routes hand it out
+ * (`/discovery` carries `roomCode` and the whole invite link). Only the host's
+ * own window may have them: it always loads the page from `127.0.0.1`
+ * (`main.ts`), and a guest's page joins from the code in its own link instead
+ * (`ui/App.svelte`). `/healthz` is here too because nothing outside this
+ * machine needs the version.
+ */
+const HOST_ONLY_ROUTES = new Set(['/discovery', '/discovery/retry', '/healthz'])
+
+/** Did this request come from this machine? The socket's own address, nothing the caller can claim. */
+function isLoopback(request: IncomingMessage): boolean {
+  const address = (request.socket.remoteAddress ?? '').replace(/^::ffff:/, '')
+  return address === '::1' || address.startsWith('127.')
+}
+
 // A four-entry map instead of a `mime` package (ADR-035). Anything the page
 // build does not emit is served as bytes rather than guessed at.
 const CONTENT_TYPES: Record<string, string> = {
@@ -79,6 +95,14 @@ async function handle(
 ): Promise<void> {
   const method = request.method ?? 'GET'
   const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+
+  // T64: a caller that is not this machine learns nothing from these routes -
+  // no room code, no invite link, no version. 403 and one word, before anything
+  // else looks at the request.
+  if (HOST_ONLY_ROUTES.has(url.pathname) && !isLoopback(request)) {
+    sendText(response, 403, 'forbidden\n', method)
+    return
+  }
 
   if (url.pathname === '/discovery') {
     if (method !== 'GET' && method !== 'HEAD') {
