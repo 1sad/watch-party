@@ -1193,3 +1193,30 @@ next to it, and a launcher that sets `DOTNET_BUNDLE_EXTRACT_BASE_DIR` is a secon
 machine. Stale bundle folders from earlier builds are not pruned - four (1,559,296 B) had accumulated on this machine -
 and removing them would itself be a write outside the folder, against a directory the loader owns; Windows' own temp
 cleanup is where that belongs.
+
+---
+
+## ADR-044 - The invite link is the key, and the room seats ten
+
+**Decision.** A caller who arrives at the room's port with nothing but the address gets a gate page and no more: no
+roster, no chat, no room state, no version. The link carries the room code and that code is the only credential; a
+wrong one is refused, and repeated refusals close the door on that caller. The room holds **ten** members, not five.
+
+**Why.** The first release handed the room code to anyone who could reach the port (`GET /discovery` returned
+`roomCode` and the whole invite link unconditionally), so an open port was a room with the key taped to the door -
+one finding from the 2026-11-22 recon, recorded in `.scratch/phase-4-invite/spec.md`. The user's answer was the
+cheapest correct one: the link already travels between friends, so make it the key rather than adding an identity
+("no accounts" stands, ADR-030). Ten seats because the group is larger than the five the design was sized for, and
+nothing on the control path scales with members: only chat and play/pause/seek travel, kilobytes per second
+(ADR-023), so a tenth seat costs the host's uplink nothing measurable.
+
+**Rejected.** Accounts, passwords and signed identities (ADR-030 stands: trolling in an invited room is a social
+problem, and the recorded answer is a remove button, not a sign-in). A separate long token beside the code - it
+doubles the thing a person has to keep, when the code is already in every link. Approving each newcomer by hand -
+one interruption per friend per evening. Leaving the five-seat cap as a "constraint of the design": it was a
+consequence of the sync maths being written for five mirrors, not a limit the code enforces for a reason.
+
+**Cost / risk.** The gate page is one more screen and one more route to keep honest; a caller who never received the
+link cannot be helped over the phone without reading six characters aloud, which is the intended friction. Ten
+members widen the roster the page must draw and the chat tail the socket sends on join. The port is still plain HTTP
+and chat is still readable on the path (ADR-023); this ADR closes the door, not the window.

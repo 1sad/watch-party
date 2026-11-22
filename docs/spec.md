@@ -739,6 +739,9 @@ watch-party.exe
   Docker, no Caddy, no TLS certificate, no database, no service.
 - **Start:** one click. The app opens its port, learns its address, and shows the link. If either step fails it
   says so *now*, with the reason, and offers the fallbacks in §14.
+- **Join:** the invite link is the key (ADR-044). A caller who has only the address gets a gate page and nothing
+  else; a wrong code is refused and repeated refusals close the door on that caller. The room holds **ten** members
+  (ADR-044, 2026-11-22: raised from five, which the design had assumed rather than required).
 - **Stop:** closing the app ends the room. In website mode everyone else's film keeps playing from the site; they
   simply lose chat and control until someone starts a new room.
 - **Files:** file mode serves from the owner's disk directly. No cache directory, no conversion unless the file is
