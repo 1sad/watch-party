@@ -607,7 +607,14 @@ Recorded because it was checked and the answer is what makes ADR-023 viable on a
 From eleven sites tested against the E2 spike. Nine of the eleven findings were UI failures rather than playback
 failures, which is what makes them cheap to fix.
 
-## ADR-028 — The app owns fullscreen; the page never takes the screen
+## ADR-028 - The app owns fullscreen; the page never takes the screen
+
+> **Amended 2026-11-22 (ticket 23):** `ContainsFullScreenElementChanged` is not the mechanism this app uses, and it
+> never fires for the page's own request. Measured 2026-11-22 (WebView2 157, ticket 23, both views, no permissions
+> policy sent): the engine refuses the page's `requestFullscreen()` with `TypeError: Permissions check failed`, so
+> there is no fullscreen element for the event to report. The app follows the page's *intent* across the bridge
+> instead: the page posts `fullscreen` and the host logs `site: fullscreen=enter w=<n> h=<n>`. The decision this ADR
+> makes - the app owns the layout, the page never takes the screen - stands unchanged.
 
 **Decision.** When a page asks for fullscreen, the app intercepts it and refuses to leave its own window. Our own
 control fills the window with the picture; the site's fullscreen button is wired to the same thing. Nothing the page
@@ -782,8 +789,14 @@ spike for loading uBOL inside WebView2 as a quality upgrade (T38) once the real 
 
 ## ADR-034 — The window is a small .NET host around WebView2; the room stays in TypeScript
 
-> **Amended 2026-11-21 (ADR-038):** the window holds **two** WebView2 controls — our page and the site — not one
+> **Amended 2026-11-21 (ADR-038):** the window holds **two** WebView2 controls - our page and the site - not one
 > filling it. Everything else here stands, including "the host contains no product logic".
+>
+> **Amended 2026-11-22 (ADR-028):** the capability list below names `ContainsFullScreenElementChanged` for
+> app-owned fullscreen. It is **not** what fullscreen uses. Measured 2026-11-22 (ticket 23, WebView2 157, both
+> views, no permissions policy): the engine never grants the page's `requestFullscreen()`, so there is no
+> fullscreen element and the event never fires. Fullscreen follows the page's bridge `fullscreen` intent instead,
+> logged as `site: fullscreen=enter w=<n> h=<n>`. Every other capability in that list is unchanged.
 
 **Decision.** The app is one install, one launch and one window, made of two processes that start and stop together:
 
@@ -995,8 +1008,9 @@ relay and the fullscreen toggle are window mechanics, not product logic.
 ## ADR-039 - The room may sit a quarter of a second apart
 
 **Decision.** The correction ladder's deadband is **0.25 s**, not the 0.1 s borrowed from Syncplay (`spec.md` §6.3): a
-window within a quarter of a second of `expected` is left alone, and the rate nudge runs from 0.25 s to 1.5 s and stops
-when the gap is back under 0.25 s. The four-second hard seek, the "more than 1.75 s behind" trigger, the two
+window within a quarter of a second of `expected` is left alone, and the rate nudge runs from 0.25 s up to 4 s - the
+1.5-4 s band nudges too - and the nudge stops when the gap is back under 0.25 s. The four-second hard seek, the
+"more than 1.75 s behind" trigger, the two
 consecutive bad reports, the once-per-five-seconds limit and the restore to `playbackRate = 1` are unchanged.
 
 **Why.** Measured on 2026-11-21 (phase 1): a healthy window sits 0.086-0.112 s behind, so with a 0.1 s deadband ordinary
@@ -1013,5 +1027,32 @@ much mirrors differ.
 
 **Cost.** The room is looser by design: two windows a quarter second apart are in step. Nothing else moves; the ladder's
 other constants and the wire format are untouched.
+
+---
+
+## ADR-040 - The ad list is data from EasyList, under a share-alike licence
+
+**Decision.** The app ships one data file, `data/ad-hosts.txt`: 43,021 bare hosts, each the `||host^` rule of
+EasyList's `easylist_adservers.txt` at commit `f49a0ca` (2026-11-21), from
+`https://raw.githubusercontent.com/easylist/easylist/master/easylist/easylist_adservers.txt`. The host's request
+filter reads it (R20, ADR-034) and treats a bare host as that host and its subdomains. The file's first line carries
+the source, the commit and the licence, so the provenance travels with the data.
+
+**Licence.** EasyList is dual-licensed **GPLv3 or CC BY-SA 3.0**. This project takes **CC BY-SA 3.0** for the list:
+it is neither GPL nor AGPL, so ADR-035's "Permissive licences only - anything GPL or AGPL in the app itself is
+refused" is met as written. The list is redistributed as a data file with its attribution and licence in the file,
+which is what CC BY-SA asks of a redistributed copy. Share-alike binds the list itself, not the program that reads
+it: a request filter that loads a host list creates no adaptation of the list.
+
+**Why not the alternatives.** (a) Hand-write a list: 43,021 hosts is maintenance nobody here will do, and a short
+list blocks few ads. (b) Ship no list: R20 is unmet, and ads in the site view are the first thing the user sees.
+(c) uBlock Origin's lists: GPL, and ADR-035 leaves that question to T38 - the same obligation with a heavier file.
+(d) Fetch the list at run time: a network call at every start, the no-account promise bent, and the licence question
+just moves to the user's machine.
+
+**Cost.** A share-alike obligation on this one file: wherever it is redistributed it keeps its attribution and
+CC BY-SA, and a list derived from it stays CC BY-SA. If that ever becomes unacceptable the list is replaceable data -
+one file, one header, one test - not an architectural dependency. Refreshing it means a later download at a newer
+commit with the header's date and sha updated.
 
 
