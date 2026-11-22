@@ -1074,4 +1074,33 @@ CC BY-SA, and a list derived from it stays CC BY-SA. If that ever becomes unacce
 one file, one header, one test - not an architectural dependency. Refreshing it means a later download at a newer
 commit with the header's date and sha updated.
 
+## ADR-041 - The app ships as one portable executable; the browser engine is the only dependency it does not carry
+
+**Decision** (the user's, 2026-11-22). The app ships as a single executable per build, for Windows 10/11 x64, run from
+any folder or removable drive: no installer, no administrator rights, no separate runtime to install. Everything the
+app itself needs is inside the file - the .NET runtime, the Node runtime that runs the room logic, and the built page.
+The browser engine is the one exception, and there are **two builds**: `portable`, which uses the WebView2 runtime the
+machine already has, and `portable-full`, which bundles a fixed WebView2 runtime for a machine without it. Both are
+built from the same sources and tested the same way; the second exists so the first's assumption can be measured, not
+assumed. **No rework** is part of the decision: the room logic stays in TypeScript on Node, and Node is embedded in the
+executable rather than replaced.
+
+**Why.** The only way a friend watches tonight is a file they can run. An installer is a step someone can refuse, a
+runtime download is a step that can fail on a hotel network, and .NET or Node being absent from a clean machine is
+exactly the case a group of five will hit. Shipping two builds answers the one question we cannot answer from here -
+whether WebView2 can be assumed - by measuring it on a machine that lacks it.
+
+**Rejected.** (a) Rewriting the room's logic in C# so the whole app is one .NET program: it would delete the constraint
+the user set (no rework), duplicate the timing maths that ADR-036 and `AGENTS.md` keep in one place, and buy nothing a
+bundled runtime does not. (b) Installer-only, as §13 previously assumed: it needs trust and a click, and it cannot be
+carried on a stick. (c) A single build either way: without the browser it fails on a stripped Windows install, and
+with it, every share is ~300 MB for a machine that already had the engine. (d) A folder of files (exe, Node, page):
+that is a portable install, not one file, and the user asked for one.
+
+**Cost.** Roughly 140-170 MB for `portable` and about 300 MB for `portable-full`; two artifacts to test at each
+release; and one behaviour to decide at build time - the `watchparty://` invite link is registered by an installer, so a
+portable copy either writes that registration on first run (a small trace) or runs without one-click links. Nothing
+else moves: the room, the page and the host keep their current shapes, which is what makes this M7 and not a rewrite.
+
+
 

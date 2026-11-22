@@ -122,6 +122,7 @@ unaffected (ADR-024, §4.4).
 | R35 | Peer-to-peer plumbing is blocked by default, with a one-line notice and a per-site Allow switch | load a site that uses WebRTC; the notice appears, playback is unaffected, and Allow makes the site work if it needed it |
 | R36 | Two controllers staging different pages at once: the later request replaces the earlier, and the first sees a "replaced" notice | both click a title within 2 s; one commits, the other is told why it did not |
 | R37 | A page's request to open a window never opens one; the app says so in one line, naming the host it asked for | click a page's popup link; no window appears, and one line names the host |
+| R38 | The app ships as one portable executable per variant, with every dependency except the browser engine inside it | copy the file to a folder on a Windows machine where nothing was installed, run it from there, and the room still syncs |
 
 Rows tagged *v2* are requirements that survive the reordering (ADR-027) but are not built in v1. Nothing was
 deleted: R16 is the only one genuinely dropped, because rooms no longer outlive their members.
@@ -752,7 +753,11 @@ Milestones, not modes: each one is demoable. R-numbers are in §2.
 | **M4 Peer mesh and takeover** | every app connects to every app, room replication, authority transfer with no interruption | R22, R27; the owner closes their app mid-film and nobody's picture stops, chat keeps working, a new host appears within 2 s |
 | **M5 Add-on** | website-mode extension, Chrome + Firefox manifests, chat overlay | R18, R19; add-on and app share a room; typing "ar" in chat on a site where "a" seeks does not seek |
 | **M6 Rescue and Linux** | rescue relay, Linux build | R25; one stranded member is relayed while everyone else stays on the site |
+| **M7 Portable build** | one self-contained executable, and a second with the browser engine bundled; no installer, no rework of the room logic | R38; copied into a fresh folder on a clean machine it starts a room and passes the two-window gate |
 | **v2 and later** | single-file library, subtitles for files, HLS relay, transcode, audio languages, Android | as written in §8, §9, §11 and research §23 |
+
+**M7 runs before M3.** It is the whole of the next phase's scope, and that phase stops once the portable build has been
+tested (the user's order, 2026-11-22).
 
 ## 14. Failure behaviour
 
