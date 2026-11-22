@@ -116,26 +116,61 @@ export interface DiscoverOptions {
   map?: boolean
 }
 
+interface AttemptStep {
+  outcome: MappingOutcome
+  /** The steps that produced no answer, named for the final `verdict=` line. */
+  silent: string[]
+}
+
+/**
+ * T65: one ASCII line per step, on stdout only. Stdout reaches the host log
+ * even in the shipped build (`NODE_ENV=production`), so this is never behind
+ * the sidecar's `dev` gate and never goes through `@libp2p/logger` (silent
+ * without `DEBUG`). The dependency's own sockets and datagrams are not visible
+ * from here, so a line says only what this file saw (AGENTS.md rule 10: ASCII).
+ */
+function trace(t0: number, line: string): void {
+  process.stdout.write(`discovery: ${line} ms=${Date.now() - t0}\n`)
+}
+
 /** One attempt. Never throws; every ending is a `DiscoveryResult`. */
 export async function discover(options: DiscoverOptions): Promise<DiscoveryResult> {
+  const t0 = Date.now()
   const timeoutMs = options.timeoutMs ?? DISCOVERY_TIMEOUT_MS
+  trace(t0, `start local_port=${options.localPort} lan_ip=${options.lanIp ?? 'none'} budget_ms=${timeoutMs}`)
 
   if (options.map === false) {
-    return toResult({ type: 'refused', detail: 'port mapping is disabled (WATCHPARTY_NO_MAP)' }, options)
+    trace(t0, 'map=disabled reason=WATCHPARTY_NO_MAP')
+    return finish({ type: 'refused', detail: 'port mapping is disabled (WATCHPARTY_NO_MAP)' }, options, t0, [])
   }
 
   if (options.lanIp === null) {
-    return toResult({ type: 'refused', detail: 'no local network address to map' }, options)
+    trace(t0, 'map=skipped reason=no-lan-ip')
+    return finish({ type: 'refused', detail: 'no local network address to map' }, options, t0, [])
   }
 
-  let outcome: MappingOutcome
+  let step: AttemptStep
   try {
-    outcome = await mapPort(options.localPort, options.lanIp, timeoutMs)
+    step = await mapPort(options.localPort, options.lanIp, timeoutMs, t0)
   } catch (error) {
     // mapPort catches everything it knows about; this is the last belt.
-    outcome = { type: 'refused', detail: messageOf(error) }
+    trace(t0, `map=error ${describeError(error)}`)
+    step = { outcome: { type: 'refused', detail: messageOf(error) }, silent: ['unexpected'] }
   }
-  return toResult(outcome, options)
+  return finish(step.outcome, options, t0, step.silent)
+}
+
+function finish(
+  outcome: MappingOutcome,
+  options: DiscoverOptions,
+  t0: number,
+  silent: string[],
+): DiscoveryResult {
+  const result = toResult(outcome, options)
+  const mappedPort = result.mappedPort === null ? 'none' : String(result.mappedPort)
+  const silentSteps = silent.length === 0 ? 'none' : [...new Set(silent)].join(',')
+  trace(t0, `verdict=${result.kind} address_class=${result.addressClass} mapped_port=${mappedPort} silent=${silentSteps}`)
+  return result
 }
 
 function toResult(outcome: MappingOutcome, options: DiscoverOptions): DiscoveryResult {
@@ -164,36 +199,59 @@ const NAT_PMP_BUDGET_MS = 2_500
  * needs no discovery and E1's router answers it. UPnP is still tried, because
  * many routers only speak it.
  */
-async function mapPort(localPort: number, lanIp: string, timeoutMs: number): Promise<MappingOutcome> {
+async function mapPort(localPort: number, lanIp: string, timeoutMs: number, t0: number): Promise<AttemptStep> {
   const deadline = Date.now() + timeoutMs
   const attempts: string[] = []
+  const silent: string[] = []
   let sawTimeout = false
 
-  const gatewayIp = await findDefaultGateway()
+  const gatewayIp = await findDefaultGateway(t0)
   if (gatewayIp !== null) {
     const budget = Math.min(NAT_PMP_BUDGET_MS, deadline - Date.now())
     if (budget > 0) {
-      const pmp = await mapWithNatPmp(localPort, lanIp, gatewayIp, budget)
-      if (pmp.type === 'mapped') return pmp
-      sawTimeout = sawTimeout || pmp.type === 'timeout'
-      attempts.push(`NAT-PMP: ${pmp.detail}`)
+      trace(t0, `natpmp=request gateway=${gatewayIp} local_port=${localPort} budget_ms=${budget}`)
+      const pmp = await mapWithNatPmp(localPort, lanIp, gatewayIp, budget, t0)
+      if (pmp.outcome.type === 'mapped') {
+        trace(t0, 'upnp=skipped reason=mapped-by-natpmp')
+        return { outcome: pmp.outcome, silent }
+      }
+      if (pmp.outcome.type === 'timeout') {
+        sawTimeout = true
+        silent.push('natpmp')
+      } else {
+        silent.push(...pmp.silent)
+      }
+      attempts.push(`NAT-PMP: ${pmp.outcome.detail}`)
+    } else {
+      silent.push('budget')
+      trace(t0, `natpmp=skipped reason=no-budget budget_ms=${budget}`)
+      attempts.push('NAT-PMP: no budget left')
     }
   } else {
+    silent.push('gateway')
+    trace(t0, 'natpmp=skipped reason=no-gateway')
     attempts.push('NAT-PMP: no default gateway found')
   }
 
   const remaining = deadline - Date.now()
   if (remaining > 0) {
-    const upnp = await mapWithUpnp(localPort, lanIp, remaining)
-    if (upnp.type === 'mapped') return upnp
-    sawTimeout = sawTimeout || upnp.type === 'timeout'
-    attempts.push(`UPnP: ${upnp.detail}`)
+    trace(t0, `upnp=search start signal=abort searchInterval=none timeout_ms=${remaining}`)
+    const upnp = await mapWithUpnp(localPort, lanIp, remaining, t0)
+    if (upnp.outcome.type === 'mapped') return { outcome: upnp.outcome, silent }
+    if (upnp.outcome.type === 'timeout') sawTimeout = true
+    silent.push(...upnp.silent)
+    attempts.push(`UPnP: ${upnp.outcome.detail}`)
+  } else {
+    silent.push('budget')
+    trace(t0, 'upnp=skipped reason=no-budget')
+    attempts.push('UPnP: no budget left')
   }
 
+  trace(t0, `attempts="${attempts.join('; ')}"`)
   if (sawTimeout && Date.now() >= deadline - 100) {
-    return { type: 'timeout', detail: `no answer within ${Math.round(timeoutMs / 1000)} seconds` }
+    return { outcome: { type: 'timeout', detail: `no answer within ${Math.round(timeoutMs / 1000)} seconds` }, silent }
   }
-  return { type: 'refused', detail: attempts.join('; ') }
+  return { outcome: { type: 'refused', detail: attempts.join('; ') }, silent }
 }
 
 async function mapWithNatPmp(
@@ -201,7 +259,8 @@ async function mapWithNatPmp(
   lanIp: string,
   gatewayIp: string,
   timeoutMs: number,
-): Promise<MappingOutcome> {
+  t0: number,
+): Promise<AttemptStep> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   const gateway = pmpNat(gatewayIp)
@@ -213,25 +272,40 @@ async function mapWithNatPmp(
       description: 'Watch Party',
       signal: controller.signal,
     })
+    trace(t0, `natpmp=response result=mapped external_port=${mapping.externalPort}`)
     const externalIp = (await gateway.externalIp({ signal: controller.signal })).trim()
+    const addressClass = classifyAddress(externalIp)
+    trace(t0, `natpmp=external ip=${externalIp === '' ? 'none' : externalIp}`)
+    trace(t0, `natpmp=address class=${addressClass}`)
 
     if (!isIPv4(externalIp)) {
-      return { type: 'refused', detail: `router reported a non-IPv4 address: ${externalIp}` }
+      return {
+        outcome: { type: 'refused', detail: `router reported a non-IPv4 address: ${externalIp}` },
+        silent: [],
+      }
     }
 
     keepMapping = true
     activeGateway = gateway
     return {
-      type: 'mapped',
-      externalIp,
-      mappedPort: mapping.externalPort,
-      detail: `router reported ${externalIp} (${classifyAddress(externalIp)})`,
+      outcome: {
+        type: 'mapped',
+        externalIp,
+        mappedPort: mapping.externalPort,
+        detail: `router reported ${externalIp} (${addressClass})`,
+      },
+      silent: [],
     }
   } catch (error) {
     if (controller.signal.aborted) {
-      return { type: 'timeout', detail: `NAT-PMP did not answer within ${Math.round(timeoutMs / 1000)} seconds` }
+      trace(t0, `natpmp=response result=timeout budget_ms=${timeoutMs}`)
+      return {
+        outcome: { type: 'timeout', detail: `NAT-PMP did not answer within ${Math.round(timeoutMs / 1000)} seconds` },
+        silent: ['natpmp'],
+      }
     }
-    return { type: 'refused', detail: messageOf(error) }
+    trace(t0, `natpmp=response result=refused ${describeError(error)}`)
+    return { outcome: { type: 'refused', detail: messageOf(error) }, silent: [] }
   } finally {
     clearTimeout(timer)
     if (!keepMapping) {
@@ -242,42 +316,71 @@ async function mapWithNatPmp(
   }
 }
 
-async function mapWithUpnp(localPort: number, lanIp: string, timeoutMs: number): Promise<MappingOutcome> {
+async function mapWithUpnp(
+  localPort: number,
+  lanIp: string,
+  timeoutMs: number,
+  t0: number,
+): Promise<AttemptStep> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   const client = upnpNat()
   let gateway: Gateway | null = null
   let keepMapping = false
+  const searchStart = Date.now()
 
   try {
     for await (const found of client.findGateways({ signal: controller.signal })) {
       gateway = found
+      trace(t0, `upnp=gateway host=${found.host} port=${found.port} id=${found.id} waited_ms=${Date.now() - searchStart}`)
+      // A yielded Gateway exists only after the library fetched and parsed the
+      // device description, so this is the fetch's outcome as seen from here.
+      trace(t0, 'upnp=description result=ok')
+      const mapStart = Date.now()
+      trace(t0, `upnp=map request protocol=tcp local_port=${localPort} internal_host=${lanIp}`)
       const mapping = await found.map(localPort, lanIp, {
         protocol: 'tcp',
         description: 'Watch Party',
         signal: controller.signal,
       })
+      trace(t0, `upnp=map response result=mapped external_port=${mapping.externalPort} request_ms=${Date.now() - mapStart}`)
       const externalIp = (await found.externalIp({ signal: controller.signal })).trim()
+      const addressClass = classifyAddress(externalIp)
+      trace(t0, `upnp=external ip=${externalIp === '' ? 'none' : externalIp}`)
+      trace(t0, `upnp=address class=${addressClass}`)
 
       if (!isIPv4(externalIp)) {
-        return { type: 'refused', detail: `router reported a non-IPv4 address: ${externalIp}` }
+        return {
+          outcome: { type: 'refused', detail: `router reported a non-IPv4 address: ${externalIp}` },
+          silent: [],
+        }
       }
 
       keepMapping = true
       activeGateway = found
       return {
-        type: 'mapped',
-        externalIp,
-        mappedPort: mapping.externalPort,
-        detail: `router reported ${externalIp} (${classifyAddress(externalIp)})`,
+        outcome: {
+          type: 'mapped',
+          externalIp,
+          mappedPort: mapping.externalPort,
+          detail: `router reported ${externalIp} (${addressClass})`,
+        },
+        silent: [],
       }
     }
-    return { type: 'refused', detail: 'no router answered UPnP' }
+    trace(t0, `upnp=search outcome=no-gateway waited_ms=${Date.now() - searchStart}`)
+    return { outcome: { type: 'refused', detail: 'no router answered UPnP' }, silent: ['upnp-search'] }
   } catch (error) {
+    const step = gateway === null ? 'upnp-search' : 'upnp-mapping'
     if (controller.signal.aborted) {
-      return { type: 'timeout', detail: `UPnP did not answer within ${Math.round(timeoutMs / 1000)} seconds` }
+      trace(t0, `upnp=response result=timeout step=${step} waited_ms=${Date.now() - searchStart}`)
+      return {
+        outcome: { type: 'timeout', detail: `UPnP did not answer within ${Math.round(timeoutMs / 1000)} seconds` },
+        silent: [step],
+      }
     }
-    return { type: 'refused', detail: messageOf(error) }
+    trace(t0, `upnp=response result=error step=${step} ${describeError(error)}`)
+    return { outcome: { type: 'refused', detail: messageOf(error) }, silent: [step] }
   } finally {
     clearTimeout(timer)
     if (!keepMapping && gateway !== null) {
@@ -287,23 +390,38 @@ async function mapWithUpnp(localPort: number, lanIp: string, timeoutMs: number):
 }
 
 /** The default IPv4 route's gateway, from Windows' own table (no dependency). */
-export async function findDefaultGateway(): Promise<string | null> {
-  if (process.platform !== 'win32') return null
+export async function findDefaultGateway(t0: number = Date.now()): Promise<string | null> {
+  if (process.platform !== 'win32') {
+    trace(t0, 'gateway=none route_ms=0 reason=not-win32')
+    return null
+  }
+  const routeStart = Date.now()
   try {
     const { stdout } = await execFileAsync('route', ['print', '-4'], { timeout: 3_000, windowsHide: true })
     for (const line of stdout.split(/\r?\n/)) {
       const columns = line.trim().split(/\s+/)
       if (columns.length >= 4 && columns[0] === '0.0.0.0' && columns[1] === '0.0.0.0' && isIPv4(columns[2])) {
+        trace(t0, `gateway=${columns[2]} route_ms=${Date.now() - routeStart}`)
         return columns[2]
       }
     }
-  } catch {
-    // A missing route command just means no NAT-PMP attempt.
+  } catch (error) {
+    trace(t0, `gateway=none route_ms=${Date.now() - routeStart} ${describeError(error)}`)
+    return null
   }
+  trace(t0, `gateway=none route_ms=${Date.now() - routeStart}`)
   return null
 }
 
 function messageOf(error: unknown): string {
   if (error instanceof Error && error.message.length > 0) return error.message
   return String(error)
+}
+
+/** The library's error text, plus the code it attached (NAT-PMP's result code). */
+function describeError(error: unknown): string {
+  const message = messageOf(error).replace(/\s+/g, ' ')
+  const code = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined
+  const codePart = code === undefined || code === null ? '' : `code=${String(code)} `
+  return `${codePart}detail="${message.replace(/"/g, "'")}"`
 }

@@ -134,13 +134,9 @@ async function runDiscovery(): Promise<void> {
       }),
     }
 
-    if (dev) {
-      // The three lines E1's method is read from (T2 item 4). They are also
-      // what the host's log shows, because the host logs sidecar stdout.
-      process.stdout.write(`[dev] discovery: mapped address ${result.externalIp ?? 'none'}\n`)
-      process.stdout.write(`[dev] discovery: address class ${result.addressClass}\n`)
-      process.stdout.write(`[dev] discovery: verdict ${result.kind}\n`)
-    }
+    // T65: the attempt's trace is printed by discovery.ts itself, on stdout,
+    // so the shipped build (NODE_ENV=production) records it too. Nothing to
+    // repeat behind the `dev` gate here.
   } finally {
     discovering = false
   }
