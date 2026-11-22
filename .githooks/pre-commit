@@ -52,4 +52,37 @@ check_out=$(npm run check 2>&1) || {
 errors=$(printf '%s\n' "$check_out" | tr -d '\033' | sed -n 's/.*svelte-check found \{1,\}\([0-9]\{1,\}\) error.*/\1/p' | tail -n 1)
 printf 'pre-commit: npm run check — %s errors\n' "${errors:-0}"
 
+# The third step, and the only one that looks for secrets: a token pasted into
+# a doc, a key block, a `C:\Users\<name>` path in a log. `npm test` and
+# svelte-check cannot see any of those. The scanner is not part of this
+# repository; it lives in a local toolkit. When it is not where this hook
+# expects it, the scan is SKIPPED with a line and the commit proceeds — a moved
+# folder must not become a repo nobody can commit to.
+scanner="${REPO_GUARD_SCANNER:-C:/dev/Code/repo-guard/scan_artifacts.py}"
+if [ ! -f "$scanner" ]; then
+	printf 'pre-commit: secret scan — SKIPPED (scanner not found at %s)\n' "$scanner"
+else
+	# One scanner run for the whole commit. The list is built into positional
+	# parameters rather than word-split, so a path with a space stays one
+	# argument. A deleted file is gone from disk, so it is skipped.
+	set --
+	while IFS= read -r f; do
+		[ -n "$f" ] && [ -f "$f" ] && set -- "$@" "$f"
+	done <<EOF
+$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null)
+EOF
+	if [ $# -eq 0 ]; then
+		printf 'pre-commit: secret scan — nothing to read\n'
+	else
+		scan_out=$(python "$scanner" "$@" 2>&1)
+		scan_status=$?
+		if [ $scan_status -ne 0 ]; then
+			printf 'pre-commit: secret scan — refused (exit %s)\n' "$scan_status"
+			printf '%s\n' "$scan_out"
+			refuse 'the secret scan found something in this commit'
+		fi
+		printf 'pre-commit: secret scan — clean (%s files)\n' "$#"
+	fi
+fi
+
 exit 0
