@@ -1430,9 +1430,18 @@ public sealed class MainForm : Form
         // ADR-042: a packaged copy runs the production sidecar. `main.ts` reads
         // NODE_ENV only to decide whether to print its `[dev]` diagnostic lines,
         // which the production page does not need (the bridge line is the host's).
+        // T48: the measuring flavour (`npm run portable:debug`) is the exception -
+        // the two-window gate quotes its `[dev] correction` lines, so a packaged
+        // Debug host asks for the sidecar's development branch. A developer build
+        // carries no payload (`Payload.IsPresent` is false) and inherits the
+        // environment, exactly as before.
         if (Payload.IsPresent)
         {
+#if DEBUG
+            start.Environment["NODE_ENV"] = "development";
+#else
             start.Environment["NODE_ENV"] = "production";
+#endif
         }
 
         Process sidecar = new() { StartInfo = start, EnableRaisingEvents = true };

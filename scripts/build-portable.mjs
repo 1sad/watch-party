@@ -7,8 +7,11 @@
 // the bridge script and `package.json` from its own module URL (ADR-042), so the
 // payload is laid out exactly like the repository those paths expect.
 //
-// Usage: `npm run portable`       (output: release/WatchParty-<version>-portable.exe)
-//        `npm run portable:full`  (the same plus a pinned fixed WebView2 runtime, ADR-041)
+// Usage: `npm run portable`        (output: release/WatchParty-<version>-portable.exe)
+//        `npm run portable:full`   (the same plus a pinned fixed WebView2 runtime, ADR-041)
+//        `npm run portable:debug`  (the measuring flavour, ADR-042: Debug host, development
+//                                   page, development sidecar, so the two-window gate can be
+//                                   run from a packaged copy; never handed to a friend)
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream, createWriteStream } from 'node:fs'
@@ -315,22 +318,39 @@ async function zipDirectory(dir, destination) {
 }
 
 async function main() {
-  const unknown = process.argv.slice(2).filter((argument) => argument !== '--full')
-  if (unknown.length > 0) throw new Error(`unknown argument(s): ${unknown.join(' ')} (only --full is understood)`)
-  const full = process.argv.includes('--full')
-  const flavour = full ? 'portable-full' : 'portable'
+  const flags = process.argv.slice(2)
+  const unknown = flags.filter((argument) => argument !== '--full' && argument !== '--debug')
+  if (unknown.length > 0) {
+    throw new Error(`unknown argument(s): ${unknown.join(' ')} (only --full and --debug are understood)`)
+  }
+  const full = flags.includes('--full')
+  const debug = flags.includes('--debug')
+  // ADR-042's third flavour: the Debug host and the development page, built by this
+  // same pipeline and unpacked the same way. The two mouse-less seams
+  // (WATCHPARTY_CDP_PORT, WATCHPARTY_PICK_PATHS) are compiled under `#if DEBUG` and
+  // the production page compiles its `[dev]` log lines out, so this is the only
+  // packaged build the two-window gate (docs/testing-manual.md) can be run on.
+  if (full && debug) throw new Error('--full and --debug are separate flavours; there is no portable-full-debug')
+  const flavour = debug ? 'portable-debug' : full ? 'portable-full' : 'portable'
+  // The page flavour follows the host flavour: `vite build --mode development` is
+  // what `npm run dev:debug` serves, and it is the only page that keeps the
+  // development log lines the gate quotes.
+  const pageCommand = debug ? 'build:dev' : 'build'
+  const pageFlavour = debug ? 'development' : 'production'
+  const configuration = debug ? 'Debug' : 'Release'
 
   const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
   const version = manifest.version
   if (typeof version !== 'string' || version.length === 0) throw new Error('package.json has no version')
 
   const dotnet = findDotnet()
-  say(`flavour:        ${flavour}${full ? ` (carries fixed WebView2 ${WEBVIEW2_VERSION})` : ' (uses the machine\'s WebView2 runtime)'}`)
+  say(`flavour:        ${flavour}${full ? ` (carries fixed WebView2 ${WEBVIEW2_VERSION})` : debug ? ' (the measuring flavour: Debug host, development page; never handed to a friend)' : ' (uses the machine\'s WebView2 runtime)'}`)
   say(`dotnet: ${dotnet}`)
 
-  say('[1/5] building the page (npm run build)')
-  await npmRun(['run', 'build'], root)
-  if (!existsSync(join(root, 'dist', 'index.html'))) throw new Error('npm run build left no dist/index.html')
+  say(`[1/5] building the page (npm run ${pageCommand})`)
+  await npmRun(['run', pageCommand], root)
+  if (!existsSync(join(root, 'dist', 'index.html'))) throw new Error(`npm run ${pageCommand} left no dist/index.html`)
+  say(`page: ${pageFlavour} (npm run ${pageCommand})`)
 
   say('[2/5] resolving the pinned build assets')
   const node = await resolveNode()
@@ -382,7 +402,7 @@ async function main() {
   const zipper = await zipDirectory(payloadDir, payloadZip)
   say(`[3/5] payload.zip written with ${zipper} (${formatBytes((await stat(payloadZip)).size)})`)
 
-  say('[4/5] publishing the host (win-x64, Release, self-contained, single file)')
+  say(`[4/5] publishing the host (win-x64, ${configuration}, self-contained, single file)`)
   // T46d, measured 2026-11-22 (ADR-043): IncludeNativeLibrariesForSelfExtract is
   // what keeps this ONE file, and it is also the one thing a copy leaves outside
   // its folder. The .NET loader extracts the bundled native libraries to
@@ -403,7 +423,7 @@ async function main() {
     'publish',
     join('host', 'WatchParty.Host', 'WatchParty.Host.csproj'),
     '-c',
-    'Release',
+    configuration,
     '-r',
     'win-x64',
     '--self-contained',
@@ -437,7 +457,17 @@ async function main() {
   say(`webview2:       ${engine === null ? 'not carried (uses the machine\'s runtime)' : engine.summary}`)
   say('note:           run 1 of a copy writes %TEMP%\\.net\\<exe name>\\<bundle id>\\ - 2 x WebView2Loader.dll, 389824 bytes -')
   say('                the one documented exception to ADR-043 (T46d, measured 2026-11-22)')
-  say('built with the exe still unproven: running from the payload is ticket 45b')
+  say(`host:           ${configuration}`)
+  say(`page:           ${pageFlavour} (npm run ${pageCommand})`)
+  if (debug) {
+    say('measuring:      WATCHPARTY_CDP_PORT in the launching environment opens the DevTools endpoint')
+    say('                (Debug host only); scripts/portable-launch.ps1 -CdpPort passes it per copy.')
+    say('sidecar:        NODE_ENV=development, so its [dev] lines - the gate quotes [dev] correction')
+  } else {
+    say('sidecar:        NODE_ENV=production, so none of its [dev] lines are written')
+  }
+  say('the exe unpacks this payload into <its folder>\\runtime\\<version>-<hash8>\\ on first run')
+  say('and runs the window from there (ticket 45, measured 2026-11-22)')
 }
 
 function formatBytes(bytes) {
