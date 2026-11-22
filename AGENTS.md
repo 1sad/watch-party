@@ -90,6 +90,10 @@ timing maths lives **only** in `src/shared/` — if one of its numbers appears t
 9. **Edit surgically.** These files are dense on purpose. Do not rewrite a section to change a sentence.
 10. **Log lines stay ASCII.** PowerShell's default `Get-Content` renders an em dash as `�?"`, so a quoted log line
     becomes garbage exactly when it is evidence (measured on ticket 04). Use `:` or `-`.
+11. **A new version is the user's call.** Building a portable file, tagging a version or attaching anything to GitHub
+    Releases happens only when the user asks for it in that session. A closed milestone, a green test run or a phase
+    close is not an instruction to publish a new build; ordinary session commits and pushes are separate and continue
+    as the kit says.
 
 ## Known-weak answers (attack these first)
 
