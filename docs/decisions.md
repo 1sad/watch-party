@@ -1176,3 +1176,15 @@ run from memory and the engine needs a profile on disk.
 folder share a profile; one folder is one installation. The .NET single-file loader's `%TEMP%\.net\` extraction and any
 WebView2 writes outside the profile must be measured and either moved or recorded as the one documented exception
 (ticket 46d).
+
+**Recorded exception (2026-11-22, ticket 46d; measured).** The record this ADR asked for. The single-file loader
+extracts the bundled native libraries **before `Main` runs**, so a process cannot redirect its own extraction: one build
+writes two copies of `WebView2Loader.dll` (194,912 B each, 389,824 B) into `%TEMP%\.net\WatchParty-0.1.0-portable\<bundle id>\`,
+once per build, and never again for that build - a second run added 0 entries, measured over five runs of two copies.
+Nothing else escapes: `%LOCALAPPDATA%` gained 0 entries across a run, no `Microsoft\EdgeWebView` folder is created, and
+every write the app itself makes is inside the folder. **This is the one documented exception.** It is accepted because
+each alternative spends the single file: native libraries published beside the exe put `WebView2Loader.dll` (194,912 B)
+next to it, and a launcher that sets `DOTNET_BUNDLE_EXTRACT_BASE_DIR` is a second file plus a re-exec on the friend's
+machine. Stale bundle folders from earlier builds are not pruned - four (1,559,296 B) had accumulated on this machine -
+and removing them would itself be a write outside the folder, against a directory the loader owns; Windows' own temp
+cleanup is where that belongs.
