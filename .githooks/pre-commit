@@ -13,7 +13,7 @@ set -u
 
 refuse() {
 	printf '\n'
-	printf 'pre-commit: REFUSED — %s\n' "$1"
+	printf 'pre-commit: REFUSED - %s\n' "$1"
 	printf 'pre-commit: nothing was committed. Fix it and commit again.\n'
 	printf 'pre-commit: --no-verify would skip this, and it exists, but it\n'
 	printf 'pre-commit: turns off the only check this repository has\n'
@@ -30,27 +30,27 @@ refuse() {
 # even when a leaked handle would keep it alive. The output already names the
 # test; only the refused line is told apart, so a timeout reads as a timeout.
 test_out=$(npm test 2>&1) || {
-	printf 'pre-commit: npm test — failed\n'
+	printf 'pre-commit: npm test - failed\n'
 	printf '%s\n' "$test_out"
 	if printf '%s\n' "$test_out" | grep -q 'test timed out after'; then
-		refuse 'npm test timed out — a test overran its bound'
+		refuse 'npm test timed out - a test overran its bound'
 	fi
 	refuse 'npm test failed'
 }
 passed=$(printf '%s\n' "$test_out" | awk '$2 == "pass" && NF == 3 { n = $3 } END { print n }')
-printf 'pre-commit: npm test — %s passed\n' "${passed:--}"
+printf 'pre-commit: npm test - %s passed\n' "${passed:--}"
 
 # svelte-check ends with "svelte-check found 0 errors and 2 warnings in 1 file",
 # coloured even when piped, so the escape byte is stripped before matching.
 # Exit 0 from the checker already means zero errors; the count is read out so
 # the line says so rather than asserting it.
 check_out=$(npm run check 2>&1) || {
-	printf 'pre-commit: npm run check — failed\n'
+	printf 'pre-commit: npm run check - failed\n'
 	printf '%s\n' "$check_out"
 	refuse 'npm run check failed'
 }
 errors=$(printf '%s\n' "$check_out" | tr -d '\033' | sed -n 's/.*svelte-check found \{1,\}\([0-9]\{1,\}\) error.*/\1/p' | tail -n 1)
-printf 'pre-commit: npm run check — %s errors\n' "${errors:-0}"
+printf 'pre-commit: npm run check - %s errors\n' "${errors:-0}"
 
 # The third step, and the only one that looks for secrets: a token pasted into
 # a doc, a key block, a `C:\Users\<name>` path in a log. `npm test` and
@@ -60,7 +60,7 @@ printf 'pre-commit: npm run check — %s errors\n' "${errors:-0}"
 # folder must not become a repo nobody can commit to.
 scanner="${REPO_GUARD_SCANNER:-C:/dev/Code/repo-guard/scan_artifacts.py}"
 if [ ! -f "$scanner" ]; then
-	printf 'pre-commit: secret scan — SKIPPED (scanner not found at %s)\n' "$scanner"
+	printf 'pre-commit: secret scan - SKIPPED (scanner not found at %s)\n' "$scanner"
 else
 	# One scanner run for the whole commit. The list is built into positional
 	# parameters rather than word-split, so a path with a space stays one
@@ -72,16 +72,16 @@ else
 $(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null)
 EOF
 	if [ $# -eq 0 ]; then
-		printf 'pre-commit: secret scan — nothing to read\n'
+		printf 'pre-commit: secret scan - nothing to read\n'
 	else
 		scan_out=$(python "$scanner" "$@" 2>&1)
 		scan_status=$?
 		if [ $scan_status -ne 0 ]; then
-			printf 'pre-commit: secret scan — refused (exit %s)\n' "$scan_status"
+			printf 'pre-commit: secret scan - refused (exit %s)\n' "$scan_status"
 			printf '%s\n' "$scan_out"
 			refuse 'the secret scan found something in this commit'
 		fi
-		printf 'pre-commit: secret scan — clean (%s files)\n' "$#"
+		printf 'pre-commit: secret scan - clean (%s files)\n' "$#"
 	fi
 fi
 
