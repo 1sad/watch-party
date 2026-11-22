@@ -1111,6 +1111,8 @@ else moves: the room, the page and the host keep their current shapes, which is 
 
 ## ADR-042 - The portable build carries a payload and unpacks itself once into the user's folder
 
+> **Amended 2026-11-22 (ADR-043):** the payload, the profile, the logs and any settings live in the exe's own folder, not under `%LOCALAPPDATA%`; a read-only stick is no longer a goal.
+
 **Decision** (2026-11-22, forced by M7; ADR-041 is the decision above it). One build script produces all three
 artifacts from the same sources. The `portable` executable embeds **one zip** holding a pinned Node 24 `node.exe`, the
 sidecar's TypeScript sources with their production dependencies, the built page, the ad list and a `package.json`. On
@@ -1148,3 +1150,29 @@ refuse.
 **Cost.** About 90 MB of extracted runtime per version on disk (~350 MB for `portable-full`), a first run that unpacks
 before the window appears, one pinned Node build and one fixed-engine cab downloaded at build time (build assets, not
 dependencies the app imports), and three artifacts to build and test. The build is Windows x64 only, as R38 says.
+## ADR-043 - The portable build is a folder, and nothing leaves it
+
+**Date:** 2026-11-22. **Status:** current. **Supersedes:** ADR-042 in part (the location of the unpacked payload and the profile).
+
+**Decision (the user's, 2026-11-22).** The portable copy is the exe **and the folder it sits in**. On first run the exe
+unpacks its payload into `<exe folder>\runtime\<version>-<hash8>\` and runs from there; the browser profile, the host
+log and any settings live in that same folder. Everything the app needs travels inside the file, and everything it
+writes stays inside the folder: copy the folder and the state goes with it, delete it and nothing is left behind.
+
+**What this reverses.** ADR-042 put the unpacked payload under `%LOCALAPPDATA%\watch-party\runtime\` and ticket 46 put
+the browser profile under `%LOCALAPPDATA%\watch-party\profile-<pid>`. Both move into the exe's folder. A read-only
+stick was a goal of ADR-042 and is now impossible by construction: the folder must be writable, so the friend's copy is
+"a folder you can write in", never `Program Files`.
+
+**Why.** A folder is what "portable" means to the user: hand one over, run it, move it, delete it. State under
+`%LOCALAPPDATA%` outlives the folder, accumulates (13 profile folders had already built up), signs the host out of the
+streaming site every evening because the key is a fresh pid, and makes "delete the app" untrue.
+
+**Alternatives rejected.** (a) Payload beside the exe, profile in `%LOCALAPPDATA%` - the split the user rejected.
+(b) A roaming profile under `%APPDATA%` - still outside the folder. (c) Unpack nothing and run from memory - Node cannot
+run from memory and the engine needs a profile on disk.
+
+**Consequences.** A first run in a read-only folder fails with one plain sentence, not a half-run. Two copies in one
+folder share a profile; one folder is one installation. The .NET single-file loader's `%TEMP%\.net\` extraction and any
+WebView2 writes outside the profile must be measured and either moved or recorded as the one documented exception
+(ticket 46d).
