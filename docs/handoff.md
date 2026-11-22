@@ -345,6 +345,31 @@ Appended rather than inserted, so ticket numbers stay continuous (T1…T30).
 | The room dies with the owner in file mode and someone expected otherwise | low | say it before the film starts; that is the only honest answer |
 | Scope creep (library, transcoding, queue, phone app) | high | ADR-027 and §0; anything not in `spec.md §2` needs a new ADR |
 
+### Measured 2026-11-23 - what a caller who knows only the address can reach
+
+The owner asked whether the opened port endangers a participant. Measured on the owner's machine against the running
+build, from the machine's own LAN address (`192.168.10.44:59820`, then two more runs on 51613 and 50927), which stands
+in for a stranger's view because the server sees a non-loopback caller either way:
+
+| Request, over the LAN address | Answer |
+| --- | --- |
+| `/`, `/discovery`, `/healthz`, `/join`, `/join?c=WRONG`, `/bridge.js`, `/fixture`, and `/` with a wrong `wp_key` cookie | `403`, no page, no room data |
+| `/join?c=<the real room code>` | `200`, the app |
+| `/` on `127.0.0.1` (the owner's own window) | `200`, the app |
+
+So a stranger who knows only the address learns **nothing**: not the room code, not the roster, not the chat, not the
+version, not even that the port is this app. The room code carried in the invite link is the whole secret (ADR-044).
+What remains true and not fixed here: chat is plain text to anyone on the path who has the link (ADR-023), and the
+owner's own address is visible to every participant.
+
+To repeat it: `npm run dev:debug`, read `sidecar: PORT <n>` from `logs/host-*.log`, then request the paths above at
+`http://<this machine's LAN address>:<port>/`. Any caller from another machine sees what the table's first row shows.
+
+**Deviation from ADR-044, recorded not fixed.** ADR-044 says a caller with only the address gets a *gate page* asking
+for the code. The build answers `403` with no page at all. It is stricter and simpler, and a caller who mistypes a link
+sees a blank refusal rather than a page they could act on. Deferred to the M3 phase (ticket 70) because whether a
+person should be *asked* for the code, or simply refused, is the owner's call, not a defect.
+
 ## v1 is done when
 
 - Two people in different houses watch a streaming page for an hour and the gap never becomes audible.
