@@ -207,7 +207,8 @@ type Media =
   // v2, not built: direct (Mode 1), hls (Mode 2), transcode (Mode 3)
 ```
 
-In website mode `media` is `null` and `page` carries the address. File mode sets `media` and clears `page`.
+In website mode `media` is `null` and `page` carries the address. File mode sets `media` and clears `page`. A room
+that held a file may take a page (ADR-038, amended 2026-11-22): the page commit clears `media` in every window.
 
 ### 4.3 Invariants
 

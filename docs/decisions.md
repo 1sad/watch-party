@@ -966,6 +966,11 @@ not.
 ## ADR-038 — The window holds two views: our page, and the site
 
 > **Amends ADR-034:** the window contains **two** WebView2 controls, not one filling it.
+>
+> **Amended 2026-11-22 (ticket 37, the user's answer):** a room that holds a file **may take a page**. The address
+> bar stays available while a file plays, so that transition has a route, and the page commit clears the file in
+> every window: `media` becomes `null` in the same handler that sets `roomPage`, so `spec.md` §4.2's invariant holds
+> from that moment and the site view is the one that is shown and navigated.
 
 **Decision.** The window is a native frame around two WebView2 controls, with a layout the host owns:
 
