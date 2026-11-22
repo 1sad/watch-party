@@ -457,6 +457,10 @@ installed. ADR-015 (one codebase, two manifests) survives as the *fallback* clie
 > **Amended 2026-11-20 (ADR-034):** the window is created by a small .NET WinForms host, and the product logic runs in
 > a Node sidecar that host spawns. WebView2 is still the engine and is still not bundled.
 
+> **Amended 2026-11-22 (ADR-041/042):** `portable` still borrows the engine Windows already has; `portable-full`
+> carries a fixed WebView2 runtime so a machine without one can run. That is still a runtime, not a browser: no page is
+> shipped and nothing is rewritten in C#.
+
 ---
 
 ## ADR-023 — Free and accountless: direct connections with automatic router opening
@@ -1104,3 +1108,43 @@ else moves: the room, the page and the host keep their current shapes, which is 
 
 
 
+
+## ADR-042 - The portable build carries a payload and unpacks itself once into the user's folder
+
+**Decision** (2026-11-22, forced by M7; ADR-041 is the decision above it). One build script produces all three
+artifacts from the same sources. The `portable` executable embeds **one zip** holding a pinned Node 24 `node.exe`, the
+sidecar's TypeScript sources with their production dependencies, the built page, the ad list and a `package.json`. On
+first run the exe extracts that zip to `%LOCALAPPDATA%\watch-party\runtime\<version>-<hash8>\` - written to a temporary
+folder and renamed, stamp last, so a rebuild of the same version cannot run the previous payload - and, from then on,
+treats that folder as its program root: `node.exe` is `runtime\node.exe`, the page is `dist\`, the ad list is `data\`. The browser
+profile and the host log live under `%LOCALAPPDATA%\watch-party\` as well, never beside the exe, so a copy on a
+read-only stick still runs. Older runtime folders are pruned, best effort, on start. **`portable-full`** carries the
+same payload plus the fixed WebView2 runtime package, extracted the same way and passed to the engine as
+`BrowserExecutableFolder`; on Windows 10 the extracted folder also receives the two `icacls` grants Microsoft requires
+for a fixed runtime. **A third flavour, `portable-debug`**, is built by the same script with the Debug host and the
+development page: it is the only build whose DevTools endpoint and development log lines exist, so it is what the
+two-window gate runs on. It is never handed to a friend. The `watchparty://` registration is left exactly as it is: it
+is already rewritten on every start from the running executable's own path, so a portable copy points the scheme at
+itself, and that copy is the only one a friend has.
+
+**Why.** The host finds the repository by walking up for a `package.json`, starts the sidecar as `node
+src/server/main.ts` relative to it, and the sidecar computes `dist\`, the bridge script and `package.json` from its own
+module URL. Moving the folder is therefore the smallest change that keeps the room logic untouched, which ADR-041
+requires. One zip rather than hundreds of embedded files keeps the build script honest (it can list what it packed)
+and keeps extraction to one pass. Unpacking once per version rather than per run keeps start-up fast and lets a second
+copy run beside the first. The measuring flavour exists because the two mouse-less seams (`WATCHPARTY_CDP_PORT`,
+`WATCHPARTY_PICK_PATHS`) are compiled into Debug only, and the production page compiles its log lines out - without it
+M7's own done condition ("passes the two-window gate") could not be measured from a packaged copy at all.
+
+**Rejected.** (a) A Node single-executable application plus a bundler: a new build step, and `ws` and the NAT-PMP
+package load modules in ways a bundler cannot follow; it also breaks "no rework". (b) The exe plus a loose folder of
+runtime files: that is two things to send and a folder a stick cannot hold read-only. (c) Re-extracting to the user's
+temp folder on every run: ~90 MB copied per start, and two copies would race over the same path. (d) Shipping the
+payload as hundreds of embedded resources: no single manifest to check and a slower first run. (e) Turning the Debug
+seams on in the Release build: that ships an open remote-control port to five friends. (f) Registering the invite
+scheme only on first run with a prompt: it already works per user with no admin, and a prompt is a step a friend can
+refuse.
+
+**Cost.** About 90 MB of extracted runtime per version on disk (~350 MB for `portable-full`), a first run that unpacks
+before the window appears, one pinned Node build and one fixed-engine cab downloaded at build time (build assets, not
+dependencies the app imports), and three artifacts to build and test. The build is Windows x64 only, as R38 says.

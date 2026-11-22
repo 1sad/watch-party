@@ -8,6 +8,9 @@ bin/
 obj/
 *.user
 
+# Portable build output (M7, ADR-042): the exe and the payload cache
+release/
+
 # Runtime junk
 *.log
 *.tmp

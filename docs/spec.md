@@ -731,7 +731,9 @@ watch-party.exe
   └─ listener on one high port, opened via UPnP/NAT-PMP (ADR-023)
 ```
 
-- **Install:** one Windows installer. No Docker, no Caddy, no TLS certificate, no database, no service.
+- **Install:** one file to copy, not an installer (ADR-041, ADR-042). `portable` carries the .NET runtime, the Node
+  runtime and the page and uses the WebView2 runtime Windows has; `portable-full` carries the browser engine too. No
+  Docker, no Caddy, no TLS certificate, no database, no service.
 - **Start:** one click. The app opens its port, learns its address, and shows the link. If either step fails it
   says so *now*, with the reason, and offers the fallbacks in §14.
 - **Stop:** closing the app ends the room. In website mode everyone else's film keeps playing from the site; they

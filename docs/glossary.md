@@ -248,3 +248,14 @@ don't collide.
 
 **Picture-in-Picture (PiP)** — the small floating player some sites offer. Nothing can be drawn on top of it, so
 chat is unavailable while it's in use.
+
+**Portable build** - the one file a friend runs. `portable` carries the .NET runtime, the Node runtime and the page, and
+uses the WebView2 runtime the machine already has; `portable-full` carries the browser engine too. Neither is an
+installer (ADR-041).
+
+**Payload** - the zip inside a portable executable: the pinned Node runtime, the room's sources and their production
+dependencies, the page and the ad list. It is unpacked once per version and payload hash under `%LOCALAPPDATA%`, and
+that folder becomes the program root (ADR-042).
+
+**Measuring flavour** (`portable-debug`) - the portable build made with the Debug host and the development page, so the
+two-window gate can be run and read without a mouse. It is never handed to anyone (ADR-042).

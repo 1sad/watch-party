@@ -5,8 +5,9 @@ carries its own browser window, everyone lands on the same streaming page, playb
 the same connection. No accounts, no server to rent, no paid services. There is also a deliberately small "watch my
 own file" mode, which exists mainly to test sync without a website in the way.
 
-**Status: Phase 2 (M2a, "the room and the page") closed 2026-11-22**; M1 "a room that syncs" is closed and phase 3
-"the room obeys" is next (no spec yet). Nothing has shipped. The only status line kept current is
+**Status: Phase 2 (M2a, "the room and the page") closed 2026-11-22**; M1 is closed, and phase 3 is **M7 "portable
+build"** — planned, not yet started (`.scratch/phase-3-m7/spec.md`). M3 "the room obeys" comes after it (`spec.md`
+§13: M7 runs before M3). Nothing has shipped. The only status line kept current is
 `.scratch/<phase>/spec.md` → `## Status`; read it before believing any claim about what works.
 
 **Rebuilt on 2026-11-16** around ADR-022 … ADR-027. **ADR-041** (one portable executable; the browser is the only
