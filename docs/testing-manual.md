@@ -165,7 +165,7 @@ it last.
 
 ### The rig for a live check
 
-Five traps cost a re-run on 06b and again on 07b. Do these before a live check, not after it fails.
+These traps have each cost a re-run, on 06b, on 07b, on 09b and on 21b. Do these before a live check, not after it fails.
 
 1. **Every `cdp.mjs` call names its window.** Two windows means `--port 9223` on B and `--port 9222` on A, or
    `WP_DEBUG_PORT` in the environment. A call with no port reads the default window and quietly answers for the wrong one.
@@ -181,6 +181,13 @@ Five traps cost a re-run on 06b and again on 07b. Do these before a live check, 
    (WebView2 157) the refusal reads `TypeError: Permissions check failed`, not the older `not granted`.
 6. **A reload is not a re-election.** `location.reload()` on the site view can leave `player: none reason=replaced` with
    nothing taking its place; if the log shows that, restart both windows rather than chasing the bridge.
+7. **`cdp.mjs eval` loses double quotes inside PowerShell.** The shell strips them before node sees them, so an
+   expression containing `"` fails with `SyntaxError: Unexpected identifier` (measured 2026-11-22, ticket 21b). Use
+   single quotes around selectors, or write the expression to a file and have a small driver read it.
+8. **A still can be stale.** `window-shot.ps1` prints each capture's instant and the PNG's size, but WebView2 hands
+   `PrintWindow` its last *composited* frame: on 2026-11-22 (21b) two windows photographed 0.9 s apart showed scenes about
+   a minute apart while their logs put both players within half a second of each other. A picture proves layout, chrome and
+   error text; the `player: drift` lines prove that two windows were at the same moment.
 
 ## 8. If something is wrong
 
