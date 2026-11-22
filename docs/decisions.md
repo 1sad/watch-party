@@ -971,6 +971,12 @@ not.
 > bar stays available while a file plays, so that transition has a route, and the page commit clears the file in
 > every window: `media` becomes `null` in the same handler that sets `roomPage`, so `spec.md` §4.2's invariant holds
 > from that moment and the site view is the one that is shown and navigated.
+>
+> **Amended 2026-11-22 (ticket 41, what the stage shows):** while a room that holds a file stages a page, the room is
+> still a file — `page` is `null` and `media` is set — so the staged page is a window-local preview of a page the room
+> has not committed, not a second kind of media. For the stage's two seconds both views are up: the site view appears
+> at once and the host docks the app view to its page-mode width, so the file's picture is briefly a 380 px column.
+> A commit clears the file (above) and the layout stays; a cancel hides the site view and the file room is as it was.
 
 **Decision.** The window is a native frame around two WebView2 controls, with a layout the host owns:
 
@@ -987,6 +993,8 @@ not.
   the bridge, which applies it to the elected player.
 - **With no page, there is no site view.** File mode hides it and the app view fills the window exactly as in M1: a
   room is either a site or a file, never both (§4.2), and the file-mode picture must not be squeezed into a column.
+  The one exception is the staged preview described above: the room is still a file, the site view appears at once,
+  and the column lasts only until the commit or the cancel.
 - **Popups never open a window.** A site view's `NewWindowRequested` is cancelled and the app says so in one line
   naming the host it asked for (R37). On E2's sites the popup was an ad; a second window would also be a second
   browser we cannot sync.
