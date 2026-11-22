@@ -38,6 +38,14 @@ internal static class Payload
     public static bool IsPresent => PresentCheck.Value;
 
     /// <summary>
+    /// What the one-time extraction did about the fixed engine (ADR-041/ADR-042): the
+    /// <c>icacls</c> lines <see cref="WebView2Engine.ApplyWindows10Grants"/> produced, empty when
+    /// no fixed runtime was unpacked or Windows 11 needed none. Extraction runs before the host
+    /// log is open, so the lines are kept here and written by the window once it has one.
+    /// </summary>
+    public static IReadOnlyList<string> LastExtractionNotes { get; private set; } = Array.Empty<string>();
+
+    /// <summary>
     /// The folder the running executable sits in: what "portable" means since
     /// ADR-043 - copy the folder and the state goes with it, delete it and
     /// nothing is left behind. <see cref="Environment.ProcessPath"/> is the exe
@@ -156,6 +164,17 @@ internal static class Payload
 
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             entry.ExtractToFile(destination, true);
+        }
+
+        // Microsoft's rule for an unpackaged app on Windows 10 (ADR-042): the two grants go
+        // on the fixed engine folder after it is unpacked and before anything can start the
+        // engine. Windows 11 needs neither, and a payload without a fixed runtime has no
+        // folder to grant. Still under the temporary name: the ACLs are on the directory, so
+        // the rename below carries them.
+        string? fixedEngine = WebView2Engine.FindFixed(temporary);
+        if (fixedEngine is not null)
+        {
+            LastExtractionNotes = WebView2Engine.ApplyWindows10Grants(fixedEngine);
         }
 
         // Last of all, still under the temporary name: nothing can see a finished

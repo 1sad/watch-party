@@ -7,7 +7,8 @@
 // the bridge script and `package.json` from its own module URL (ADR-042), so the
 // payload is laid out exactly like the repository those paths expect.
 //
-// Usage: `npm run portable`  (output: release/WatchParty-<version>-portable.exe)
+// Usage: `npm run portable`       (output: release/WatchParty-<version>-portable.exe)
+//        `npm run portable:full`  (the same plus a pinned fixed WebView2 runtime, ADR-041)
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream, createWriteStream } from 'node:fs'
@@ -27,12 +28,29 @@ const NODE_VERSION = '24.20.0'
 const NODE_DIST = `https://nodejs.org/dist/v${NODE_VERSION}`
 const NODE_ASSET = 'win-x64/node.exe'
 
+// The fixed WebView2 runtime `portable-full` carries (ADR-041: two builds, so the
+// engine assumption is measured rather than assumed). The version is PINNED, the
+// x64 cab URL is the one Microsoft's download page publishes for it (fetched
+// 2026-11-22), and the cab's size and sha256 are pinned too: a substituted,
+// truncated or re-served file fails the build here, before it can travel to a
+// friend. Microsoft's own page says the fixed package is 250 MB or more.
+const WEBVIEW2_VERSION = '158.0.4370.33'
+const WEBVIEW2_CAB = {
+  url: 'https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/'
+    + 'ecc2761e-1380-46ee-9552-995b039e4e47/Microsoft.WebView2.FixedVersionRuntime.158.0.4370.33.x64.cab',
+  bytes: 437849994,
+  sha256: '835da387df67797f710881f553bb6934d98f24d08e370456f48d38ed4e072b62',
+}
+
 const releaseDir = join(root, 'release')
 const cacheDir = join(releaseDir, 'cache')
 const buildDir = join(releaseDir, 'build')
 const payloadDir = join(buildDir, 'payload')
 const publishDir = join(buildDir, 'publish')
 const payloadZip = join(buildDir, 'payload.zip')
+const webviewDir = join(cacheDir, 'webview2', WEBVIEW2_VERSION)
+const webviewCab = join(webviewDir, `Microsoft.WebView2.FixedVersionRuntime.${WEBVIEW2_VERSION}.x64.cab`)
+const webviewExtractDir = join(buildDir, 'webview2')
 
 // The .NET SDK is installed per user and is not on PATH in a fresh shell
 // (AGENTS.md), so it is resolved the same way `scripts/run-host.mjs` resolves it.
@@ -165,6 +183,108 @@ function nodeVersionOf(binary) {
   })
 }
 
+// Runs a command and hands back its stdout; a non-zero exit carries the command's
+// own words, because `expand`'s failure is the useful part of a failed build.
+function capture(command, args) {
+  return new Promise((resolveCapture, reject) => {
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    let out = ''
+    let err = ''
+    child.stdout.on('data', (chunk) => (out += chunk))
+    child.stderr.on('data', (chunk) => (err += chunk))
+    child.on('error', reject)
+    child.on('exit', (code) => {
+      if (code === 0) return resolveCapture(out)
+      reject(new Error(`${command} ${args.join(' ')} exited ${code}: ${(err.trim() || out.trim()).slice(0, 2000)}`))
+    })
+  })
+}
+
+// The engine folder Microsoft means is the one holding msedgewebview2.exe - one
+// level inside what `expand` produces, because the cab carries a product folder.
+async function findEngineFolder(dir) {
+  const entries = await readdir(dir, { withFileTypes: true })
+  if (entries.some((entry) => entry.isFile() && entry.name === 'msedgewebview2.exe')) return dir
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    const found = await findEngineFolder(join(dir, entry.name))
+    if (found !== null) return found
+  }
+  return null
+}
+
+// The pinned fixed WebView2 runtime, for `portable-full` only. Cached under
+// release/cache/, checked by size AND sha256 (both pinned above), unpacked with
+// Microsoft's `expand -F:*` (never Explorer, which can produce the wrong folder
+// shape), and checked once more by reading the version out of the engine binary:
+// a substituted version fails here rather than shipping.
+async function resolveFixedEngine() {
+  await mkdir(webviewDir, { recursive: true })
+
+  const cached = existsSync(webviewCab) ? (await stat(webviewCab)).size : -1
+  if (cached !== WEBVIEW2_CAB.bytes) {
+    if (cached !== -1) {
+      say(`cached fixed runtime cab is ${cached} bytes, not the pinned ${WEBVIEW2_CAB.bytes}; downloading it again`)
+    }
+    say(`downloading the fixed WebView2 runtime ${WEBVIEW2_VERSION} x64 from ${WEBVIEW2_CAB.url}`)
+    try {
+      await download(WEBVIEW2_CAB.url, webviewCab)
+    } catch (error) {
+      await rm(webviewCab, { force: true })
+      throw new Error(
+        `the fixed WebView2 runtime ${WEBVIEW2_VERSION} could not be downloaded from ${WEBVIEW2_CAB.url}: `
+          + (error instanceof Error ? error.message : String(error)),
+      )
+    }
+  }
+
+  const bytes = (await stat(webviewCab)).size
+  if (bytes !== WEBVIEW2_CAB.bytes) {
+    await rm(webviewCab, { force: true })
+    throw new Error(
+      `the fixed WebView2 runtime cab is ${bytes} bytes, not the pinned ${WEBVIEW2_CAB.bytes}: ${WEBVIEW2_CAB.url}`,
+    )
+  }
+
+  const hash = await sha256File(webviewCab)
+  if (hash !== WEBVIEW2_CAB.sha256) {
+    await rm(webviewCab, { force: true })
+    throw new Error(
+      `the fixed WebView2 runtime cab has sha256 ${hash}, not the pinned ${WEBVIEW2_CAB.sha256}: ${WEBVIEW2_CAB.url}`,
+    )
+  }
+  say(`fixed WebView2 runtime cab: ${WEBVIEW2_CAB.bytes} bytes, sha256 ${hash} (matches the pin)`)
+
+  await rm(webviewExtractDir, { recursive: true, force: true })
+  await mkdir(webviewExtractDir, { recursive: true })
+  await capture('expand', [webviewCab, '-F:*', webviewExtractDir])
+
+  const folder = await findEngineFolder(webviewExtractDir)
+  if (folder === null) throw new Error(`expanding ${webviewCab} produced no msedgewebview2.exe`)
+  const version = (
+    await capture('powershell', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      `(Get-Item -LiteralPath '${join(folder, 'msedgewebview2.exe')}').VersionInfo.FileVersion`,
+    ])
+  ).trim()
+  if (version !== WEBVIEW2_VERSION) {
+    throw new Error(`the unpacked engine reports version ${version}, not the pinned ${WEBVIEW2_VERSION}`)
+  }
+
+  return {
+    folder,
+    version,
+    bytes,
+    hash,
+    files: (await listFiles(folder)).length,
+    summary:
+      `fixed WebView2 runtime ${version} x64, cab ${formatBytes(bytes)} (${bytes} bytes), sha256 ${hash}, `
+      + `from ${WEBVIEW2_CAB.url}`,
+  }
+}
+
 async function listFiles(dir, prefix = '') {
   const found = []
   const entries = await readdir(dir, { withFileTypes: true })
@@ -195,20 +315,28 @@ async function zipDirectory(dir, destination) {
 }
 
 async function main() {
+  const unknown = process.argv.slice(2).filter((argument) => argument !== '--full')
+  if (unknown.length > 0) throw new Error(`unknown argument(s): ${unknown.join(' ')} (only --full is understood)`)
+  const full = process.argv.includes('--full')
+  const flavour = full ? 'portable-full' : 'portable'
+
   const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
   const version = manifest.version
   if (typeof version !== 'string' || version.length === 0) throw new Error('package.json has no version')
 
   const dotnet = findDotnet()
+  say(`flavour:        ${flavour}${full ? ` (carries fixed WebView2 ${WEBVIEW2_VERSION})` : ' (uses the machine\'s WebView2 runtime)'}`)
   say(`dotnet: ${dotnet}`)
 
   say('[1/5] building the page (npm run build)')
   await npmRun(['run', 'build'], root)
   if (!existsSync(join(root, 'dist', 'index.html'))) throw new Error('npm run build left no dist/index.html')
 
-  say('[2/5] resolving the pinned Node build')
+  say('[2/5] resolving the pinned build assets')
   const node = await resolveNode()
   say(node.summary)
+  const engine = full ? await resolveFixedEngine() : null
+  if (engine !== null) say(engine.summary)
 
   say('[3/5] packing the payload')
   await rm(payloadDir, { recursive: true, force: true })
@@ -231,6 +359,14 @@ async function main() {
   // to the repository's own `node_modules`.
   await npmRun(['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund', '--loglevel=error'], payloadDir)
   await rm(join(payloadDir, 'package-lock.json'), { force: true })
+
+  if (engine !== null) {
+    // ADR-041/ADR-042: the unpacked fixed runtime travels inside the payload, laid out
+    // as `webview2\msedgewebview2.exe` at the program root - the folder the host names
+    // to the engine as BrowserExecutableFolder.
+    say(`[3/5] adding the fixed WebView2 runtime ${engine.version} (${engine.files} file(s))`)
+    await cp(engine.folder, join(payloadDir, 'webview2'), { recursive: true })
+  }
 
   const files = await listFiles(payloadDir)
   const lines = []
@@ -285,18 +421,20 @@ async function main() {
   say('[5/5] writing the exe')
   const published = join(publishDir, 'WatchParty.Host.exe')
   if (!existsSync(published)) throw new Error(`dotnet publish left no ${published}`)
-  const exePath = join(releaseDir, `WatchParty-${version}-portable.exe`)
+  const exePath = join(releaseDir, `WatchParty-${version}-${flavour}.exe`)
   await rm(exePath, { force: true })
   await cp(published, exePath)
   const exeSize = (await stat(exePath)).size
 
   process.stdout.write('\n')
+  say(`flavour:        ${flavour}`)
   say(`exe:            ${exePath}`)
   say(`exe size:       ${formatBytes(exeSize)} (${exeSize} bytes)`)
   say(`payload files:  ${files.length}`)
   say(`payload sha256: ${payloadHash}`)
   say(`payload list:   ${manifestPath}`)
   say(`node:           ${node.summary}`)
+  say(`webview2:       ${engine === null ? 'not carried (uses the machine\'s runtime)' : engine.summary}`)
   say('note:           run 1 of a copy writes %TEMP%\\.net\\<exe name>\\<bundle id>\\ - 2 x WebView2Loader.dll, 389824 bytes -')
   say('                the one documented exception to ADR-043 (T46d, measured 2026-11-22)')
   say('built with the exe still unproven: running from the payload is ticket 45b')

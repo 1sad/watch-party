@@ -243,6 +243,9 @@ public sealed class MainForm : Form
         if (Payload.IsPresent)
         {
             HostLog.Write($"payload: runtime folder {_root}; program folder {Payload.Folder}");
+            // The one-time extraction may have applied Microsoft's Windows 10 grants to a
+            // fixed engine folder; it had no log yet, so its lines are written here.
+            foreach (string note in Payload.LastExtractionNotes) HostLog.Write(note);
         }
 
         // R20's list, before either view can ask for a request (T04). The file is
@@ -347,6 +350,22 @@ public sealed class MainForm : Form
 
         if (userData is not null) HostLog.Write($"profile: {userData}");
 
+        // ADR-041: the two builds differ only here. `portable-full` carries a fixed runtime
+        // inside its payload, so the folder holding `msedgewebview2.exe` is named to the
+        // engine before either view loads a page; `portable` and every developer build have
+        // no such folder and use the machine's runtime, exactly as before. Both lines are
+        // written before the engine starts, so they are in the log even when it fails - and
+        // each names the engine actually used, plus the machine's evergreen version when
+        // there is one, so the two flavours are told apart by the log (T47).
+        string? fixedEngine = WebView2Engine.FindFixed(_root);
+        string? evergreen = WebView2Engine.EvergreenVersion();
+        HostLog.Write(evergreen is null
+            ? "engine: evergreen none"
+            : $"engine: evergreen version={evergreen}");
+        HostLog.Write(fixedEngine is null
+            ? $"engine: folder=none (machine runtime) version={evergreen ?? "unknown"}"
+            : $"engine: folder={fixedEngine} version={WebView2Engine.VersionOf(fixedEngine) ?? "unknown"}");
+
         // One environment for both controls, so they share one browser process
         // (§14's autoplay policy is process-wide, and a Debug build's one
         // loopback CDP port then lists both views as targets).
@@ -354,7 +373,7 @@ public sealed class MainForm : Form
             ? autoplayPolicy
             : $"{autoplayPolicy} --remote-debugging-port={debugPort}".Trim();
         CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(
-            null, userData, new CoreWebView2EnvironmentOptions(options));
+            fixedEngine, userData, new CoreWebView2EnvironmentOptions(options));
         await _page.EnsureCoreWebView2Async(environment);
         await _site.EnsureCoreWebView2Async(environment);
     }

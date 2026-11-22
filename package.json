@@ -11,7 +11,8 @@
     "test": "node --test --test-timeout=10000 --test-force-exit \"tests/unit/*.test.ts\"",
     "test:integration": "node --test --test-timeout=45000 --test-force-exit \"tests/integration/*.test.ts\"",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "portable": "node scripts/build-portable.mjs"
+    "portable": "node scripts/build-portable.mjs",
+    "portable:full": "node scripts/build-portable.mjs --full"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
