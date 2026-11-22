@@ -33,11 +33,17 @@ internal static class Payload
     /// <summary>Whether the running executable carries the payload resource.</summary>
     public static bool IsPresent => PresentCheck.Value;
 
-    /// <summary>Where every unpacked payload lives; the profile and log sit above it.</summary>
-    public static string RuntimeBase => Path.Combine(
+    /// <summary>
+    /// <c>%LOCALAPPDATA%\watch-party</c>: the one folder a packaged copy writes
+    /// to, so nothing lands beside the exe (ADR-042). The runtime folders, the
+    /// browser profile and the host log all live under it (T46).
+    /// </summary>
+    public static string UserFolder => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "watch-party",
-        "runtime");
+        "watch-party");
+
+    /// <summary>Where every unpacked payload lives; the profile and log sit above it.</summary>
+    public static string RuntimeBase => Path.Combine(UserFolder, "runtime");
 
     /// <summary>
     /// Returns the folder holding the unpacked payload, extracting it first if this

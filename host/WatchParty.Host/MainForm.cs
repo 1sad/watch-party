@@ -307,21 +307,46 @@ public sealed class MainForm : Form
         {
             _measuring = true;
             HostLog.Write($"dev: remote debugging on 127.0.0.1:{debugPort} (Debug build only)");
+        }
+#else
+        string? debugPort = null;
+#endif
+
+        // The engine's own profile (T46). A packaged copy must write nothing
+        // beside its exe - that is what makes a read-only stick work - and two
+        // copies must not share one profile, so theirs sits under
+        // %LOCALAPPDATA%\watch-party\ and is keyed by the CDP port when the
+        // measuring build was given one, otherwise by this process. The key
+        // cannot be the room's port: this environment is created before the
+        // sidecar starts, so that port does not exist yet. A developer build
+        // asked for a CDP port keeps its %TEMP%\watchparty-dev-<port> folder
+        // (parity with every earlier ticket).
+        string? userData = null;
+        if (debugPort is not null && !Payload.IsPresent)
+        {
             // Its own profile: WebView2 refuses a second controller in the
             // browser process another window already owns (0x8007139F), and
             // two windows on one debugging port could not be told apart.
-            string userData = Path.Combine(Path.GetTempPath(), $"watchparty-dev-{debugPort}");
-            CoreWebView2Environment debugEnvironment = await CoreWebView2Environment.CreateAsync(
-                null, userData,
-                new CoreWebView2EnvironmentOptions(
-                    $"{autoplayPolicy} --remote-debugging-port={debugPort}".Trim()));
-            await _page.EnsureCoreWebView2Async(debugEnvironment);
-            await _site.EnsureCoreWebView2Async(debugEnvironment);
-            return;
+            userData = Path.Combine(Path.GetTempPath(), $"watchparty-dev-{debugPort}");
         }
-#endif
+        else if (Payload.IsPresent)
+        {
+            string key = debugPort
+                ?? Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            userData = Path.Combine(Payload.UserFolder, $"profile-{key}");
+            Directory.CreateDirectory(userData);
+        }
+
+        if (userData is not null) HostLog.Write($"profile: {userData}");
+
+        // One environment for both controls, so they share one browser process
+        // (§14's autoplay policy is process-wide, and a Debug build's one
+        // loopback CDP port then lists both views as targets).
+        string options = debugPort is null
+            ? autoplayPolicy
+            : $"{autoplayPolicy} --remote-debugging-port={debugPort}".Trim();
         CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(
-            null, null, new CoreWebView2EnvironmentOptions(autoplayPolicy));
+            null, userData, new CoreWebView2EnvironmentOptions(options));
         await _page.EnsureCoreWebView2Async(environment);
         await _site.EnsureCoreWebView2Async(environment);
     }
