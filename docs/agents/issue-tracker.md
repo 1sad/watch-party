@@ -1,6 +1,7 @@
 # Issue tracker
 
-Local and in-repo. There is no external tracker and nothing is synced anywhere.
+Local and on the owner's machine. There is no external tracker, and none of it is in this repository: `.scratch/` is
+git-ignored, and a fresh clone has the code and `docs/` only. A path below is a path on the owner's machine.
 
 - One file per ticket: `.scratch/<feature>/issues/<id>.md`.
 - `<id>` is the project's own ticket number — `T1`, `T2`, … — because those numbers are cited in `docs/spec.md`,

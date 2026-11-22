@@ -4,8 +4,8 @@ Five friends, one film, wherever each of them happens to be. One person starts a
 link, and everyone else is in the same room on the same streaming page, in step, with chat.
 
 Status: **M7 ("portable build") closed 2026-11-22** — there is one executable per flavour that opens a window and runs a
-room from a folder on a machine with nothing installed. What is proved, and what is not, is in
-`.scratch/phase-3-m7/spec.md` → `## Status`. The built files are attached to
+room from a folder on a machine with nothing installed. What is proved, and what is not, is in the phase record the owner
+keeps on their machine; it is deliberately not part of this repository. The built files are attached to
 [release v0.1.0](https://github.com/1sad/watch-party/releases/tag/v0.1.0). This repository is public: code and documents
 are published, while the working record (specs, tickets, session notes and costs) stays on the owner's machine.
 

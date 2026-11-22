@@ -7,9 +7,9 @@ own file" mode, which exists mainly to test sync without a website in the way.
 
 **Status: Phase 2 (M2a, "the room and the page") closed 2026-11-22**; M1 is closed, and phase 3 is **M7 "portable
 build"** — 23 of its 25 ticket files done, and 51 and 52 are `blocked` on the phase 4 (M3) plan
-(`.scratch/phase-3-m7/spec.md`). M3 "the room obeys" comes after it (`spec.md`
-§13: M7 runs before M3). Nothing has shipped. The only status line kept current is
-`.scratch/<phase>/spec.md` → `## Status`; read it before believing any claim about what works. **The working record -
+(the phase record the owner keeps on their machine). M3 "the room obeys" comes after it (`spec.md`
+§13: M7 runs before M3). Nothing has shipped. The only status line kept current is the phase record on the owner's machine (`.scratch/<phase>/spec.md`) → `## Status`;
+read it before believing any claim about what works. **The working record -
 specs, tickets, session notes, costs - is kept on the owner's machine and is not in this public repo**, so a fresh
 clone has the code and `docs/` only.
 
@@ -128,7 +128,7 @@ The docs are honest about where they are thin:
 | What to do next, and how to test it | `docs/handoff.md` |
 | Prior art, numbers, links | `docs/research.md` |
 | How to test by hand, and the two-window gate | `docs/testing-manual.md` |
-| Costs, per session and per phase | `.scratch/COSTS.md` - `verify-cost.ps1` in the agent kit reads them from the local API and rewrites the file with `-Write` |
+| Costs, per session and per phase (kept locally, not published) | `.scratch/COSTS.md` - `verify-cost.ps1` in the agent kit reads them from the local API and rewrites the file with `-Write` |
 | Vocabulary | `docs/glossary.md` |
 
 ## Definition of v1

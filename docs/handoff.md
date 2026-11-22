@@ -226,7 +226,7 @@ cross-origin frame):
 - (e) the request filter still blocked an ad host while the player kept playing: `blocked
   https://acscdn.com/script/aclib.js`, blocked count > 0, `readyState=4`.
 
-The raw log lines and their log file names stay in tickets 01 and 01b (`.scratch/phase-2-m2a/issues/`).
+The raw log lines and their log file names stay in tickets 01 and 01b (the ticket files, kept locally and not published).
 
 ### The TURN experiment is dead
 
