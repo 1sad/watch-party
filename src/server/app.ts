@@ -5,6 +5,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 
 import { parseRange } from '../shared/media.ts'
+import { ADDRESS_BLOCK_MS, createRefusalBook, type RefusalBook } from './socket.ts'
 
 /** The one file the room registered, as `/media/<id>` needs it. T9a1. */
 export interface RegisteredMedia {
@@ -45,6 +46,18 @@ export interface SidecarOptions {
   start?: () => unknown
   /** Runs one more mapping attempt; the page's "try again" button. */
   retryDiscovery?: () => void
+  /**
+   * T71: the refusal book, shared with the socket door so a wrong code costs
+   * the same callers the same minute whichever door they knock on. `main.ts`
+   * passes one instance to both; a test that does not pass one gets its own.
+   */
+  refusals?: RefusalBook
+  /**
+   * T71: who counts as this machine's own window, so the host's loopback page
+   * is never billed for a refusal. Defaults to loopback; only a test overrides
+   * it, because a test's caller always arrives from 127.0.0.1.
+   */
+  isLocal?: (remoteAddress: string | undefined) => boolean
 }
 
 /**
@@ -58,8 +71,8 @@ export interface SidecarOptions {
 const HOST_ONLY_ROUTES = new Set(['/discovery', '/discovery/retry', '/healthz'])
 
 /** Did this request come from this machine? The socket's own address, nothing the caller can claim. */
-function isLoopback(request: IncomingMessage): boolean {
-  const address = (request.socket.remoteAddress ?? '').replace(/^::ffff:/, '')
+function isLoopbackAddress(remoteAddress: string | undefined): boolean {
+  const address = (remoteAddress ?? '').replace(/^::ffff:/, '')
   return address === '::1' || address.startsWith('127.')
 }
 
@@ -174,8 +187,11 @@ const CONTENT_TYPES: Record<string, string> = {
  */
 export function createSidecarServer(options: SidecarOptions): Server {
   const distDir = resolve(options.distDir)
+  // One book per listener, shared with the socket when `main.ts` passes one in
+  // (T71). Created once here, not per request.
+  const refusals = options.refusals ?? createRefusalBook()
   return createServer((request, response) => {
-    void handle(request, response, distDir, options)
+    void handle(request, response, distDir, options, refusals)
   })
 }
 
@@ -184,6 +200,7 @@ async function handle(
   response: ServerResponse,
   distDir: string,
   options: SidecarOptions,
+  refusals: RefusalBook,
 ): Promise<void> {
   const method = request.method ?? 'GET'
   const url = new URL(request.url ?? '/', 'http://127.0.0.1')
@@ -193,12 +210,34 @@ async function handle(
   // hands it the code; anyone else must bring it in the link (`/join?c=`) or in
   // the cookie that link sets. This is the first and widest check: below it, the
   // rest of the file is the app as it was.
-  const loopback = isLoopback(request)
+  const address = request.socket.remoteAddress ?? 'unknown'
+  const isLocal = options.isLocal ?? isLoopbackAddress
+  const loopback = isLocal(address)
+  // T71: a barred address gets the gate page whatever it presents, the real
+  // code included, until `ADDRESS_BLOCK_MS` has run out (ADR-044).
+  if (!loopback && refusals.blocked(address)) {
+    sendGate(response, method)
+    return
+  }
   const code = roomCodeOf(options)
   const presented = presentedCode(request, url)
   const fromLink = code !== null && presented.link === code
   const authorized = loopback || fromLink || (code !== null && presented.cookie === code)
   if (!authorized) {
+    // T71: only a code that was actually presented is billed. A caller with no
+    // code at all (`/`, or a `/join` with an empty one) gets the gate page for
+    // free, and the host's own loopback window is never billed either.
+    if (!loopback && (presented.link !== null || presented.cookie !== null)) {
+      // The socket half of the book is meaningless for one HTTP request; the
+      // address half is the shared one, and it is the limit a script cannot pay.
+      const verdict = refusals.refuse(request, address)
+      if (verdict.blockAddress) {
+        options.log?.(
+          `[gate] address refused for ${ADDRESS_BLOCK_MS / 1000}s ` +
+            `refusals=${verdict.addressRefusals} addr=${address}`,
+        )
+      }
+    }
     sendGate(response, method)
     return
   }

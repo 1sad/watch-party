@@ -10,7 +10,7 @@ import type { DiscoveryResult } from './discovery.ts'
 import { buildInviteLinks } from './invite.ts'
 import type { InviteLinks } from './invite.ts'
 import { createRoom } from './room.ts'
-import { attachRoomSocket } from './socket.ts'
+import { attachRoomSocket, createRefusalBook } from './socket.ts'
 
 // src/server/main.ts → repo root, which holds package.json and dist/.
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -62,6 +62,11 @@ function log(line: string): void {
   process.stdout.write(`${line}\n`)
 }
 
+// T71: one refusal book for both doors. A wrong code presented at `/join?c=`
+// and a wrong code sent in a `hello` frame bill the same caller, so a script
+// cannot move from one door to the other to start over.
+const refusals = createRefusalBook()
+
 const server = createSidecarServer({
   distDir: join(root, 'dist'),
   // T6b's clip stays served for the tests (T9a3 makes it the tests' only
@@ -77,10 +82,12 @@ const server = createSidecarServer({
   version: readVersion(),
   start: () => startState,
   retryDiscovery: () => void runDiscovery(),
+  refusals,
 })
 
 attachRoomSocket(server, room, {
   log,
+  refusals,
   // Dev-only: one line per `state`, so a check can count them in the host log.
   // A production sidecar (`NODE_ENV=production`) passes nothing and logs none.
   debug: dev ? (line) => process.stdout.write(`[dev] ${line}\n`) : undefined,

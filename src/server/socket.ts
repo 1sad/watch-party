@@ -76,6 +76,12 @@ export interface RoomSocketOptions {
    * pick from a refused one.
    */
   log?: (line: string) => void
+  /**
+   * T71: the refusal book, shared with the HTTP gate so a wrong code costs the
+   * same callers the same minute whichever door they knock on. `main.ts` passes
+   * one instance to both; a test that does not pass one gets its own.
+   */
+  refusals?: RefusalBook
 }
 
 function isLoopback(remoteAddress: string | undefined): boolean {
@@ -189,8 +195,10 @@ export function attachRoomSocket(
   /**
    * T68: refused joins, per socket and per address. Beside `budgets` for the
    * same reason: a fact about this caller's session, not about the room.
+   * T71: the book may arrive already shared with the HTTP gate, so a barred
+   * address stays barred on both doors.
    */
-  const refusals = createRefusalBook(now)
+  const refusals = options.refusals ?? createRefusalBook(now)
   /** Sockets this file has ended for guessing; their late frames are ignored. */
   const closing = new Set<PeerSocket>()
   /**
