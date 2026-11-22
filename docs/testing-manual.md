@@ -105,8 +105,9 @@ Website mode adds one prefix per speaker, quoted from a real run on 2026-11-21 (
   `player: applied reason=play target=83.500 from=80.120` when the room's command reached the site's player, and
   `player: drift expected=83.500 actual=83.608 delta=108` at most once a second for the elected player. A live sync
   check quotes those two lines rather than reading a picture. Both are the **site** player's lines. File mode has no
-  site player to elect, so the same comparison is printed by the ladder as `[dev] correction member=<id> drift=<ms>`
-  (measuring build only, ticket 09c): a file-mode sync check quotes that line instead, and a website-mode check that
+  site player to elect, so the same comparison is printed by the ladder as `[dev] correction member=<id> drift=<s>`
+  in **seconds to three decimals** (`drift=-0.060` is -60 ms, not -0.06 ms; measuring build only, ticket 09c): a
+  file-mode sync check quotes that line instead, and a website-mode check that
   finds no `player: drift` line has a bridge fault, not a timing fault.
 - `site:` is the site view reporting to the host. A `bridge report` line is one frame's candidate list and is
   **measuring build only** (two lines a second per frame in a busy page); the ad-filter lines are in both builds.
