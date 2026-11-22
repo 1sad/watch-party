@@ -214,7 +214,19 @@ that frame's `currentTime`; and (e) the request filter must still block an ad ho
 frame) and M2 is re-cut rather than patched.
 **Record:** the site, the WebView2 version, and the quoted lines, under **Results** here.
 
-**Results:** —
+**Results:** **Pass**, 2026-11-21, WebView2 runtime 157, on `animex.one` (E2's site whose player sits in a
+cross-origin frame):
+- (a) a script added with `AddScriptToExecuteOnDocumentCreatedAsync` ran inside that frame, and (b) the host received
+  its message with `e.Source` naming the frame: `site: source=https://plyr.animex.one/:t=80: count=1 w=842 h=474
+  readyState=4 duration=1420.0436 t=80`, then `t=80.209911` exactly 1.000 s of host clock later - `t` advances 1:1
+  with wall clock.
+- (c) a command posted back into that frame landed, and (d) moved the frame's own player: `t=276.262522` at
+  08:54:49.250, `spike: command posted to 1 child frame(s) and the top document for t=120` at 08:54:49.367,
+  `t=120.769168` at 08:54:50.250 and `121.780072` a second later, `readyState=4` throughout.
+- (e) the request filter still blocked an ad host while the player kept playing: `blocked
+  https://acscdn.com/script/aclib.js`, blocked count > 0, `readyState=4`.
+
+The raw log lines and their log file names stay in tickets 01 and 01b (`.scratch/phase-2-m2a/issues/`).
 
 ### The TURN experiment is dead
 
