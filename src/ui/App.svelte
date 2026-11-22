@@ -553,6 +553,13 @@
     } else if (frame.type === 'members') {
       members = frame.members
     } else if (frame.type === 'chat') {
+      // T22: one line per frame, the sender and the length - never the text,
+      // and ASCII whatever was typed (`AGENTS.md` rule 10). Dev-only like the
+      // other `[ws]`/`[page]` lines; the message id pairs it with the sidecar's.
+      if (dev) {
+        const from = frame.memberId ?? 'system'
+        console.info(`[chat] m=${frame.id} from=${from} chars=${frame.text.length}`)
+      }
       const stick = atBottom()
       chat = [...chat, frame]
       followNewest(stick)

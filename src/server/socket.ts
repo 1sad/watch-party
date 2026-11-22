@@ -493,6 +493,10 @@ export function attachRoomSocket(
             () => at,
           )
           broadcastChat(message)
+          // T22: one line per accepted message, the sender and the length - never
+          // the text, and ASCII whatever was typed (`AGENTS.md` rule 10). The
+          // message id lets this line be paired with the page's own line.
+          log(`[chat] m=${message.id} from=${member.id} chars=${frame.text.length}`)
           return
         }
         default:
