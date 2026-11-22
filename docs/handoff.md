@@ -353,22 +353,22 @@ in for a stranger's view because the server sees a non-loopback caller either wa
 
 | Request, over the LAN address | Answer |
 | --- | --- |
-| `/`, `/discovery`, `/healthz`, `/join`, `/join?c=WRONG`, `/bridge.js`, `/fixture`, and `/` with a wrong `wp_key` cookie | `403`, no page, no room data |
+| `/`, `/discovery`, `/healthz`, `/join`, `/join?c=WRONG`, `/bridge.js`, `/fixture`, and `/` with a wrong `wp_key` cookie | `403` **and the gate page**: `<!doctype html>`, one code form (`id="c"`), 1162 bytes, no bundle, no version, no roster, no chat, no room code |
 | `/join?c=<the real room code>` | `200`, the app |
 | `/` on `127.0.0.1` (the owner's own window) | `200`, the app |
 
-So a stranger who knows only the address learns **nothing**: not the room code, not the roster, not the chat, not the
-version, not even that the port is this app. The room code carried in the invite link is the whole secret (ADR-044).
+So a stranger who knows only the address learns that this is Watch Party (harmless) and **nothing about the room**: no
+room code, no roster, no chat, no version. The room code carried in the invite link is the whole secret (ADR-044).
 What remains true and not fixed here: chat is plain text to anyone on the path who has the link (ADR-023), and the
 owner's own address is visible to every participant.
 
-To repeat it: `npm run dev:debug`, read `sidecar: PORT <n>` from `logs/host-*.log`, then request the paths above at
-`http://<this machine's LAN address>:<port>/`. Any caller from another machine sees what the table's first row shows.
+To repeat it: `npm run dev:debug`, read `sidecar: PORT <n>` from `logs/host-*.log`, then **read the body of a 4xx** -
+`curl.exe -i http://<this machine's LAN address>:<port>/`. `Invoke-WebRequest` throws on 4xx and a `catch` that prints
+only the status sees no page at all.
 
-**Deviation from ADR-044, recorded not fixed.** ADR-044 says a caller with only the address gets a *gate page* asking
-for the code. The build answers `403` with no page at all. It is stricter and simpler, and a caller who mistypes a link
-sees a blank refusal rather than a page they could act on. Deferred to the M3 phase (ticket 70) because whether a
-person should be *asked* for the code, or simply refused, is the owner's call, not a defect.
+> **Corrected 2026-11-23 (review of phase 4):** the first version of this section said the unauthorised answer was
+> `403` with *no page*, and read a deviation from ADR-044 out of it. Both were wrong: the instrument never read a 403
+> body. The build serves the gate page ADR-044 asks for. Ticket 70 was filed on that false premise and is withdrawn.
 
 ## v1 is done when
 
