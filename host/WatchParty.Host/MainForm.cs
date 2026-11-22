@@ -1466,7 +1466,7 @@ public sealed class MainForm : Form
         _site.Visible = true;
         _topStrip.Visible = true;
         HostLog.Write(
-            $"layout: page mode — site view left of a {SidebarWidth} px app view, top strip {TopStripHeight} px");
+            $"layout: page mode - site view left of a {SidebarWidth} px app view, top strip {TopStripHeight} px");
     }
 
     /// <summary>
