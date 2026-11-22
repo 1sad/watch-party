@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Watch Party probe page</title>
+<style>
+  body { margin: 0; padding: 16px; background: #14151a; color: #e8e8ea; font: 14px/1.4 system-ui, sans-serif; }
+  button { font: inherit; padding: 6px 12px; margin-right: 8px; }
+  h1 { font-size: 16px; margin: 12px 0 4px; }
+  #label { font-family: ui-monospace, monospace; color: #8fd; }
+  video { display: block; width: min(640px, 100%); margin-top: 12px; background: #000; }
+  #seekable { font-family: ui-monospace, monospace; color: #aaa; }
+</style>
+</head>
+<body>
+<p>
+  <button id="fullscreen" type="button">Fullscreen</button>
+  <button id="playpause" type="button">Play / pause</button>
+  <span id="label">no request yet</span>
+</p>
+<h1>Watch Party probe page</h1>
+<p id="seekable">seekable -</p>
+<video id="video" src="fixture.mp4" controls muted playsinline preload="metadata"></video>
+<script>
+  // A page a live check can name element by element. Nothing here talks to the
+  // room: it exists so a check can press a control and read what it received.
+  // testing-manual.md section 7 is the rig; serve.mjs beside this file answers
+  // Range requests so video.seekable is real.
+  const video = document.getElementById('video')
+  const label = document.getElementById('label')
+  const seekable = document.getElementById('seekable')
+  let requests = 0
+
+  document.getElementById('fullscreen').addEventListener('click', () => {
+    // Reached by a real press only: the same call from eval is refused.
+    document.documentElement.requestFullscreen().catch(() => {})
+  })
+
+  document.getElementById('playpause').addEventListener('click', () => {
+    requests += 1
+    const command = video.paused ? 'play' : 'pause'
+    if (command === 'play') {
+      video.play().catch(() => { label.textContent = 'got play refused (' + requests + ')' })
+    } else {
+      video.pause()
+    }
+    label.textContent = 'got ' + command + ' (' + requests + ')'
+  })
+
+  function readSeekable() {
+    const end = video.seekable.length > 0 ? video.seekable.end(0).toFixed(2) : 'none'
+    seekable.textContent = 'seekable ' + end + ' of ' + (video.duration || 0).toFixed(2)
+  }
+  video.addEventListener('loadedmetadata', readSeekable)
+  video.addEventListener('seeked', readSeekable)
+</script>
+</body>
+</html>
