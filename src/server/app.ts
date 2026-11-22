@@ -63,6 +63,98 @@ function isLoopback(request: IncomingMessage): boolean {
   return address === '::1' || address.startsWith('127.')
 }
 
+/**
+ * T68, ADR-044: the invite link is the key. A caller that reaches this port from
+ * anywhere but this machine gets one gate page - no page, no bundle, no version,
+ * no room - until it presents the room code. The invite link carries it the way
+ * `invite.ts` builds it (`/join?c=<code>`), and that link answers with the app
+ * plus this cookie, so the bundle and asset requests the page makes next carry
+ * the key too. The host's own window loads from 127.0.0.1 and needs neither.
+ */
+const KEY_COOKIE = 'wp_key'
+/** One evening: long enough for a party, and not a permanent credential. */
+const KEY_COOKIE_MAX_AGE_S = 12 * 60 * 60
+
+/**
+ * The gate: one small self-contained page. It asks for the code and reveals
+ * nothing else - no bundle reference, no version, no roster, no room state - and
+ * its form's `c` is exactly the parameter the invite link and the page use.
+ */
+const GATE_PAGE = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Watch Party</title>
+<style>
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #111; color: #eee; font: 16px system-ui, sans-serif; }
+form { display: grid; gap: 0.75rem; padding: 2rem; border: 1px solid #444; border-radius: 0.5rem; background: #1a1a1a; }
+h1 { margin: 0; font-size: 1.25rem; }
+p { margin: 0; color: #aaa; }
+label { font-size: 0.875rem; color: #aaa; }
+input { font: inherit; padding: 0.5rem; border: 1px solid #555; border-radius: 0.25rem; background: #0b0b0b; color: #eee; text-transform: uppercase; }
+button { font: inherit; padding: 0.5rem; border: 0; border-radius: 0.25rem; background: #3b82f6; color: #fff; cursor: pointer; }
+</style>
+</head>
+<body>
+<form action="/join" method="get">
+<h1>Watch Party</h1>
+<p>Enter the room code from the link you were sent.</p>
+<label for="c">Room code</label>
+<input id="c" name="c" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" required>
+<button type="submit">Join</button>
+</form>
+</body>
+</html>
+`
+
+/** The room's code, as `/discovery` already answers it; `null` before there is one. */
+function roomCodeOf(options: SidecarOptions): string | null {
+  const state: unknown = options.start?.()
+  if (typeof state !== 'object' || state === null) return null
+  const code = (state as { roomCode?: unknown }).roomCode
+  return typeof code === 'string' && code.length > 0 ? code : null
+}
+
+/** The two places a key can arrive: the link's `c`, and the cookie that link set. */
+function presentedCode(
+  request: IncomingMessage,
+  url: URL,
+): { link: string | null; cookie: string | null } {
+  const raw = url.pathname === '/join' ? (url.searchParams.get('c') ?? '') : ''
+  const link = raw.trim().toUpperCase()
+
+  let cookie: string | null = null
+  const header = request.headers.cookie
+  if (typeof header === 'string') {
+    for (const part of header.split(';')) {
+      const equals = part.indexOf('=')
+      if (equals < 0) continue
+      if (part.slice(0, equals).trim() !== KEY_COOKIE) continue
+      const value = part.slice(equals + 1).trim()
+      try {
+        cookie = decodeURIComponent(value)
+      } catch {
+        cookie = value
+      }
+      break
+    }
+  }
+
+  return { link: link.length === 0 ? null : link, cookie }
+}
+
+/** The one answer an unauthorized caller gets: the gate, and nothing else. */
+function sendGate(response: ServerResponse, method: string): void {
+  response.writeHead(403, {
+    'content-type': 'text/html; charset=utf-8',
+    'content-length': Buffer.byteLength(GATE_PAGE),
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+  })
+  response.end(method === 'HEAD' ? undefined : GATE_PAGE)
+}
+
 // A four-entry map instead of a `mime` package (ADR-035). Anything the page
 // build does not emit is served as bytes rather than guessed at.
 const CONTENT_TYPES: Record<string, string> = {
@@ -96,10 +188,25 @@ async function handle(
   const method = request.method ?? 'GET'
   const url = new URL(request.url ?? '/', 'http://127.0.0.1')
 
+  // T68, ADR-044: the port serves the app only to a caller that holds the key.
+  // This machine's own window holds it by definition, and `/discovery` is what
+  // hands it the code; anyone else must bring it in the link (`/join?c=`) or in
+  // the cookie that link sets. This is the first and widest check: below it, the
+  // rest of the file is the app as it was.
+  const loopback = isLoopback(request)
+  const code = roomCodeOf(options)
+  const presented = presentedCode(request, url)
+  const fromLink = code !== null && presented.link === code
+  const authorized = loopback || fromLink || (code !== null && presented.cookie === code)
+  if (!authorized) {
+    sendGate(response, method)
+    return
+  }
+
   // T64: a caller that is not this machine learns nothing from these routes -
   // no room code, no invite link, no version. 403 and one word, before anything
   // else looks at the request.
-  if (HOST_ONLY_ROUTES.has(url.pathname) && !isLoopback(request)) {
+  if (HOST_ONLY_ROUTES.has(url.pathname) && !loopback) {
     sendText(response, 403, 'forbidden\n', method)
     return
   }
@@ -192,6 +299,15 @@ async function handle(
     'content-type': CONTENT_TYPES[extname(filePath).toLowerCase()] ?? 'application/octet-stream',
     'content-length': body.length,
     'cache-control': 'no-store',
+    // T68: the link is the key, so following it leaves the key in this jar and
+    // the page's own asset requests carry it. Only the link can set it.
+    ...(fromLink
+      ? {
+          'set-cookie':
+            `${KEY_COOKIE}=${encodeURIComponent(presented.link ?? '')}; ` +
+            `Path=/; HttpOnly; SameSite=Lax; Max-Age=${KEY_COOKIE_MAX_AGE_S}`,
+        }
+      : {}),
   })
   response.end(method === 'HEAD' ? undefined : body)
 }

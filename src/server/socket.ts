@@ -85,6 +85,85 @@ function isLoopback(remoteAddress: string | undefined): boolean {
 }
 
 /**
+ * T68, ADR-044: a wrong code stops being free. Two counters, both measured from
+ * the authority's clock (`options.now`, so a test can move it):
+ *
+ * - one socket is closed after `SOCKET_REFUSAL_LIMIT` refused joins on it;
+ * - one address is barred for `ADDRESS_BLOCK_MS` once it has
+ *   `ADDRESS_REFUSAL_LIMIT` refused joins inside `ADDRESS_REFUSAL_WINDOW_MS`.
+ *
+ * The socket limit is the cheap one (the page lets a person retype a typo); the
+ * address limit is what a script cannot afford, because it has to spend four
+ * sockets to reach it and then waits a minute. The state lives here, beside the
+ * sockets, and nowhere in the room: no protocol frame changes.
+ */
+export const SOCKET_REFUSAL_LIMIT = 5
+export const ADDRESS_REFUSAL_LIMIT = 20
+export const ADDRESS_REFUSAL_WINDOW_MS = 60_000
+export const ADDRESS_BLOCK_MS = 60_000
+
+/** What one refused join cost, and what the authority does about it. */
+export interface RefusalDecision {
+  /** Refused joins on this one socket, this one included. */
+  socketRefusals: number
+  /** This socket has had its `SOCKET_REFUSAL_LIMIT`; close it. */
+  closeSocket: boolean
+  /** Refused joins from this address inside the window, this one included. */
+  addressRefusals: number
+  /** The address is barred now, for `ADDRESS_BLOCK_MS`. */
+  blockAddress: boolean
+}
+
+export interface RefusalBook {
+  /** Counts one refused join, keyed by the socket and by its address. */
+  refuse(socket: object, address: string): RefusalDecision
+  /** Forgets a closed socket; an address keeps its own window. */
+  forget(socket: object): void
+  /** True while this address is barred. */
+  blocked(address: string): boolean
+}
+
+export function createRefusalBook(now: () => number = Date.now): RefusalBook {
+  const perSocket = new WeakMap<object, number>()
+  const perAddress = new Map<string, number[]>()
+  const blockedUntil = new Map<string, number>()
+
+  return {
+    refuse(socket, address) {
+      const socketRefusals = (perSocket.get(socket) ?? 0) + 1
+      perSocket.set(socket, socketRefusals)
+
+      const at = now()
+      const recent = (perAddress.get(address) ?? []).filter((time) => at - time < ADDRESS_REFUSAL_WINDOW_MS)
+      recent.push(at)
+      perAddress.set(address, recent)
+
+      const blockAddress = recent.length >= ADDRESS_REFUSAL_LIMIT
+      if (blockAddress) blockedUntil.set(address, at + ADDRESS_BLOCK_MS)
+
+      return {
+        socketRefusals,
+        closeSocket: socketRefusals >= SOCKET_REFUSAL_LIMIT,
+        addressRefusals: recent.length,
+        blockAddress,
+      }
+    },
+
+    forget(socket) {
+      perSocket.delete(socket)
+    },
+
+    blocked(address) {
+      const until = blockedUntil.get(address)
+      if (until === undefined) return false
+      if (now() < until) return true
+      blockedUntil.delete(address)
+      return false
+    },
+  }
+}
+
+/**
  * The room's WebSocket endpoint on the sidecar's one listener (§5, T3 item 1).
  *
  * The shape of this file is deliberate:
@@ -107,6 +186,13 @@ export function attachRoomSocket(
   const sockets = new Map<PeerSocket, Member>()
   /** §4.6's limits are per member, kept beside the sockets rather than in the room. */
   const budgets = new Map<string, ChatBudget>()
+  /**
+   * T68: refused joins, per socket and per address. Beside `budgets` for the
+   * same reason: a fact about this caller's session, not about the room.
+   */
+  const refusals = createRefusalBook(now)
+  /** Sockets this file has ended for guessing; their late frames are ignored. */
+  const closing = new Set<PeerSocket>()
   /**
    * §6.3's "at most one correction per client per 5 s". It is beside the
    * sockets for the same reason the chat budget is: a fact about this member's
@@ -194,6 +280,15 @@ export function attachRoomSocket(
 
   const joinMember = (socket: PeerSocket, frame: ClientFrame, remoteAddress: string | undefined): void => {
     if (frame.type !== 'hello') return
+    const address = remoteAddress ?? 'unknown'
+    // T68: a barred address is refused without looking at the code at all, so a
+    // guesser that has spent its minute gets one final answer and no comparison.
+    if (refusals.blocked(address)) {
+      fail(socket, 'bad_room')
+      closing.add(socket)
+      socket.close()
+      return
+    }
     // F4: the end is final. The code is left in place, so this has to be asked
     // first — without it a late hello would match, and a loopback client would
     // be seated as a fresh owner of a room the spec says cannot exist.
@@ -202,8 +297,23 @@ export function attachRoomSocket(
       return
     }
     if (frame.code !== room.code) {
-      // The socket stays open: the page shows one sentence and lets them retype.
+      // The socket stays open until it has spent its refusals: the page shows one
+      // sentence and lets them retype, and T68 makes a script pay for the loop.
+      const verdict = refusals.refuse(socket, address)
       fail(socket, 'bad_room')
+      if (verdict.blockAddress) {
+        log(
+          `[gate] address refused for ${ADDRESS_BLOCK_MS / 1000}s ` +
+            `refusals=${verdict.addressRefusals} addr=${address}`,
+        )
+      }
+      if (verdict.closeSocket) {
+        closing.add(socket)
+        // `close()`, not a drop: the frame above must reach the caller, which is
+        // how a test - and a person - sees the fifth refusal end the attempt.
+        socket.close()
+        log(`[gate] closed socket refusals=${verdict.socketRefusals} addr=${address}`)
+      }
       return
     }
 
@@ -245,6 +355,11 @@ export function attachRoomSocket(
     // welcome and nothing else.
     broadcastMembers()
     broadcastChat(postSystemChat(room, result.member.id, (label) => `${label} joined`, now))
+    // T68 box 3's other half: an accepted join is one line, so "a correct code
+    // still works" is readable beside the refused sockets. It rides the dev
+    // channel like the page's other counting lines: the shipped log's shape is
+    // pinned by a contract test that a new line at join time would break.
+    debug(`[room] joined id=${result.member.id} addr=${address}`)
   }
 
   wss.on('connection', (socket: PeerSocket, request: IncomingMessage) => {
@@ -253,6 +368,9 @@ export function attachRoomSocket(
     })
 
     socket.on('message', (data) => {
+      // T68: a socket this file ended for guessing is already closed; anything
+      // still in flight from it must not be counted or answered.
+      if (closing.has(socket)) return
       const frame = parseFrame(data)
       // Not JSON, or no `type`: nothing to dispatch on, same rule as unknown types.
       if (frame === null) return
@@ -506,6 +624,8 @@ export function attachRoomSocket(
     })
 
     socket.on('close', () => {
+      refusals.forget(socket)
+      closing.delete(socket)
       const member = sockets.get(socket)
       if (member === undefined) return
       const label = displayNameOf(room, member.id)
