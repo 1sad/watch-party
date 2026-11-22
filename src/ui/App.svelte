@@ -27,7 +27,7 @@
   } from '../shared/media.ts'
   import { PAGE_STAGE_MS, playbackAfterPageCommit, setPageFrame } from '../shared/page.ts'
   import { previewHolds, type PendingPreview } from './preview.ts'
-  import { pageSide, siteAfterPreview, HIDE_SITE_MESSAGE } from './room-view.ts'
+  import { pageSide, pageCommitFields, siteAfterPreview, HIDE_SITE_MESSAGE } from './room-view.ts'
   import {
     POPUP_NOTICE_MS,
     expirePopup,
@@ -202,10 +202,11 @@
 
   /**
    * T03b: §5's address bar follows §4.2 — a room is a site or a file, never both.
-   * With a file the bar is gone, so a file room keeps M1's picture, picker and
-   * all; with no file it is the way a room becomes a site.
+   * T37 / ADR-038's amendment: a room that holds a file **may take a page**, so
+   * the bar stays available while a file plays and that transition has a route;
+   * only membership decides it (`selfId`), never whether a file is playing.
    */
-  const showAddressBar = $derived(selfId !== null && media === null)
+  const showAddressBar = $derived(selfId !== null)
 
   /**
    * T07 item 2's one line. A page that has not been put on the room's position
@@ -507,7 +508,15 @@
       // log would hold nothing at the commit at all, and ADR-032's two seconds
       // could not be measured in the window that started them.
       if (dev) console.info(`[page] pageCommitted page=${frame.page} previewed=${previewed}`)
-      roomPage = frame.page
+      // T37 / ADR-038's 2026-11-22 amendment, §4.2: a room that held a file may
+      // take a page, and the commit clears the file in every window. The frame
+      // carries only the page, so this window drops its own `media` beside the
+      // page write: without it the file picture stays up, the bar's absence keeps
+      // the room one-way, and T26's gate on site events would silence the view
+      // this commit just asked for.
+      const committed = pageCommitFields(frame.page)
+      roomPage = committed.page
+      media = committed.media
       pendingPreview = null
       // T14: the old page's player is gone (or about to be); the hold on it goes
       // with the document, whether or not this window navigates here.

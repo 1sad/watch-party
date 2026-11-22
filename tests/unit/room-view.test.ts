@@ -13,7 +13,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { pageSide, siteAfterPreview, HIDE_SITE_MESSAGE } from '../../src/ui/room-view.ts'
+import {
+  pageSide,
+  pageCommitFields,
+  siteAfterPreview,
+  HIDE_SITE_MESSAGE,
+} from '../../src/ui/room-view.ts'
 import type { Media } from '../../src/shared/protocol.ts'
 
 /** The file the owner picked, as `welcome` and the `media` frame carry it (§4.2). */
@@ -68,4 +73,19 @@ test('a preview that ended without a commit goes back to the committed page, nev
 
 test('a preview cancelled in a room whose page was never set leaves no site view at all', () => {
   assert.deepEqual(siteAfterPreview(null), { kind: 'hide' })
+})
+
+/**
+ * T37 / ADR-038's 2026-11-22 amendment, §4.2: a room that held a file may take a
+ * page, and the page commit clears the file in every window. A window holding a
+ * file that receives `pageCommitted` therefore ends with `media === null` and the
+ * committed page set — which is also what makes its page side a site again.
+ */
+test('a page commit in a room that held a file drops the file and sets the page', () => {
+  const window = pageCommitFields('https://example.com/watch')
+  assert.equal(window.media, null)
+  assert.equal(window.page, 'https://example.com/watch')
+  // The same fields §4.2 decides from: the window that held this file is now the
+  // site, so the file-mode picture and T26's gate on site events both go with it.
+  assert.deepEqual(pageSide(window), { kind: 'site', page: 'https://example.com/watch' })
 })

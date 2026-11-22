@@ -49,6 +49,18 @@ export function pageSide(room: RoomPageFields): PageSide {
   return room.page === null ? { kind: 'none' } : { kind: 'site', page: room.page }
 }
 
+/**
+ * T37 / ADR-038's 2026-11-22 amendment, §4.2: a room that held a file **may take
+ * a page**, and the page commit clears the file in every window. The frame that
+ * commits a page carries the page and nothing else (§5), so each window writes
+ * the page and drops its own `media` in the same step — from that instant the
+ * room is a site, the file picture is gone, and T26's gate on site events no
+ * longer silences the view the commit asks for.
+ */
+export function pageCommitFields(page: string): RoomPageFields {
+  return { page, media: null }
+}
+
 /** Where the site view goes when a staged preview ends without committing. */
 export type SiteRestore = { kind: 'show'; page: string } | { kind: 'hide' }
 
