@@ -9,7 +9,9 @@ own file" mode, which exists mainly to test sync without a website in the way.
 build"** — 23 of its 25 ticket files done, and 51 and 52 are `blocked` on the phase 4 (M3) plan
 (`.scratch/phase-3-m7/spec.md`). M3 "the room obeys" comes after it (`spec.md`
 §13: M7 runs before M3). Nothing has shipped. The only status line kept current is
-`.scratch/<phase>/spec.md` → `## Status`; read it before believing any claim about what works.
+`.scratch/<phase>/spec.md` → `## Status`; read it before believing any claim about what works. **The working record -
+specs, tickets, session notes, costs - is kept on the owner's machine and is not in this public repo**, so a fresh
+clone has the code and `docs/` only.
 
 **Rebuilt on 2026-11-16** around ADR-022 … ADR-027. **ADR-043** (the portable copy is its folder, and nothing leaves
 it) is the newest and amends ADR-042; ADR-041 (one portable executable; the browser is the only dependency outside

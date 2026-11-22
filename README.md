@@ -6,7 +6,8 @@ link, and everyone else is in the same room on the same streaming page, in step,
 Status: **M7 ("portable build") closed 2026-11-22** — there is one executable per flavour that opens a window and runs a
 room from a folder on a machine with nothing installed. What is proved, and what is not, is in
 `.scratch/phase-3-m7/spec.md` → `## Status`. The built files are attached to
-[release v0.1.0](https://github.com/1sad/watch-party/releases/tag/v0.1.0) in the private repository.
+[release v0.1.0](https://github.com/1sad/watch-party/releases/tag/v0.1.0). This repository is public: code and documents
+are published, while the working record (specs, tickets, session notes and costs) stays on the owner's machine.
 
 ## Using it
 
@@ -39,8 +40,7 @@ and never sent.
 
 ### A friend
 
-1. Get the same file, from the host - the repository is private, so send the file itself rather than a link. It must be
-   the same build the host is running.
+1. Get the same file from the release page, or from the host. It must be the same build the host is running.
 2. Run it, then open the invite link the host sent, or paste the six-character code.
 3. Wait for the host to press play. A reload or a dropped connection rejoins at the room's position.
 
