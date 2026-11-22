@@ -399,7 +399,7 @@ public sealed class MainForm : Form
                 ? $"{WebView2Engine.FixedFolder(_root)} (absent)"
                 : fixedEngine;
             HostLog.Write($"engine: none usable; fixed folder={fixedTried}; "
-                + $"evergreen={evergreen ?? "none"}; {Ascii(error.Message)}");
+                + $"evergreen={evergreen ?? "none"}; {HostLog.Ascii(error.Message)}");
             throw;
         }
     }
@@ -1805,10 +1805,6 @@ public sealed class MainForm : Form
         Controls.Add(notice);
         notice.BringToFront();
     }
-
-    /// <summary>AGENTS.md rule 10: log lines stay ASCII, and an engine's message may not.</summary>
-    private static string Ascii(string text) =>
-        new(text.Select(character => character is >= ' ' and <= '~' ? character : '?').ToArray());
 
     private void ShowFailure(string sentence)
     {

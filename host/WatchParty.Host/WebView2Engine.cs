@@ -115,25 +115,66 @@ internal static class WebView2Engine
     {
         if (!IsWindows10) return Array.Empty<string>();
 
-        string[] lines = new string[Windows10Grants.Length];
-        for (int index = 0; index < Windows10Grants.Length; index++)
+        try
         {
-            string grant = Windows10Grants[index];
-            string outcome = RunIcacls(engineFolder, grant);
-            lines[index] = $"engine: windows 10 grant {grant} on {engineFolder}: {outcome}";
-        }
+            string? icacls = IcaclsPath();
+            if (icacls is null)
+            {
+                // A machine without icacls in its system folder still starts, with a line
+                // that says why no grant was applied (T58).
+                return new[]
+                {
+                    HostLog.Ascii(
+                        $"engine: windows 10 grants not applied on {engineFolder}: "
+                        + $"icacls.exe is not in {Environment.SystemDirectory}"),
+                };
+            }
 
-        return lines;
+            string[] lines = new string[Windows10Grants.Length];
+            for (int index = 0; index < Windows10Grants.Length; index++)
+            {
+                string grant = Windows10Grants[index];
+                string outcome = RunIcacls(icacls, engineFolder, grant);
+                // Flattened, not dropped: a localized icacls message or a folder name outside
+                // ASCII must not reach the log as garbage (AGENTS.md rule 10, T58).
+                lines[index] = HostLog.Ascii($"engine: windows 10 grant {grant} on {engineFolder}: {outcome}");
+            }
+
+            return lines;
+        }
+        catch (Exception error)
+        {
+            // Nothing this method raises may reach Payload.Extract, which would turn a grant
+            // that Windows 11 does not need into a start that does not happen (T58).
+            return new[]
+            {
+                HostLog.Ascii($"engine: windows 10 grants not applied on {engineFolder}: {error.Message}"),
+            };
+        }
     }
 
     /// <summary>Windows 11 starts at build 22000; Windows 10 builds are below it.</summary>
     private static bool IsWindows10 => Environment.OSVersion.Version.Build < 22000;
 
-    private static string RunIcacls(string folder, string grant)
+    /// <summary>
+    /// The full path of Windows 10's icacls.exe in the system folder, or null when it is not
+    /// there - a windowed app cannot show the console search a bare name starts (NodePath.cs:3-5,
+    /// ADR-034).
+    /// </summary>
+    private static string? IcaclsPath()
+    {
+        string directory = Environment.SystemDirectory;
+        if (string.IsNullOrEmpty(directory)) return null;
+
+        string candidate = Path.Combine(directory, "icacls.exe");
+        return File.Exists(candidate) ? candidate : null;
+    }
+
+    private static string RunIcacls(string icacls, string folder, string grant)
     {
         try
         {
-            ProcessStartInfo start = new("icacls")
+            ProcessStartInfo start = new(icacls)
             {
                 UseShellExecute = false,
                 CreateNoWindow = true,
@@ -152,8 +193,10 @@ internal static class WebView2Engine
                 ? "ok"
                 : $"failed (exit {process.ExitCode}): {output.Replace('\r', ' ').Replace('\n', ' ').Trim()}";
         }
-        catch (Exception error) when (error is IOException or InvalidOperationException)
+        catch (Exception error)
         {
+            // Win32Exception included: a path that does not start is an ExternalException, not
+            // an IOException, and the caller's line is the answer rather than a thrown start (T58).
             return $"failed: {error.Message}";
         }
     }

@@ -80,6 +80,13 @@ internal static class HostLog
         }
     }
 
+    /// <summary>
+    /// AGENTS.md rule 10: log lines stay ASCII, and an engine's or the system's message may not.
+    /// Here rather than in the window because the extraction writes the grant lines too (T58).
+    /// </summary>
+    public static string Ascii(string text) =>
+        new(text.Select(character => character is >= ' ' and <= '~' ? character : '?').ToArray());
+
     private static string NewFileName()
     {
         string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss-fff", System.Globalization.CultureInfo.InvariantCulture);
