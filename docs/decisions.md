@@ -1220,3 +1220,29 @@ consequence of the sync maths being written for five mirrors, not a limit the co
 link cannot be helped over the phone without reading six characters aloud, which is the intended friction. Ten
 members widen the roster the page must draw and the chat tail the socket sends on join. The port is still plain HTTP
 and chat is still readable on the path (ADR-023); this ADR closes the door, not the window.
+
+## ADR-045 - The app speaks UPnP itself, from an ephemeral port
+
+**Decision.** The app keeps `@achingbrain/nat-port-mapper` for NAT-PMP and stops using it for UPnP. Its own SSDP search
+- one M-SEARCH with `ST: urn:schemas-upnp-org:device:InternetGatewayDevice:2` and one with `:1`, from a socket bound to
+an **ephemeral** port - finds the gateway, and the app's own SOAP calls (`AddPortMapping`, `GetExternalIPAddress`,
+`DeletePortMapping`) do the rest. No new dependency: node's `dgram` and `http` are enough.
+
+**Why.** Measured on 2026-11-22 (ticket 66): the library binds UDP 1900 hardcoded
+(`node_modules/@achingbrain/nat-port-mapper/dist/src/upnp/discovery.js:36-43`, `port: 1900` at `:40`; no override in its
+public API; 4.0.5 is the latest published). Windows' SSDP service (SSDPSRV) already holds 1900 on every interface, so
+the router's unicast replies never reach the app: the same M-SEARCH got **zero** answers on 1900 and one answer from an
+ephemeral port, in the same minute, and `findGateways()` returned `gateways=0 waited_ms=6013`. That is the failure a
+friend reported as eight silent seconds - the router was answering, and the app could not hear it.
+`scripts/upnp-probe.mjs` reproduces both sides in one call, and it shipped with ticket 66.
+
+**Rejected.** Patching or forking the dependency: its API exposes no port, so a patch pins us to a private copy of a
+library to change one line, and the next upstream release re-opens it. Relying on NAT-PMP alone: routers that offer
+only UPnP would never work, and NAT-PMP is absent on many. Leaving it and reporting "no router answered" for ever:
+dishonest, because the router does answer, and `spec.md` §14 asks for the true reason.
+
+**Cost / risk.** A hundred and fifty lines or so against a protocol with real variants across vendors; SOAP faults have
+to be surfaced rather than swallowed; a mapping left behind must be removed when the room closes, or given a lease, so
+a crashed run does not strand a port on a participant's router. It cannot be unit-tested against a router, so
+`scripts/upnp-probe.mjs` is the instrument and every claim about it is a live measurement. NAT-PMP stays first because
+it answers in a quarter of a second when it answers at all; the app's own UPnP search is the fallback.
