@@ -48,3 +48,22 @@ export function pageSide(room: RoomPageFields): PageSide {
   if (room.media !== null) return { kind: 'file' }
   return room.page === null ? { kind: 'none' } : { kind: 'site', page: room.page }
 }
+
+/** Where the site view goes when a staged preview ends without committing. */
+export type SiteRestore = { kind: 'show'; page: string } | { kind: 'hide' }
+
+/**
+ * T27 / ADR-032's amendment: a preview that ends without a commit. Cancel and a
+ * refused `setPage` are the same ending for the picture — the address the bar
+ * sent never became the room's page, so the site view goes back to the page the
+ * room did commit, or, in a room whose page was never set, there is no site view
+ * at all and T26's hide path takes the pane away.
+ *
+ * The staged address is not a parameter on purpose: it lives only in
+ * `pendingPreview` until `pageCommitted` writes it to `roomPage` (§5), so the
+ * committed page is the only address this decision can be given, and the preview
+ * cannot be what the window is left showing.
+ */
+export function siteAfterPreview(roomPage: string | null): SiteRestore {
+  return roomPage === null ? { kind: 'hide' } : { kind: 'show', page: roomPage }
+}

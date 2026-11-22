@@ -13,7 +13,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { pageSide, HIDE_SITE_MESSAGE } from '../../src/ui/room-view.ts'
+import { pageSide, siteAfterPreview, HIDE_SITE_MESSAGE } from '../../src/ui/room-view.ts'
 import type { Media } from '../../src/shared/protocol.ts'
 
 /** The file the owner picked, as `welcome` and the `media` frame carry it (§4.2). */
@@ -51,4 +51,21 @@ test('a fresh room with neither a page nor a file has nothing to show and nothin
 
 test('a room that somehow carried both is a file, so a stale address keeps no site view up', () => {
   assert.deepEqual(pageSide({ page: 'https://example.com/watch', media: file }), { kind: 'file' })
+})
+
+/**
+ * T27 / ADR-032's amendment: a preview that ends without a commit. The address
+ * the bar sent lives only in `pendingPreview` until `pageCommitted` writes it to
+ * `roomPage` (§5), so the page handed back here is always the room's committed
+ * one — the preview can never be what the site view is left showing.
+ */
+test('a preview that ended without a commit goes back to the committed page, never the preview', () => {
+  assert.deepEqual(siteAfterPreview('https://example.com/film'), {
+    kind: 'show',
+    page: 'https://example.com/film',
+  })
+})
+
+test('a preview cancelled in a room whose page was never set leaves no site view at all', () => {
+  assert.deepEqual(siteAfterPreview(null), { kind: 'hide' })
 })

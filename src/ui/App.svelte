@@ -27,7 +27,7 @@
   } from '../shared/media.ts'
   import { PAGE_STAGE_MS, playbackAfterPageCommit, setPageFrame } from '../shared/page.ts'
   import { previewHolds, type PendingPreview } from './preview.ts'
-  import { pageSide, HIDE_SITE_MESSAGE } from './room-view.ts'
+  import { pageSide, siteAfterPreview, HIDE_SITE_MESSAGE } from './room-view.ts'
   import {
     POPUP_NOTICE_MS,
     expirePopup,
@@ -600,9 +600,17 @@
       // undone locally too. Explaining it is not enough — the gesture already
       // moved this element, and the room did not move with it.
       if (frame.code === 'not_controller') realign += 1
-      // T03c: a staged page the authority refused never commits, so the preview
-      // has nothing left to wait for and Cancel would name a window that closed.
-      if (frame.code === 'not_controller' || frame.code === 'stale_host') pendingPreview = null
+      // T27: a staged page the authority refused never commits, so the preview
+      // it was showing ends here. The error frame does not say which message it
+      // refuses, but a preview only exists because this window sent `setPage`,
+      // and `previewHolds` keeps the room's frames off it meanwhile, so a
+      // refusal that lands with one pending is that `setPage` — and the site
+      // view goes back to the room's page, or away when there is none.
+      if (frame.code === 'not_controller' || frame.code === 'stale_host') {
+        const staged = pendingPreview !== null
+        pendingPreview = null
+        if (staged) restoreSiteAfterPreview()
+      }
     }
   }
 
@@ -1301,6 +1309,19 @@
   }
 
   /**
+   * T27 / ADR-032's amendment: both ways a preview ends without a commit land
+   * here. Cancel and a refused `setPage` leave the room exactly where it was, so
+   * the site view goes back to the committed page — or, in a room whose page was
+   * never set, T26's hide path takes the pane away and the app view fills the
+   * window as in M1. The preview's own address is never what is left showing.
+   */
+  function restoreSiteAfterPreview(): void {
+    const side = siteAfterPreview(roomPage)
+    if (side.kind === 'show') moveSiteView(side.page)
+    else hideSiteView()
+  }
+
+  /**
    * R29's countdown, in whole seconds, from this window's own clock. It is a
    * label and not the window: the pending preview ends on `pageCommitted`, on a
    * Cancel or on a refusal, never on this number reaching zero — the authority
@@ -1335,9 +1356,9 @@
     if (socket !== null && selfId !== null) {
       socket.send(JSON.stringify({ type: 'cancelPage', epoch: pending.epoch }))
     }
-    // A room that had no page yet has nothing to go back to, and the host has no
-    // message that hides the site view again (03d's one gap, reported).
-    if (roomPage !== null) moveSiteView(roomPage)
+    // A room that had no page yet has nothing to go back to, so the preview's
+    // navigation is undone by T26's hide rather than a second address (T27).
+    restoreSiteAfterPreview()
     if (dev) console.info(`[page] cancel ${pending.page}`)
   }
 
