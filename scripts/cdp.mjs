@@ -95,12 +95,12 @@ async function pageTargets(port) {
     response = await fetch(url, { signal: AbortSignal.timeout(ANSWER_TIMEOUT_MS) })
   } catch {
     throw new CliError(
-      `no DevTools endpoint on 127.0.0.1:${port} — start a window with \`npm run dev:debug\` (or pass --port <n>)`,
+      `no DevTools endpoint on 127.0.0.1:${port} - start a window with \`npm run dev:debug\` (or pass --port <n>)`,
     )
   }
 
   if (!response.ok) {
-    throw new CliError(`no DevTools endpoint on 127.0.0.1:${port} — it answered HTTP ${response.status}`)
+    throw new CliError(`no DevTools endpoint on 127.0.0.1:${port} - it answered HTTP ${response.status}`)
   }
 
   const list = await response.json()
@@ -112,18 +112,18 @@ async function pageTargets(port) {
 /** A target by its id, or by its position in the `targets` list. */
 function pickTarget(targets, key) {
   if (targets.length === 0) {
-    throw new CliError('the window has no page to drive yet — its sidecar may not have reported a port')
+    throw new CliError('the window has no page to drive yet - its sidecar may not have reported a port')
   }
 
   if (/^\d+$/.test(key)) {
     const target = targets[Number(key)]
     if (target) return target
-    throw new CliError(`no target at index ${key}; there ${targets.length === 1 ? 'is 1 page' : `are ${targets.length} pages`} — run \`targets\` to list them`)
+    throw new CliError(`no target at index ${key}; there ${targets.length === 1 ? 'is 1 page' : `are ${targets.length} pages`} - run \`targets\` to list them`)
   }
 
   const target = targets.find((candidate) => candidate.id === key)
   if (target) return target
-  throw new CliError(`no target with id ${key} — run \`targets\` to list them`)
+  throw new CliError(`no target with id ${key} - run \`targets\` to list them`)
 }
 
 /**
