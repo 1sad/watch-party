@@ -64,7 +64,7 @@ it everywhere.
 
 | Assumption | Why we believe it | How it fails | What it costs |
 | --- | --- | --- | --- |
-| WebView2 is present on every guest's Windows machine | it ships with Windows 11 and is installed on Windows 10 via Edge | an old or stripped Windows install lacks it | installer offers the runtime; one extra download, once |
+| WebView2 is present on every guest's Windows machine | it ships with Windows 11 and is installed on Windows 10 via Edge | an old or stripped Windows install lacks it | the smaller copy says one sentence and stops; the larger one carries the engine inside itself (ADR-041) |
 | Ad filtering at the request level is enough on these sites | most of these players' ads are separate requests | an ad is stitched into the video stream itself | the video cannot be cleaned without relaying (the rescue path) |
 | The site's player can be driven from script inside our own window | it is our window; no origin boundary to cross | the player listens only to trusted (real user) events | synthetic events with `isTrusted`-shaped handling; a real click can be required to start |
 | Sites tolerate a room's worth of viewers from different addresses | every person's browser requests from their own IP | a site rate-limits a shared room's page loads | staggered joins; the rescue for whoever is refused |

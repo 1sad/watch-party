@@ -29,7 +29,8 @@ address, and shows a single link that carries both the address and the room code
 and nothing to configure. If the address cannot be learned or the port cannot be opened, the app says so plainly at
 this point rather than at join time (§14).
 
-The link uses a custom `watchparty://` scheme that the installer registers, so clicking it launches the app. Alongside
+The link uses a custom `watchparty://` scheme that the copy registers for itself every time it starts (ADR-042), so
+clicking it launches the app. Alongside
 it the app shows the raw address and code for the case where the click does nothing (a browser that refuses the
 scheme, a headless machine, someone on an OS where registration failed) — the app accepts both, and the raw form is
 the fallback rather than the instruction.
@@ -136,8 +137,10 @@ deleted: R16 is the only one genuinely dropped, because rooms no longer outlive 
 - **Sync perception:** nobody should be able to *hear* a gap. Target ≤ 250 ms after convergence; the 4 s hard-seek
   threshold means transient divergence is tolerated rather than fought.
 - **Footprint:** one program, ≤ 300 MB resident with a page open, zero CPU when paused. No second browser bundled.
-- **Ship:** a Windows installer for one program, Windows 10/11. WebView2 is already present on effectively every
-  such machine; the installer checks and offers the runtime if it is somehow missing. No Docker, no database, no
+- **Ship:** one file (ADR-041), copied into a folder the person can write in (ADR-043): no installer and no
+  administrator rights. WebView2 is already present on effectively every such machine; the larger flavour carries the
+  browser engine inside itself for the machine that lacks it, and with neither engine the window says one plain
+  sentence and stops. No Docker, no database, no
   Caddy, no TLS certificate — see ADR-023 for why plain HTTP on a direct connection is the deliberate trade.
 - **Platforms:** Windows now; Linux later (the same UI shell, a different browser component); Android later (a
   browser inside the app is the only way to sync a third-party page there). No iOS, ever, for the reasons in
