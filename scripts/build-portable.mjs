@@ -247,6 +247,22 @@ async function main() {
   say(`[3/5] payload.zip written with ${zipper} (${formatBytes((await stat(payloadZip)).size)})`)
 
   say('[4/5] publishing the host (win-x64, Release, self-contained, single file)')
+  // T46d, measured 2026-11-22 (ADR-043): IncludeNativeLibrariesForSelfExtract is
+  // what keeps this ONE file, and it is also the one thing a copy leaves outside
+  // its folder. The .NET loader extracts the bundled native libraries to
+  // %TEMP%\.net\<exe name>\<bundle id>\ BEFORE Main runs, so no host code can
+  // redirect it; only a variable in the launching process can
+  // (DOTNET_BUNDLE_EXTRACT_BASE_DIR, Microsoft's single-file page), and setting
+  // that needs a second file to launch from. Measured for this host: exactly two
+  // files, both WebView2Loader.dll, 194912 bytes each (389824 bytes per build),
+  // written on a copy's first run and reused by every later run (five runs, 0 new
+  // entries after the first), never pruned, and gone only when Windows clears
+  // %TEMP%. The alternative - the native libraries beside the exe - was measured
+  // at one extra file for this host (WebView2Loader.dll, 194912 bytes; publishing
+  // with IncludeNativeLibrariesForSelfExtract=false puts nothing else beside the
+  // exe but its .pdb and three .xml files). "One file" is the user's promise
+  // (ADR-041), so the shape is not this build's to trade: ticket 46d records the
+  // %TEMP% extraction as the one documented exception instead.
   await run(dotnet, [
     'publish',
     join('host', 'WatchParty.Host', 'WatchParty.Host.csproj'),
@@ -281,6 +297,8 @@ async function main() {
   say(`payload sha256: ${payloadHash}`)
   say(`payload list:   ${manifestPath}`)
   say(`node:           ${node.summary}`)
+  say('note:           run 1 of a copy writes %TEMP%\\.net\\<exe name>\\<bundle id>\\ - 2 x WebView2Loader.dll, 389824 bytes -')
+  say('                the one documented exception to ADR-043 (T46d, measured 2026-11-22)')
   say('built with the exe still unproven: running from the payload is ticket 45b')
 }
 
