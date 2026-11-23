@@ -1752,90 +1752,99 @@
   {:else}
     <!-- T95 / ADR-047: the watching screen. Tickets 96-99 lay it out; this ticket
          keeps every control it has today: the picker, the player, the chat and
-         the roster. The address bar above is gated the same way. -->
-    {#if canPick}
-      <section class="pick">
-        <h2>File mode</h2>
-        <button type="button" data-pick onclick={requestFile} disabled={picking || host === null}>
-          {picking ? 'Waiting for the file…' : 'Open a file'}
-        </button>
-        {#if pickNotice !== null}
-          <p class="notice {pickNotice.kind}" role="status">{pickNotice.text}</p>
-        {/if}
-      </section>
-    {/if}
-
-    {#if selfId !== null}
-      {#if playback !== null && !roomEnded}
-        <Player
-          {playback}
-          {revision}
-          {realign}
-          {nudge}
-          {media}
-          src={playerSrc}
-          {devPlay}
-          clock={authorityClock}
-          rtt={() => estimate.rtt}
-          send={sendCommand}
-        />
-      {/if}
-
-      <div class="room-body">
-        <section class="chat" aria-label="Chat">
-          <h2>Chat</h2>
-          <div class="messages" bind:this={chatList}>
-            {#each chat as message (message.id)}
-              {#if message.kind === 'system'}
-                <p class="system">{message.text}</p>
-              {:else}
-                <p class="message" class:mine={message.memberId === selfId}>
-                  <span class="author">{message.name}</span>
-                  {#if message.memberId === selfId}<span class="you">you</span>{/if}
-                  <span class="text">{message.text}</span>
-                </p>
-              {/if}
-            {/each}
-            {#each chatNotices as entry, index (index)}
-              <p class="notice {entry.kind}" role="status">{entry.text}</p>
-            {/each}
-          </div>
-          <form onsubmit={submitChat}>
-            <input
-              type="text"
-              aria-label="Message"
-              placeholder={roomEnded ? 'The room ended' : 'Message'}
-              autocomplete="off"
-              disabled={roomEnded}
-              bind:value={chatDraft}
-            />
-            <button type="submit" disabled={roomEnded}>Send</button>
-          </form>
-        </section>
-
-        {#if members.length > 0 && !roomEnded}
-          <section class="roster">
-            <h2>In this room</h2>
-            <ul>
-              {#each members as member (member.id)}
-                <li>
-                  <span class="dot {member.status}" title={member.status}></span>
-                  <span class="name">{member.displayName}</span>
-                  {#if member.id === selfId}<span class="you">you</span>{/if}
-                </li>
-              {/each}
-            </ul>
-
-            {#if selfId !== null}
-              <form onsubmit={submitRename}>
-                <input type="text" aria-label="Your name" placeholder="Your name" bind:value={nameDraft} />
-                <button type="submit">Set name</button>
-              </form>
-            {/if}
-          </section>
+         the roster. The address bar above is gated the same way.
+         T96 / ADR-047: `.watch` is the picture area and the chat column. Which
+         way round they sit is the **host's**, read off `data-layout` on the root
+         element; the column's width is `--chat-column`, also the host's. Neither
+         number is written in this file - the fallbacks in the CSS are for a
+         browser or a test. -->
+    <div class="watch">
+      <div class="picture">
+        {#if selfId !== null && playback !== null && !roomEnded}
+          <Player
+            {playback}
+            {revision}
+            {realign}
+            {nudge}
+            {media}
+            src={playerSrc}
+            {devPlay}
+            clock={authorityClock}
+            rtt={() => estimate.rtt}
+            send={sendCommand}
+          />
         {/if}
       </div>
-    {/if}
+
+      {#if canPick}
+        <section class="pick">
+          <h2>File mode</h2>
+          <button type="button" data-pick onclick={requestFile} disabled={picking || host === null}>
+            {picking ? 'Waiting for the file…' : 'Open a file'}
+          </button>
+          {#if pickNotice !== null}
+            <p class="notice {pickNotice.kind}" role="status">{pickNotice.text}</p>
+          {/if}
+        </section>
+      {/if}
+
+      {#if selfId !== null}
+        <div class="room-body">
+          <section class="chat" aria-label="Chat">
+            <h2>Chat</h2>
+            <div class="messages" bind:this={chatList}>
+              {#each chat as message (message.id)}
+                {#if message.kind === 'system'}
+                  <p class="system">{message.text}</p>
+                {:else}
+                  <p class="message" class:mine={message.memberId === selfId}>
+                    <span class="author">{message.name}</span>
+                    {#if message.memberId === selfId}<span class="you">you</span>{/if}
+                    <span class="text">{message.text}</span>
+                  </p>
+                {/if}
+              {/each}
+              {#each chatNotices as entry, index (index)}
+                <p class="notice {entry.kind}" role="status">{entry.text}</p>
+              {/each}
+            </div>
+            <form onsubmit={submitChat}>
+              <input
+                type="text"
+                aria-label="Message"
+                placeholder={roomEnded ? 'The room ended' : 'Message'}
+                autocomplete="off"
+                disabled={roomEnded}
+                bind:value={chatDraft}
+              />
+              <button type="submit" disabled={roomEnded}>Send</button>
+            </form>
+          </section>
+
+          {#if members.length > 0 && !roomEnded}
+            <section class="roster">
+              <h2>In this room</h2>
+              <ul>
+                {#each members as member (member.id)}
+                  <li>
+                    <span class="dot {member.status}" title={member.status}></span>
+                    <span class="name">{member.displayName}</span>
+                    {#if member.id === selfId}<span class="you">you</span>{/if}
+                  </li>
+                {/each}
+              </ul>
+
+              {#if selfId !== null}
+                <form onsubmit={submitRename}>
+                  <input type="text" aria-label="Your name" placeholder="Your name" bind:value={nameDraft} />
+                  <button type="submit">Set name</button>
+                </form>
+              {/if}
+            </section>
+          {/if}
+        </div>
+      {/if}
+    </div>
   {/if}
 
   {#if dev}
@@ -1869,6 +1878,108 @@
   main {
     padding: 2.5rem 3rem;
     max-width: 52rem;
+  }
+
+  /* T96 / ADR-047: on the watching screen the page is the window, not a column
+     that scrolls. The document takes the window's height and the only scroller
+     is the chat's list, so the app mount fills the window and `main` fills what
+     the address bar leaves. The first screen keeps the rules above -
+     `data-screen` is what separates them, and it is the page's own. */
+  :global(html[data-screen='watching']) :global(body) {
+    overflow: hidden;
+  }
+
+  :global(html[data-screen='watching']) :global(#app) {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  :global(html[data-screen='watching']) main {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    max-width: none;
+    padding: 0.75rem 1rem;
+    overflow: hidden;
+  }
+
+  /* T96 / ADR-047: the picture is this screen's, so the page's own title is not
+     drawn above it - the window's title bar says the app's name and the invite
+     bar (T97) names the room. The line it cost came out of the picture and the
+     chat, which are the two things the room is. */
+  :global(html[data-screen='watching']) h1 {
+    display: none;
+  }
+
+  /* ADR-047: picture left, chat column right, and an unset `data-layout` is
+     `wide` - the attribute is the host's, and the threshold is read from it, not
+     from a media query. The column's top row is where the routes to something to
+     watch live (`bar`), under it the chat and the roster (`body`). */
+  .watch {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--chat-column, 380px);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      'picture bar'
+      'picture body';
+    gap: 0.75rem 1rem;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .picture {
+    grid-area: picture;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  /* T96: the picker is a route, not the picture, and it sits on the column with
+     the chat (ADR-047's bar) rather than over the picture - the picture's height
+     is bounded, and a heading in that column would come out of the bound. */
+  .watch .pick {
+    grid-area: bar;
+    margin: 0;
+    min-width: 0;
+  }
+
+  .watch .pick h2 {
+    margin: 0 0 0.4rem;
+    font-size: 0.95rem;
+  }
+
+  /* ADR-047: the column moves under the picture and the picture is bounded to
+     at most 60% of the content height, so the chat always has room and its own
+     list is still the only thing that scrolls. The three parts are stacked in
+     the markup's own order - picture, the routes, the chat - and the picture
+     gives way first when the window is too short for the column's controls. */
+  :global(html[data-layout='narrow']) .watch {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem 0;
+  }
+
+  :global(html[data-layout='narrow']) .picture {
+    flex: 0 1 auto;
+    max-height: 60%;
+  }
+
+  :global(html[data-layout='narrow']) .watch .pick {
+    flex: 0 0 auto;
+  }
+
+  /* The chat's heading and input are not the picture's to squeeze: the column
+     asks for no width of its own and keeps eight lines' worth, so the picture
+     gives way first and the roster scrolls into view. */
+  :global(html[data-layout='narrow']) .room-body {
+    flex: 1 1 0;
+    min-height: 8rem;
   }
 
   /* T03b: the 48 px the host reserves across the top, drawn inside the app
@@ -2130,25 +2241,46 @@
     color: #7fd0a5;
   }
 
+  /* ADR-047: the chat column - the chat's list and its input, with the roster
+     under them, and the column is the bar's and the body's two rows. The chat
+     keeps its heading and its input at their own height and the list takes what
+     is left, so only the list scrolls; when a window is too short for the whole
+     column, the column itself scrolls rather than squeezing a control out of
+     reach. */
   .room-body {
+    grid-area: body;
     display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    gap: 2rem;
+    flex-direction: column;
+    gap: 0.75rem;
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
   }
 
   .chat {
-    flex: 2 1 22rem;
+    display: flex;
+    flex-direction: column;
+    flex: 1 0 auto;
+    min-height: 0;
     min-width: 0;
+  }
+
+  .chat h2,
+  .roster h2 {
+    margin-top: 0;
   }
 
   .roster {
-    flex: 1 1 12rem;
+    flex: 0 0 auto;
     min-width: 0;
   }
 
+  /* Natural height on the list, so a column too short for everything still
+     shows messages rather than collapsing to nothing, and the room's own
+     scrollbar appears on the column instead. */
   .messages {
-    height: 20rem;
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
     padding: 0.5rem 0.75rem;
     border: 1px solid #2c2d36;

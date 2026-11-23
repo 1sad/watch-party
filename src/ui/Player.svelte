@@ -537,11 +537,26 @@
 
 <style>
   .player {
-    margin: 0 0 1.5rem;
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 0;
+    /* T96 / ADR-047: the film's shape. Where the picture area is given a height
+       (the wide layout) this is ignored; where the area sizes to its content
+       (the narrow one), it is what makes the box 16:9 before the host's bound
+       caps it. The video below is drawn inside it at its own shape either way. */
+    aspect-ratio: 16 / 9;
   }
 
+  /* T96 / ADR-047: the frame takes every pixel the picture area leaves above
+     the controls, and the video is drawn inside it at its own shape - the black
+     around it is the frame's own background, so a 16:9 film in a taller area is
+     letterboxed rather than cropped or stretched. */
   .frame {
     position: relative;
+    flex: 1 1 0;
+    min-height: 0;
     background: #000;
     border: 1px solid #2c2d36;
     border-radius: 8px;
@@ -551,16 +566,17 @@
   video {
     display: block;
     width: 100%;
-    aspect-ratio: 16 / 9;
+    height: 100%;
+    object-fit: contain;
     background: #000;
   }
 
   .empty {
     margin: 0;
     display: flex;
+    flex: 1 1 auto;
     align-items: center;
     justify-content: center;
-    aspect-ratio: 16 / 9;
     padding: 1rem;
     color: #9a9aab;
     text-align: center;
