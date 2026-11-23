@@ -348,7 +348,7 @@ Appended rather than inserted, so ticket numbers stay continuous (T1…T30).
 ### Measured 2026-11-23 - what a caller who knows only the address can reach
 
 The owner asked whether the opened port endangers a participant. Measured on the owner's machine against the running
-build, from the machine's own LAN address (`192.168.10.44:59820`, then two more runs on 51613 and 50927), which stands
+build, from the machine's own LAN address (`192.168.x.y:59820`, then two more runs on 51613 and 50927), which stands
 in for a stranger's view because the server sees a non-loopback caller either way:
 
 | Request, over the LAN address | Answer |
@@ -362,7 +362,7 @@ room code, no roster, no chat, no version. The room code carried in the invite l
 What remains true and not fixed here: chat is plain text to anyone on the path who has the link (ADR-023), and the
 owner's own address is visible to every participant.
 
-**Guessing has a price** (ticket 71, live on 2026-11-23: 21 calls, and the 22nd call carrying the real code `G279Y7`
+**Guessing has a price** (ticket 71, live on 2026-11-23: 21 calls, and the 22nd call carrying the room's real code
 was still refused). A wrong code is billed against the caller, at both doors, from one shared book (ADR-044,
 `docs/decisions.md:1203-1208`): five refused joins close a socket; twenty refused joins from one address inside 60 s
 bar that address for 60 s, and a barred address is refused for the whole minute even when it then presents the real
