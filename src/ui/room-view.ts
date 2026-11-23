@@ -71,6 +71,34 @@ export function pageCommitFields(room: RoomPageFields, page: string): RoomPageFi
   return { ...room, page, media: null }
 }
 
+/** The two facts that decide which of the app's two screens is on show (ADR-047). */
+export interface ScreenFields {
+  /** The window has entered its room - `Start a room`, or (ticket 110) its first `welcome`. */
+  entered: boolean
+  /** The room itself has ended (§14, T9b), so there is nothing to watch. */
+  roomEnded: boolean
+}
+
+/** ADR-047: the first screen is the room's front door, or the room is on show. */
+export type Screen = 'first' | 'watching'
+
+/**
+ * T95 / ADR-047: the page shows exactly one of two screens. The first screen is
+ * the room's **front door** - the room is live from the sidecar's boot, so it is
+ * not a pre-room state - and the window stays on it until it has **entered** its
+ * room; a room that has ended puts the window back on the first screen, because
+ * there is nothing left to watch. The flag is window-local and never crosses the
+ * wire (ADR-047); `enteredRoom` in `App.svelte` is a different flag (it says the
+ * boot poll has connected this page) and is not this one.
+ *
+ * The decision lives here so a unit test can hold it: this project has no DOM
+ * test, so a rule kept only inside the component is a rule nothing checks (the
+ * same arrangement `pageSide` above keeps).
+ */
+export function screenFor(screen: ScreenFields): Screen {
+  return screen.entered && !screen.roomEnded ? 'watching' : 'first'
+}
+
 /** Where the site view goes when a staged preview ends without committing. */
 export type SiteRestore = { kind: 'show'; page: string } | { kind: 'hide' }
 

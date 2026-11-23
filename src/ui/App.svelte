@@ -27,7 +27,7 @@
   } from '../shared/media.ts'
   import { PAGE_STAGE_MS, playbackAfterPageCommit, setPageFrame } from '../shared/page.ts'
   import { previewHolds, type PendingPreview } from './preview.ts'
-  import { pageSide, pageCommitFields, siteAfterPreview, HIDE_SITE_MESSAGE } from './room-view.ts'
+  import { pageSide, pageCommitFields, screenFor, siteAfterPreview, HIDE_SITE_MESSAGE } from './room-view.ts'
   import {
     POPUP_NOTICE_MS,
     expirePopup,
@@ -215,15 +215,6 @@
   const playerSrc = $derived(ownerOrigin === null ? null : mediaUrl(ownerOrigin, media, roomCode))
 
   /**
-   * T03b: §5's address bar follows §4.2 — the room's committed state is a site or
-   * a file, never both, and a staged preview does not change it.
-   * T37 / ADR-038's amendment: a room that holds a file **may take a page**, so
-   * the bar stays available while a file plays and that transition has a route;
-   * only membership decides it (`selfId`), never whether a file is playing.
-   */
-  const showAddressBar = $derived(selfId !== null)
-
-  /**
    * T07 item 2's one line. A page that has not been put on the room's position
    * within §6.3's hard-seek threshold is visibly behind, and saying so is
    * better than leaving a window that looks stuck (06b's reload finding).
@@ -236,6 +227,40 @@
    * answer — an overlay, the room's one system line, and no way back into it (T9b).
    */
   let roomEnded = $state(false)
+
+  /**
+   * ADR-047 / T95: the window has **entered** its room, so it is past the front
+   * door and on the room's own screen. It is window-local and does not cross the
+   * wire, and it is not `enteredRoom` below: that flag keeps the boot poll's one
+   * connection from being made twice, and both are meant to exist (ADR-047).
+   * T95 sets it from **Start a room** only - a guest's first `welcome` frame is
+   * ticket 110 - and ticket 98 resets it when the room ends.
+   */
+  let entered = $state(false)
+  /** ADR-047: the one screen on show, decided by `ui/room-view.ts`'s `screenFor`. */
+  const screen = $derived(screenFor({ entered, roomEnded }))
+
+  /**
+   * T03b: §5's address bar follows §4.2 — the room's committed state is a site or
+   * a file, never both, and a staged preview does not change it.
+   * T37 / ADR-038's amendment: a room that holds a file **may take a page**, so
+   * the bar stays available while a file plays and that transition has a route.
+   * T95 / ADR-047: what decides the bar on screen is the **screen**, not
+   * membership — the first screen is the front door and carries no address bar,
+   * and the room's controls live on the watching screen.
+   */
+  const showAddressBar = $derived(screen === 'watching')
+
+  $effect(() => {
+    // T95 / ADR-047: the screen is on the root element, so the page's CSS and a
+    // check can name it without reading the markup.
+    document.documentElement.dataset.screen = screen
+  })
+
+  /** T95: Start a room enters the room that is already live; it creates nothing. */
+  function enterRoom(): void {
+    entered = true
+  }
 
   let socket: WebSocket | null = null
   /** True once this page has decided which room it dials; the poll never overrides it. */
@@ -1582,7 +1607,7 @@
        top. HTML, drawn by this page (ADR-038), so the right-click menu, Ctrl+V
        and a visible Paste button are the engine's own behaviour. The host owns
        the strip's height and nothing else. -->
-  <header class="address-bar">
+  <header class="address-bar" data-address-bar>
     <form onsubmit={submitPage}>
       <input
         type="text"
@@ -1626,11 +1651,22 @@
     <p class="sentence">The room process is not answering. Close the window and start Watch Party again.</p>
   {:else if payload === null}
     <p class="sentence">Starting the room…</p>
-  {:else}
-    <p class="room">Room code <strong>{roomCode ?? payload.roomCode}</strong></p>
+  {:else if screen === 'first'}
+    <!-- T95 / ADR-047: the first screen is this room's front door. The room is
+         live from the sidecar's boot, so Start a room enters it rather than
+         creating one, and the host's invite is here in full - failure card and
+         Try again included (spec §8, §14). Nothing that watches or picks. -->
+    {#if roomEnded}
+      <section class="ended" role="alert">
+        <h2>The room ended</h2>
+        <p>{ROOM_OVER_SENTENCE} There is nothing to reconnect to.</p>
+      </section>
+    {/if}
 
     {#if inOwnRoom}
-      <h2>Start a room</h2>
+      <section class="invite" data-invite>
+        <button type="button" class="start" onclick={enterRoom}>Start a room</button>
+        <p class="room">Room code <strong data-invite-code>{roomCode ?? payload.roomCode}</strong></p>
 
       {#if payload.status === 'pending'}
         <p class="sentence">Asking your router to open a port…</p>
@@ -1638,12 +1674,12 @@
         <p class="sentence">{payload.result.sentence}</p>
 
         {#if payload.invite !== null}
-          <section class="invite">
+          <section>
             <p class="label">Invite link</p>
-            <p class="link">{payload.invite.primary}</p>
+            <p class="link" data-invite-link>{payload.invite.primary}</p>
             <button type="button" onclick={() => void copy()}>{copied ? 'Copied' : 'Copy invite link'}</button>
             <p class="label fallback">If the link does not open, paste this:</p>
-            <p class="link raw">{payload.invite.raw}</p>
+            <p class="link raw" data-invite-raw>{payload.invite.raw}</p>
             {#if payload.invite.lanRaw !== null && payload.invite.lanRaw !== payload.invite.raw}
               <p class="label fallback">On this network:</p>
               <p class="link raw">{payload.invite.lanRaw}</p>
@@ -1681,18 +1717,7 @@
       {#if payload.status === 'ready'}
         <button type="button" class="secondary" onclick={() => void retry()}>Try again</button>
       {/if}
-
-      {#if canPick}
-        <section class="pick">
-          <h2>File mode</h2>
-          <button type="button" data-pick onclick={requestFile} disabled={picking || host === null}>
-            {picking ? 'Waiting for the file…' : 'Open a file'}
-          </button>
-          {#if pickNotice !== null}
-            <p class="notice {pickNotice.kind}" role="status">{pickNotice.text}</p>
-          {/if}
-        </section>
-      {/if}
+      </section>
     {:else}
       <h2>You joined a room</h2>
       <p class="sentence">Someone else started this one, so the link above is not yours to share.</p>
@@ -1713,13 +1738,19 @@
         <p class="sentence error" role="status">{sentence}</p>
       {/if}
     </section>
-
-    {#if roomEnded}
-      <!-- §14, T9b: told plainly, with nothing to click that would pretend the
-           room can come back. The chat below keeps the one system line. -->
-      <section class="ended" role="alert">
-        <h2>The room ended</h2>
-        <p>{ROOM_OVER_SENTENCE} There is nothing to reconnect to.</p>
+  {:else}
+    <!-- T95 / ADR-047: the watching screen. Tickets 96-99 lay it out; this ticket
+         keeps every control it has today: the picker, the player, the chat and
+         the roster. The address bar above is gated the same way. -->
+    {#if canPick}
+      <section class="pick">
+        <h2>File mode</h2>
+        <button type="button" data-pick onclick={requestFile} disabled={picking || host === null}>
+          {picking ? 'Waiting for the file…' : 'Open a file'}
+        </button>
+        {#if pickNotice !== null}
+          <p class="notice {pickNotice.kind}" role="status">{pickNotice.text}</p>
+        {/if}
       </section>
     {/if}
 

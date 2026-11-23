@@ -16,6 +16,7 @@ import assert from 'node:assert/strict'
 import {
   pageSide,
   pageCommitFields,
+  screenFor,
   siteAfterPreview,
   HIDE_SITE_MESSAGE,
 } from '../../src/ui/room-view.ts'
@@ -87,4 +88,26 @@ test('a page commit in a room that held a file drops the file and sets the page'
   const committed = pageCommitFields(window, 'https://example.com/watch')
   assert.equal(committed.media, null)
   assert.equal(committed.page, 'https://example.com/watch')
+})
+
+/**
+ * T95 / ADR-047: the window shows one of two screens. The room is live from the
+ * sidecar's boot, so the first screen is its front door and the window leaves it
+ * only by **entering** the room; an ended room puts it back there. Four cases,
+ * because each one is a different fact the page can hold.
+ */
+test('a window that has not entered its room is on the first screen', () => {
+  assert.equal(screenFor({ entered: false, roomEnded: false }), 'first')
+})
+
+test('a window that has entered its room is on the watching screen', () => {
+  assert.equal(screenFor({ entered: true, roomEnded: false }), 'watching')
+})
+
+test('a room that ended puts an entered window back on the first screen', () => {
+  assert.equal(screenFor({ entered: true, roomEnded: true }), 'first')
+})
+
+test('a window that never entered and whose room never ended is still on the first screen', () => {
+  assert.equal(screenFor({ entered: false, roomEnded: true }), 'first')
 })
