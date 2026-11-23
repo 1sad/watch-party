@@ -41,6 +41,15 @@ public sealed class MainForm : Form
     private const int TopStripHeight = 48;
 
     /// <summary>
+    /// T94, ADR-047 ("one threshold, owned by the host"): the window's client
+    /// width, in CSS pixels, at or above which the page puts the chat beside the
+    /// picture and below which it puts it under. The app view's own width cannot
+    /// say this - it is the docked column whatever the window is - so the measure
+    /// is the form's client width, which is what the page sees as <c>innerWidth</c>.
+    /// </summary>
+    private const int WideLayoutMinCssWidth = 900;
+
+    /// <summary>
     /// T08 item 3: how long an <c>enter</c> that arrives while the layout is
     /// already full is read as the echo of the press that filled it rather than
     /// as a second press. One press can be named twice — by the page's intent
@@ -86,6 +95,13 @@ public sealed class MainForm : Form
     /// </summary>
     private string? _profileFolder;
     private bool _closing;
+
+    /// <summary>
+    /// T94: the layout last published to the page (<c>wide</c> or <c>narrow</c>),
+    /// so a resize of one pixel after another publishes nothing; null until the
+    /// page has been told once.
+    /// </summary>
+    private string? _publishedLayout;
     private bool _navigated;
     /// <summary>
     /// The port the sidecar reported, which together with <c>127.0.0.1</c> is the
@@ -218,6 +234,10 @@ public sealed class MainForm : Form
         FormClosing += OnFormClosing;
         FormClosed += OnFormClosed;
         _portTimeout.Tick += OnPortTimeout;
+        // T94, ADR-047: a resize is the form's client size changing, which is
+        // also the one event a monitor's DPI change arrives as - and the width in
+        // CSS pixels changes only when the client size does.
+        ClientSizeChanged += (_, _) => PublishLayout();
     }
 
     private async void OnLoad(object? sender, EventArgs e)
@@ -1735,6 +1755,9 @@ public sealed class MainForm : Form
         HostLog.Write(
             $"navigation completed {_page.CoreWebView2.Source} success={e.IsSuccess} " +
             $"status={e.HttpStatusCode} error={e.WebErrorStatus}");
+        // T94, ADR-047: a new document has neither the attribute nor the
+        // variable, so the window tells it again rather than waiting for a resize.
+        PublishLayout(afterLoad: true);
 #if DEBUG
         _appLoaded = true;
         MaybeRunRelaySelfTest();
@@ -1771,6 +1794,57 @@ public sealed class MainForm : Form
         _siteLoaded = true;
         MaybeRunRelaySelfTest();
 #endif
+    }
+
+    /// <summary>
+    /// T94, ADR-047 ("one threshold, owned by the host"): the window tells the
+    /// page which layout it is and how wide the chat column is, both on the app
+    /// view's root element - the page's CSS reads the attribute for the threshold
+    /// and the variable for the width and spells neither number itself. Sent on a
+    /// change only, and once after the app view loads because a new document has
+    /// lost it; a failure is a log line and never stops a resize.
+    /// </summary>
+    private async void PublishLayout(bool afterLoad = false)
+    {
+        if (_closing || _page.CoreWebView2 is null) return;
+
+        // The form's client width in CSS pixels, which is what the page sees as
+        // innerWidth when it fills the window (ADR-047). Not the app view's width,
+        // which is the docked column at every window size, and not the outer
+        // width, which the border and - at any scaling but 100% - the DPI factor
+        // keep apart from it.
+        int dpi = DeviceDpi;
+        int cssWidth = dpi > 0 ? (int)Math.Round(ClientSize.Width * 96.0 / dpi) : ClientSize.Width;
+        string layout = cssWidth >= WideLayoutMinCssWidth ? "wide" : "narrow";
+        if (!afterLoad && layout == _publishedLayout) return;
+
+        // Claimed before the await: a second change while this one runs publishes
+        // nothing, and a failure gives the value back so the next resize retries.
+        string? previous = _publishedLayout;
+        _publishedLayout = layout;
+        // The one column width travels with it, from the same constant the dock
+        // uses, so the page's chat column and the host's app view cannot drift
+        // apart (ADR-047, "one column width, owned by the host too").
+        string script =
+            "(()=>{const r=document.documentElement;"
+            + $"r.dataset.layout='{layout}';"
+            + $"r.style.setProperty('--chat-column','{SidebarWidth}px');}})();";
+        try
+        {
+            await _page.CoreWebView2.ExecuteScriptAsync(script);
+            if (layout != previous)
+            {
+                // The window's own size, which is what the camera asks for and
+                // prints; the threshold above reads the client width, a little
+                // smaller by the border. One line per change, never per pixel.
+                HostLog.Write($"layout: window {Width}x{Height} {layout}");
+            }
+        }
+        catch (Exception error)
+        {
+            _publishedLayout = previous;
+            HostLog.Write($"layout: could not tell the page: {error.Message}");
+        }
     }
 
     private void OnSidecarExited()
