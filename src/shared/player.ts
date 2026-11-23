@@ -10,11 +10,13 @@
  */
 
 /**
- * The only two kinds the bridge may post. The host's relay refuses every other
- * kind (`MainForm.RelaySiteEvent`), because a page can run this script too —
- * ADR-038's cost note.
+ * The kinds the bridge may post. The host's relay refuses every other kind
+ * (`MainForm.RelaySiteEvent`), because a page can run this script too -
+ * ADR-038's cost note. T104 adds `pageAddress` (ADR-048): the top document
+ * announces its own address, and the relay forwards it from the top document
+ * only, so a third-party player frame gains no route to the app view.
  */
-export const PLAYER_MESSAGE_KINDS = ['playerReport', 'playerEvent'] as const
+export const PLAYER_MESSAGE_KINDS = ['playerReport', 'playerEvent', 'pageAddress'] as const
 
 /** One `<video>` as its own frame reported it. `id` is that frame's stable number for the element. */
 export interface FrameCandidate {

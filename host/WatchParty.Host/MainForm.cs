@@ -778,9 +778,12 @@ public sealed class MainForm : Form
     /// <summary>
     /// T05's whitelist, and the one place a site message becomes a site event.
     /// A page can run the bridge's own script too, so a frame is not trusted
-    /// with any kind it likes: only <c>playerReport</c> and <c>playerEvent</c>
-    /// cross to the app view, and anything else is dropped here rather than
-    /// taught to the app view. T08's <c>fullscreen</c> is handled above and never
+    /// with any kind it likes: only <c>playerReport</c>, <c>playerEvent</c> and
+    /// T104's <c>pageAddress</c> cross to the app view, and anything else is
+    /// dropped here rather than taught to the app view. A <c>pageAddress</c> is
+    /// relayed only when the sender is the top document: a player frame is often
+    /// another origin (E2: 6 of 11 sites), so a frame's address is never the
+    /// room's page (ADR-048). T08's <c>fullscreen</c> is handled above and never
     /// crosses either. The one exception is 02b's relay self-test, which
     /// exists only in the measuring build with the test armed.
     /// </summary>
@@ -810,6 +813,19 @@ public sealed class MainForm : Form
             {
                 HostLog.Write($"relay: dropped a site message of kind {kind ?? "(none)"}; "
                     + "a frame may post playerReport and playerEvent, and the host reads fullscreen itself");
+            }
+            return;
+        }
+
+        // T104, ADR-048: only the top document may name the room's page. The
+        // sender is the frame object this handler knows, not the page's claim
+        // about itself: a player frame's address is its own and never the
+        // room's, so it is dropped and counted like an unknown kind.
+        if (kind == "pageAddress" && frame is not null)
+        {
+            if (++_relayDropped <= RelayDropLines)
+            {
+                HostLog.Write("relay: dropped a pageAddress from a frame; only the top document may name the page");
             }
             return;
         }
@@ -844,6 +860,10 @@ public sealed class MainForm : Form
         {
             _page.CoreWebView2.PostWebMessageAsJson(relayed);
             _relayIn++;
+            // T104, ADR-048: one line per relayed address, in every build. The
+            // host holds no decision about it - it says where the site went, and
+            // the page decides what that means (ADR-034).
+            if (kind == "pageAddress") HostLog.Write($"relay: pageAddress {PageAddressHref(json) ?? source}");
             MaybeLogRelayOk();
         }
         catch (Exception error)
@@ -861,7 +881,9 @@ public sealed class MainForm : Form
 #if DEBUG
         if (_selfTestArmed && kind == "relaySelfTest") return true;
 #endif
-        return kind is "playerReport" or "playerEvent";
+        // T104: `pageAddress` is the top document's own address (ADR-048). The
+        // frame check in RelaySiteEvent is what keeps a frame's out.
+        return kind is "playerReport" or "playerEvent" or "pageAddress";
     }
 
     /// <summary>
@@ -1016,6 +1038,10 @@ public sealed class MainForm : Form
                 HostLog.Write($"site: bridge event frame={source} seq={seq} event={StringField(root, "event") ?? "(none)"}");
                 return;
             }
+
+            // T104: a pageAddress has its own line in every build; there is
+            // nothing here to measure about it.
+            if (kind != "playerReport") return;
 
             List<string> candidates = new();
             if (root.TryGetProperty("candidates", out JsonElement list) && list.ValueKind == JsonValueKind.Array)
@@ -1373,6 +1399,31 @@ public sealed class MainForm : Form
     private static double SecondsField(JsonElement element, string name)
     {
         return element.TryGetProperty(name, out JsonElement value) && value.TryGetDouble(out double number) ? number : 0;
+    }
+
+    /// <summary>
+    /// T104, ADR-048: the address a <c>pageAddress</c> message names, or null
+    /// when it names none. Read only for the log line; the relay forwards the
+    /// message as it arrived.
+    /// </summary>
+    private static string? PageAddressHref(string json)
+    {
+        try
+        {
+            using JsonDocument message = JsonDocument.Parse(json);
+            if (message.RootElement.ValueKind == JsonValueKind.Object
+                && message.RootElement.TryGetProperty("href", out JsonElement value)
+                && value.ValueKind == JsonValueKind.String)
+            {
+                return value.GetString();
+            }
+        }
+        catch (JsonException)
+        {
+            // Not one of ours: the relay refuses it the same way it refuses junk.
+        }
+
+        return null;
     }
 
     /// <summary>A message's <c>kind</c>, or null for anything not one of ours.</summary>

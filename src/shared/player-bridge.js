@@ -18,7 +18,10 @@
  * the frame is not trusted with more. Since T08 it posts a third, `fullscreen`:
  * the page's fullscreen *intent* (`wrapFullscreen` below). The host keeps that
  * one for itself and relays none of it, because the layout is the window's and
- * the room has no business with the shape of anyone's window. It is plain
+ * the room has no business with the shape of anyone's window. Since T104 it
+ * posts a fourth, `pageAddress`, from the top document only (ADR-048): the only
+ * document whose address is the room's page, and the host relays it from there
+ * alone. It is plain
  * ES5-ish JavaScript with no
  * imports because it is injected as text, and it must not depend on anything the
  * page may have broken: every read of an element is defensive.
@@ -43,6 +46,9 @@
   // T08: the page's fullscreen intent, posted, read by the host and by nothing
   // else. It is not in the relay's whitelist on purpose.
   var FULLSCREEN = 'fullscreen'
+  // T104, ADR-048: the top document's own address, relayed by the host when the
+  // sender is the top document. A frame's address is its own, never the room's.
+  var PAGE_ADDRESS = 'pageAddress'
 
   // A report never repeats faster than this while the candidate set is the
   // same; a changed set may go sooner, but not more than four times a second.
@@ -61,6 +67,17 @@
 
   var host = window.chrome && window.chrome.webview
   if (!host || typeof host.postMessage !== 'function') return
+
+  // T104, ADR-048: only the top document may name the room's page. This is read
+  // once - every message says which kind of document sent it, and only the top
+  // one announces its address. A page that hid `top` is treated as a frame: no
+  // address message is better than the wrong one.
+  var isTop = false
+  try {
+    isTop = window.top === window
+  } catch (error) {
+    isTop = false
+  }
 
   var ids = new WeakMap()
   var nextId = 1
@@ -112,6 +129,10 @@
     // told from an out-of-order delivery.
     message.doc = doc
     message.href = String(location.href)
+    // T104, ADR-048: whether this message came from the top document. A frame
+    // says false; the host drops a frame's `pageAddress` and relays only the top
+    // document's.
+    message.top = isTop
     try {
       host.postMessage(message)
     } catch (error) {
@@ -160,6 +181,63 @@
   // prototypes once and a player in an iframe is heard as well as the top page.
   wrapFullscreen(window.Element && window.Element.prototype, 'requestFullscreen', 'enter')
   wrapFullscreen(window.Document && window.Document.prototype, 'exitFullscreen', 'exit')
+
+  // T104: the address last announced. A site that rewrites its address in a
+  // loop sends one message per distinct address, not one per rewrite.
+  var lastPageHref = null
+
+  /**
+   * T104, ADR-048: one `pageAddress` per distinct address of the top document.
+   * Called when the document starts and after every route change. A page that
+   * broke `location` loses its address messages, never its picture.
+   */
+  function announcePageAddress() {
+    var href
+    try {
+      href = String(location.href)
+    } catch (error) {
+      return
+    }
+    if (href === lastPageHref) return
+    lastPageHref = href
+    post({ kind: PAGE_ADDRESS, href: href })
+  }
+
+  /**
+   * T104: wrap one history method so a same-document route change is announced
+   * after it runs, with its return value passed through untouched. The same
+   * discipline as `wrapFullscreen`: a page that froze the prototype keeps its
+   * own behaviour and loses only its address messages; the picture still plays.
+   */
+  function wrapHistory(owner, name) {
+    try {
+      if (!owner || typeof owner[name] !== 'function') return
+      var original = owner[name]
+      owner[name] = function () {
+        var answer = original.apply(this, arguments)
+        announcePageAddress()
+        return answer
+      }
+    } catch (error) {
+      // As above: the page keeps its own history and only the room loses the
+      // address.
+    }
+  }
+
+  if (isTop) {
+    wrapHistory(window.history, 'pushState')
+    wrapHistory(window.history, 'replaceState')
+    try {
+      if (typeof window.addEventListener === 'function') {
+        // A route change the page performs with the back button, or a fragment
+        // change: both move the address the browser shows.
+        window.addEventListener('popstate', announcePageAddress)
+        window.addEventListener('hashchange', announcePageAddress)
+      }
+    } catch (error) {
+      // A page that broke its own events still plays.
+    }
+  }
 
   function bufferedEnd(element) {
     try {
@@ -493,6 +571,9 @@
   }
 
   function start() {
+    // T104: a document load is a new bridge, so this is where a load's address
+    // is said - the same announcement a pushState earns.
+    if (isTop) announcePageAddress()
     tick()
     setInterval(tick, PLAYBACK_POLL_MS)
   }

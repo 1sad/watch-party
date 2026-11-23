@@ -87,13 +87,34 @@ function video(over: Partial<FakeVideo> = {}): FakeVideo {
 /** One message the bridge posted, as the harness keeps it. */
 type Posted = Record<string, unknown>
 
-function harness(videos: FakeVideo[]) {
+function harness(videos: FakeVideo[], options: { top?: boolean } = {}) {
   const posted: Posted[] = []
   const intervals: Array<() => void> = []
   const timers: Array<{ id: number; run: () => void; live: boolean }> = []
   const hostListeners: Array<(event: { data?: unknown }) => void> = []
+  const windowListeners = new Map<string, Array<(event: { type: string }) => void>>()
   let nextTimer = 1
   let clock = 1_000_000
+
+  // T104: the top document's address and the two history methods a page uses to
+  // change it without a load. The fake methods write the address the browser
+  // would show and return their own value, so the wrapper's pass-through and
+  // its dedupe are both visible here.
+  const location = { href: HREF }
+  const historyCalls: Array<{ name: string; url: string }> = []
+  const historyAnswer = { kept: 'the page\'s own return value' }
+  const history = {
+    pushState(_state: unknown, _title: string, url: string) {
+      historyCalls.push({ name: 'pushState', url })
+      location.href = url
+      return historyAnswer
+    },
+    replaceState(_state: unknown, _title: string, url: string) {
+      historyCalls.push({ name: 'replaceState', url })
+      location.href = url
+      return historyAnswer
+    },
+  }
 
   // T08: the two prototypes the fullscreen wrapper installs itself on. A frame
   // has one of each, so the fake document is made from `Document`'s and the fake
@@ -120,9 +141,15 @@ function harness(videos: FakeVideo[]) {
     // The fake page has no focus, which is the paused-rate case.
     hasFocus: () => false,
   })
-  const window = {
+  const window: Record<string, unknown> = {
     Element: { prototype: elementPrototype },
     Document: { prototype: documentPrototype },
+    history,
+    addEventListener: (name: string, listener: (event: { type: string }) => void) => {
+      const listeners = windowListeners.get(name) ?? []
+      listeners.push(listener)
+      windowListeners.set(name, listeners)
+    },
     chrome: {
       webview: {
         postMessage: (message: Posted) => posted.push(message),
@@ -132,6 +159,9 @@ function harness(videos: FakeVideo[]) {
       },
     },
   }
+  // T104: a top document is its own `window.top`. Every harness but T104's
+  // is a frame, which is exactly the document that must not name the page.
+  if (options.top === true) window.top = window
 
   // The seven names the bridge reads from its surroundings are parameters, so a
   // fake document, a fake clock, a fake timer queue and its `clearTimeout`
@@ -149,7 +179,7 @@ function harness(videos: FakeVideo[]) {
   run(
     window,
     document,
-    { href: HREF },
+    location,
     (tick: () => void) => intervals.push(tick),
     (timer: () => void) => {
       const id = nextTimer
@@ -167,6 +197,18 @@ function harness(videos: FakeVideo[]) {
 
   return {
     posted,
+    /** T104: the two history methods, as the bridge left them (wrapped). */
+    history,
+    /** T104: what the fake history methods return, so pass-through is provable. */
+    historyReturn: historyAnswer,
+    /** T104: fire a window event the address listeners hear (popstate/hashchange). */
+    windowEvent(name: string) {
+      for (const listener of windowListeners.get(name) ?? []) listener({ type: name })
+    },
+    /** T104: the browser moves the address with no history call, as a back press does. */
+    moveTo(href: string) {
+      location.href = href
+    },
     /** T08: the page's two calls, and the promise the engine would answer with. */
     fullscreen: {
       request: () => elementPrototype.requestFullscreen(),
@@ -204,6 +246,11 @@ function eventOf(posted: Posted[], name: string): Posted {
   const found = posted.find((message) => message.kind === 'playerEvent' && message.event === name)
   assert.ok(found, `no ${name} event arrived; posted ${JSON.stringify(posted)}`)
   return found
+}
+
+/** T104: every address the top document announced, in order. */
+function addresses(posted: Posted[]): Posted[] {
+  return posted.filter((message) => message.kind === 'pageAddress')
 }
 
 test('a frame with one playing video posts one report, with the fields the scoring reads', () => {
@@ -708,6 +755,59 @@ test('the bridge believes a caused event for exactly as long as the echo set doe
     ECHO_EXPIRY_MS,
     'CAUSED_EXPIRY_MS in src/shared/player-bridge.js must equal ECHO_EXPIRY_MS in src/shared/echo.ts',
   )
+})
+
+// ---- T104: the top document says where it is (ADR-048) ----
+
+test('the top document posts one pageAddress at start, and its messages say they are the top (T104)', () => {
+  const bridge = harness([video()], { top: true })
+  const sent = addresses(bridge.posted)
+  assert.equal(sent.length, 1, 'one pageAddress for the document it started on')
+  assert.equal(sent[0]?.href, HREF)
+  assert.equal(sent[0]?.top, true, 'and it says the top document sent it')
+
+  // A frame never names the page: its address is its own (6 of 11 sites). Every
+  // message it does send says it is not the top document.
+  const frame = harness([video()])
+  assert.equal(addresses(frame.posted).length, 0, 'a frame posts no pageAddress')
+  assert.equal(frame.posted[0]?.kind, 'playerReport', 'the frame still reports its video')
+  assert.equal(frame.posted[0]?.top, false)
+})
+
+test('a pushState to a new address posts exactly one more, and the same address posts none (T104)', () => {
+  const bridge = harness([video()], { top: true })
+  assert.equal(addresses(bridge.posted).length, 1)
+
+  const next = 'https://plyr.animex.one/embed/G2'
+  const answer = bridge.history.pushState(null, '', next)
+  assert.equal(answer, bridge.historyReturn, 'the page still gets the method\'s own return value')
+
+  const sent = addresses(bridge.posted)
+  assert.equal(sent.length, 2, 'exactly one more after a new path')
+  assert.equal(sent[1]?.href, next)
+  assert.equal(sent[1]?.top, true)
+
+  bridge.history.pushState(null, '', next)
+  assert.equal(addresses(bridge.posted).length, 2, 'the same address is not a change')
+})
+
+test('replaceState, popstate and hashchange each announce the address they land on (T104)', () => {
+  const bridge = harness([video()], { top: true })
+  const sent = () => addresses(bridge.posted)
+
+  bridge.history.replaceState(null, '', 'https://plyr.animex.one/embed/G3')
+  assert.equal(sent().length, 2, 'replaceState is a route change too')
+  assert.equal(sent().at(-1)?.href, 'https://plyr.animex.one/embed/G3')
+
+  bridge.moveTo('https://plyr.animex.one/embed/G4')
+  bridge.windowEvent('popstate')
+  assert.equal(sent().length, 3, 'a back press moves the address without a history call')
+  assert.equal(sent().at(-1)?.href, 'https://plyr.animex.one/embed/G4')
+
+  bridge.moveTo('https://plyr.animex.one/embed/G4#t=30')
+  bridge.windowEvent('hashchange')
+  assert.equal(sent().length, 4, 'a fragment change is an address change')
+  assert.equal(sent().at(-1)?.href, 'https://plyr.animex.one/embed/G4#t=30')
 })
 
 
