@@ -1207,6 +1207,10 @@ refused for the whole sixty seconds even when it then presents the real code (`A
 and at the HTTP gate alike (`src/server/socket.ts:106-109`, `app.ts:8`). A visit that presents no code is never
 counted. The room holds **ten** members, not five.
 
+> **Amended 2026-11-23 (ADR-046):** the code also travels on the media URL (`/media/<id>?c=<code>`). That is how a
+> guest's own window fetches the room's file; a request carrying no code, or a wrong one, is still refused, and
+> `/media/*` is not exempt from the gate.
+
 **Why.** The first release handed the room code to anyone who could reach the port (`GET /discovery` returned
 `roomCode` and the whole invite link unconditionally), so an open port was a room with the key taped to the door -
 one finding from the 2026-11-22 recon, recorded in `.scratch/phase-4-invite/spec.md`. The user's answer was the
@@ -1251,3 +1255,28 @@ to be surfaced rather than swallowed; a mapping left behind must be removed when
 a crashed run does not strand a port on a participant's router. It cannot be unit-tested against a router, so
 `scripts/upnp-probe.mjs` is the instrument and every claim about it is a live measurement. NAT-PMP stays first because
 it answers in a quarter of a second when it answers at all; the app's own UPnP search is the fallback.
+
+## ADR-046 - The room's file travels with the code in its URL
+
+**Decision.** The URL a window fetches the room's file from carries the room code: `/media/<id>?c=<code>`. That is the
+same code, in the same `c` parameter the invite link uses on `/join`; no second credential exists. The gate admits
+`/media/*` on that code exactly as it admits `/join`, and answers `403` to a request with no code or a wrong one. A
+window already entitled through its `wp_key` cookie keeps working unchanged.
+
+**Why.** ADR-044 closed the room's door by making the code the only credential, and the code arrives in the link. But a
+guest's page is served by its **own** sidecar on `127.0.0.1`: it holds no `wp_key` cookie for the owner's origin, and
+the media URL carried no code, so the door refused the film to a window that had already been let into the room. The
+0.2.0 packaged gate measured it (2026-11-23, ticket 84): the guest joined in 104 ms, then sent 51 reports, every one
+`readyState=0`, its player black, while the owner played. On the owner's own route the same URL answered `403` without
+the key and `206` with it. Before ADR-044 the same run stayed in step for ten minutes (0.1.0, ticket 50b), so the door
+did not protect the film - it removed it.
+
+**Rejected.** Exempting `/media/*` from the gate: it puts the film behind nothing but an address, which is the room
+code taped to the door again, and the media id is only a per-session id. A second token for media: two credentials to
+keep in step for one link. Proxying the guest's media through its own sidecar: a second network path and a second copy
+of the file's bytes for one person's eyes. A cross-origin cookie negotiation (a credentialed `fetch` that sets `wp_key`
+on the owner's origin): a CORS surface and a fragile first-frame ordering for the same result.
+
+**Cost / risk.** The media URL is a bearer URL: anyone who has it can stream the file until the room closes, exactly as
+anyone who has the invite link can join. That is ADR-044's own bargain, stated here so nobody reads it as new. The
+owner's page also requests `/media/<id>?c=<code>` now - one URL shape for the room's file.

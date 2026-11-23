@@ -124,6 +124,10 @@ rtt 1.0 ms, with a 137 ms skew injected reading back as 136.5 ms with the right 
 *This section is the part that goes stale first.* If a field named above does not appear in a real run, the run is
 right and this page is wrong: correct it here rather than working around it.
 
+**The Release host log has no invite line.** Measured on the 0.2.0 portable copy (ticket 83, 2026-11-23): 31 lines, and
+none carries the room code or the link - they exist only on the start screen. For a packaged copy, photograph the start
+screen with `window-shot.ps1` and read the code from the picture.
+
 ## 6. The clock panel: what it does and does not tell you
 
 The clock panel in the page shows the **last ping** it received: `offset −0.6 ms`, `rtt 1.0 ms · 2 samples`, and
