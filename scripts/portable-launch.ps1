@@ -83,6 +83,23 @@
 #                  Given together with -Exe or -Count it runs after those copies
 #                  are up, because they must register first. It never changes
 #                  what this rig launches or the environment it passes.
+#   -Close         Close the copies this invocation started - the pids printed
+#                  in its blocks, and nothing else - the way a person would, by
+#                  WM_CLOSE to each window, so the host runs its own shutdown
+#                  and kills its sidecar (MainForm.cs:2010-2028). A copy that
+#                  will not close in 10 s is ended, and a sidecar left behind by
+#                  such a forced close is ended too, because it is the only thing
+#                  that could keep the copy's folder from being swept. Prints one
+#                  line per pid and then "closed: <n> copy/copies". Given alone
+#                  it launches nothing, so it closes nothing and says so.
+#   -Sweep         Remove %TEMP%\wp-portable-*\ folders left by earlier runs,
+#                  printing each one removed. A folder that still holds a
+#                  running process is kept and the process named. Nothing
+#                  outside %TEMP%\wp-portable-* is touched. Given alone it
+#                  launches nothing; given with -Exe or -Count it runs first,
+#                  before this run creates its own folder.
+#   -Close and -Sweep change nothing about what the rig launches, the
+#   environment it passes or its output when neither is given.
 #
 # Exit code: 0 only when every copy logged a PORT; otherwise one line on stderr
 # and 1. Every line printed is ASCII (AGENTS.md rule 10).
@@ -98,7 +115,11 @@ param(
   [ValidateRange(5, 900)]
   [int]$WaitSec = 60,
 
-  [switch]$Restore
+  [switch]$Restore,
+
+  [switch]$Close,
+
+  [switch]$Sweep
 )
 
 Set-StrictMode -Version Latest
@@ -123,8 +144,129 @@ $wmiProcess = [wmiclass]'Win32_Process'
 $wmiStartup = [wmiclass]'Win32_ProcessStartup'
 
 function Stop-Rig([string]$Message) {
+  # A failure after some copies are up must not leave them on screen when the
+  # caller asked for -Close.
+  if ($Close) { Close-RigCopies }
   [Console]::Error.WriteLine("portable-launch: $Message")
   exit 1
+}
+
+# --- closing and sweeping (T109) -------------------------------------------
+# The copies this invocation started, in launch order: the only pids -Close may
+# touch. Each entry keeps the folder it was launched from, so a pid Windows has
+# recycled since cannot be closed by mistake.
+$script:startedPids = @()
+
+# Every process whose own exe sits inside this folder - a copy's host, its
+# sidecar node.exe, and any WebView2 process that runs from the runtime folder.
+# ExecutablePath is the signal, not a name: the same node.exe name is all over
+# this machine.
+function Get-ProcessesUnderFolder([string]$Folder) {
+  $prefix = $Folder.TrimEnd('\') + '\'
+  @(Get-CimInstance -ClassName Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) })
+}
+
+function Close-RigCopies {
+  if ($script:startedPids.Count -eq 0) { return }
+  $closed = 0
+  foreach ($entry in $script:startedPids) {
+    $proc = Get-Process -Id $entry.Pid -ErrorAction SilentlyContinue
+    if (-not $proc) {
+      Write-Output ("closed: pid {0} ({1}) had already exited" -f $entry.Pid, $entry.Name)
+      continue
+    }
+    $ours = $false
+    try { $ours = [bool]($proc.Path -and $proc.Path.StartsWith($entry.Folder, [StringComparison]::OrdinalIgnoreCase)) } catch { $ours = $false }
+    if (-not $ours) {
+      Write-Output ("closed: pid {0} left alone: its exe is not under {1}" -f $entry.Pid, $entry.Folder)
+      continue
+    }
+
+    $sent = $false
+    try { $sent = $proc.CloseMainWindow() } catch { $sent = $false }
+    $exited = $false
+    try { $exited = $proc.WaitForExit(10000) } catch { $exited = $false }
+    if ($exited) {
+      $how = if ($sent) { 'window closed' } else { 'exited' }
+      Write-Output ("closed: pid {0} ({1}): {2}" -f $entry.Pid, $entry.Name, $how)
+    }
+    else {
+      try { Stop-Process -Id $entry.Pid -Force -ErrorAction Stop } catch { }
+      $forced = $false
+      try { $forced = $proc.WaitForExit(5000) } catch { $forced = $false }
+      if ($forced) {
+        Write-Output ("closed: pid {0} ({1}): forced, the window did not close in 10 s" -f $entry.Pid, $entry.Name)
+        $exited = $true
+      }
+      else {
+        Write-Output ("closed: pid {0} ({1}): still running after a forced stop" -f $entry.Pid, $entry.Name)
+      }
+    }
+    if ($exited) { $closed++ }
+  }
+
+  # A forced close never runs the host's shutdown, so its sidecar can outlive
+  # it. That process is this run's own (it runs from this run's folder), and it
+  # is the only thing that could stop a later -Sweep from removing the folder,
+  # so it is ended here and named.
+  foreach ($entry in $script:startedPids) {
+    if (-not (Test-Path -LiteralPath $entry.Folder)) { continue }
+    foreach ($leftover in (Get-ProcessesUnderFolder $entry.Folder)) {
+      if ($leftover.ProcessId -eq $PID) { continue }
+      try {
+        Stop-Process -Id $leftover.ProcessId -Force -ErrorAction Stop
+        Write-Output ("closed: pid {0} ({1}) was still running from {2}" -f $leftover.ProcessId, $leftover.Name, $entry.Folder)
+      }
+      catch {
+        Write-Output ("closed: pid {0} ({1}) would not stop: {2}" -f $leftover.ProcessId, $leftover.Name, $_.Exception.Message)
+      }
+    }
+  }
+
+  $word = if ($closed -eq 1) { 'copy' } else { 'copies' }
+  Write-Output ("closed: {0} {1}" -f $closed, $word)
+}
+
+# -Sweep is deliberately narrow: a direct child of %TEMP% whose own name starts
+# with wp-portable-, and nothing else. Both the filter and the guard below say
+# so, so a path that ever failed one of them is reported and left alone.
+function Invoke-Sweep {
+  $tempRoot = (Resolve-Path -LiteralPath $env:TEMP).Path.TrimEnd('\')
+  $folders = @(Get-ChildItem -LiteralPath $tempRoot -Directory -Filter 'wp-portable-*' -ErrorAction SilentlyContinue |
+    Sort-Object Name)
+  if ($folders.Count -eq 0) {
+    Write-Output ("sweep: no wp-portable-* folder under {0}" -f $tempRoot)
+    return
+  }
+
+  $removed = 0
+  $kept = 0
+  foreach ($folder in $folders) {
+    if (-not $folder.Name.StartsWith('wp-portable-', [StringComparison]::OrdinalIgnoreCase) -or
+      -not $folder.FullName.StartsWith($tempRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
+      Write-Output ("sweep: left alone: {0} is not a wp-portable-* folder directly under {1}" -f $folder.FullName, $tempRoot)
+      $kept++
+      continue
+    }
+    $busy = @(Get-ProcessesUnderFolder $folder.FullName)
+    if ($busy.Count -gt 0) {
+      $who = ($busy | ForEach-Object { 'pid {0} {1}' -f $_.ProcessId, $_.Name }) -join ', '
+      Write-Output ("sweep: kept {0}: {1} is still running from it" -f $folder.FullName, $who)
+      $kept++
+      continue
+    }
+    try {
+      Remove-Item -LiteralPath $folder.FullName -Recurse -Force -ErrorAction Stop
+      Write-Output ("sweep: removed {0}" -f $folder.FullName)
+      $removed++
+    }
+    catch {
+      Write-Output ("sweep: kept {0}: it could not be removed ({1})" -f $folder.FullName, $_.Exception.Message)
+      $kept++
+    }
+  }
+  Write-Output ("sweep: removed {0}, kept {1}" -f $removed, $kept)
 }
 
 # --- the invite scheme's registration --------------------------------------
@@ -188,11 +330,22 @@ function Invoke-Restore {
   }
 }
 
-# Alone (-Exe and -Count both unbound) -Restore is the whole run: no exe is
-# looked for, nothing is copied, nothing is launched.
-if ($Restore -and -not ($PSBoundParameters.ContainsKey('Exe') -or $PSBoundParameters.ContainsKey('Count'))) {
-  Invoke-Restore
+# Alone (-Exe and -Count both unbound) -Restore, -Close and -Sweep are the whole
+# run: no exe is looked for, nothing is copied, nothing is launched, so there is
+# nothing of this invocation's own to close.
+$launchesCopies = $PSBoundParameters.ContainsKey('Exe') -or $PSBoundParameters.ContainsKey('Count')
+if (-not $launchesCopies -and ($Restore -or $Close -or $Sweep)) {
+  if ($Close) { Write-Output 'closed: 0 copies (nothing was launched: no -Exe or -Count given)' }
+  if ($Sweep) { Invoke-Sweep }
+  if ($Restore) { Invoke-Restore }
   exit 0
+}
+
+# With a launch, -Sweep runs first: every folder it can remove belongs to an
+# earlier run, because this run's own folder does not exist yet.
+if ($Sweep) {
+  Write-Output ''
+  Invoke-Sweep
 }
 
 # --- the exe ---------------------------------------------------------------
@@ -310,6 +463,11 @@ for ($i = 0; $i -lt $Count; $i++) {
   $proc = Get-Process -Id $created.ProcessId -ErrorAction SilentlyContinue
   if (-not $proc) {
     Stop-Rig ("copy {0} (pid {1}) was created and is gone already" -f $copyNo, $created.ProcessId)
+  }
+  $script:startedPids += [pscustomobject]@{
+    Pid    = $proc.Id
+    Name   = (Split-Path -Leaf $copyExe)
+    Folder = $folder
   }
 
   # The log's name carries the pid, so this can only ever be this copy's file.
@@ -439,10 +597,15 @@ if ($Restore) {
 }
 
 Write-Output ''
-Write-Output ("windows left up and visible: {0}" -f (($results | ForEach-Object { $_.Pid }) -join ', '))
-# ADR-043: the payload root is runtime\<version>-<hash8>\, so node.exe sits one
-# level deeper than the exe's own folder. The pattern below names this run's own
-# copies, so it can never sweep up a node from another folder or a later run.
-$nodePattern = '{0}\copy-*\runtime\*\node.exe' -f $root
-Write-Output ("stop them with: Stop-Process -Id <pid>; then kill any leftover node by path {0}" -f $nodePattern)
+if ($Close) {
+  Close-RigCopies
+}
+else {
+  Write-Output ("windows left up and visible: {0}" -f (($results | ForEach-Object { $_.Pid }) -join ', '))
+  # ADR-043: the payload root is runtime\<version>-<hash8>\, so node.exe sits one
+  # level deeper than the exe's own folder. The pattern below names this run's own
+  # copies, so it can never sweep up a node from another folder or a later run.
+  $nodePattern = '{0}\copy-*\runtime\*\node.exe' -f $root
+  Write-Output ("stop them with: Stop-Process -Id <pid>; then kill any leftover node by path {0}" -f $nodePattern)
+}
 exit 0
