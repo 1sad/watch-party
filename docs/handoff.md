@@ -354,13 +354,22 @@ in for a stranger's view because the server sees a non-loopback caller either wa
 | Request, over the LAN address | Answer |
 | --- | --- |
 | `/`, `/discovery`, `/healthz`, `/join`, `/join?c=WRONG`, `/bridge.js`, `/fixture`, and `/` with a wrong `wp_key` cookie | `403` **and the gate page**: `<!doctype html>`, one code form (`id="c"`), 1162 bytes, no bundle, no version, no roster, no chat, no room code |
-| `/join?c=<the real room code>` | `200`, the app |
+| `/join?c=<the real room code>` | `200`, the app - from an address not currently barred; `403` while it is |
 | `/` on `127.0.0.1` (the owner's own window) | `200`, the app |
 
 So a stranger who knows only the address learns that this is Watch Party (harmless) and **nothing about the room**: no
 room code, no roster, no chat, no version. The room code carried in the invite link is the whole secret (ADR-044).
 What remains true and not fixed here: chat is plain text to anyone on the path who has the link (ADR-023), and the
 owner's own address is visible to every participant.
+
+**Guessing has a price** (ticket 71, live on 2026-11-23: 21 calls, and the 22nd call carrying the real code `G279Y7`
+was still refused). A wrong code is billed against the caller, at both doors, from one shared book (ADR-044,
+`docs/decisions.md:1203-1208`): five refused joins close a socket; twenty refused joins from one address inside 60 s
+bar that address for 60 s, and a barred address is refused for the whole minute even when it then presents the real
+code; one ASCII `[gate]` line in the sidecar's output records the bar. A visit that presents no code is never counted.
+So the `/join?c=<the real room code>` row above holds for an address that is not barred: a reader who repeats this
+crawl by trying the wrong code twenty times first will then see the real code refused too, and that is the bar
+working, not this record being wrong.
 
 To repeat it: `npm run dev:debug`, read `sidecar: PORT <n>` from `logs/host-*.log`, then **read the body of a 4xx** -
 `curl.exe -i http://<this machine's LAN address>:<port>/`. `Invoke-WebRequest` throws on 4xx and a `catch` that prints

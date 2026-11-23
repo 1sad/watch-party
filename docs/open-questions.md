@@ -172,6 +172,6 @@ own browser.
   promise now belongs to website mode only (R22).
 - **WebRTC, STUN and TURN (ADR-005).** The mesh is plain WebSocket over an opened port.
 - **iOS.** No add-on, and an app store path we are not taking.
-- **The ten-viewer "hard constraint" as a setting (`MAX_MEMBERS=8`).** It is a design constant now (ten since ADR-044,
-  which raised it from five), stated in the
-  UI, because there is no server config to get wrong.
+- **The ten-viewer "hard constraint" as a setting (a `MAX_MEMBERS` environment variable).** It is a constant in
+  `src/server/room.ts`, ten since ADR-044 (which raised it from five), stated in the UI, because there is no server
+  config to get wrong.
