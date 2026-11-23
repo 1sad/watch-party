@@ -192,6 +192,8 @@ export async function searchGateways(options: SearchOptions): Promise<UpnpGatewa
     const location = parseLocation(buffer)
     if (location === null || found.has(location)) return
     found.set(location, { location, host: remote.address })
+    // `location` is the SSDP header verbatim - a device's own bytes, not ours.
+    // It needs no `oneLine()`: `trace()` makes every line ASCII (T79).
     trace(t0, `upnp=search answer host=${remote.address} location=${location}`)
   }
   for (const { socket } of sockets) socket.on('message', onMessage)

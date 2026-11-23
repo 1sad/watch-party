@@ -8,5 +8,11 @@
  * `t0` is when the attempt began; `ms=` is the elapsed time at the line.
  */
 export function trace(t0: number, line: string): void {
-  process.stdout.write(`discovery: ${line} ms=${Date.now() - t0}\n`)
+  // The ASCII half of the rule is enforced here, not at each call site (T79):
+  // a field the device supplies reached the line raw even after `oneLine()`
+  // covered the fields T75 named (`location=`, the SSDP header verbatim). One
+  // replace here means no call site can forget, and `oneLine()` stays what it
+  // is - quotes and whitespace for the fields that need it.
+  const ascii = line.replace(/[^\x20-\x7e]/g, '?')
+  process.stdout.write(`discovery: ${ascii} ms=${Date.now() - t0}\n`)
 }

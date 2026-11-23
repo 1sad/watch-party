@@ -11,6 +11,8 @@ import {
   sentenceFor,
 } from '../../src/server/discovery.ts'
 import type { MappingOutcome, SentenceFacts } from '../../src/server/discovery.ts'
+import { parseLocation } from '../../src/server/upnp.ts'
+import { trace } from '../../src/server/trace.ts'
 
 const DESCRIPTION = `<?xml version="1.0"?>
 <root xmlns="urn:schemas-upnp-org:device-1-0">
@@ -179,6 +181,34 @@ test("one non-ASCII word from the router cannot reach a discovery: line (T75)", 
   // `?` where it left printable ASCII, which is the whole point of T75.
   assert.match(captured, /Conflit d\?entr\?e \? ConflictInMappingEntry/)
   assert.equal(bad, 0, 'the trace is ASCII whatever the router says')
+})
+
+test('a byte outside ASCII cannot reach a discovery: line, the location header on (T79)', async () => {
+  // T75 fixed the fields its ticket named. The SSDP `LOCATION` header was still
+  // taken from the wire verbatim (`parseLocation` only trims), so a LAN device
+  // or a misconfigured router could put its own alphabet in one of the only
+  // lines AGENTS.md rule 10 exists for. The guarantee now lives in `trace()`
+  // (item 1), so this aims at `trace()` with the bytes a device really supplies.
+  const reply = Buffer.from(
+    'HTTP/1.1 200 OK\r\nLOCATION: http://192.168.1.1/root\u00e9\u2014desc.xml\r\nST: upnp:rootdevice\r\n\r\n',
+    'utf8',
+  )
+  const location = parseLocation(reply)
+  assert.ok(location !== null, 'the reply is a well-formed SSDP answer')
+  // The device's bytes arrive intact: handing them over unchanged is still
+  // `parseLocation`'s job. Making the line ASCII is `trace()`'s.
+  assert.match(location, /[\u00e9\u2014]/)
+
+  const { lines } = await withCapturedTrace(async () => {
+    trace(0, `upnp=search answer host=192.168.1.1 location=${location}`)
+  })
+
+  const bad = lines.join('').match(/[^\x20-\x7e]/g)?.length ?? 0
+  console.log(`TRACE-ASCII: bad=${bad} path=trace-from-location`)
+  // The field still printed, marked where it was not printable: proof the byte
+  // came through this path rather than being dropped before it reached it.
+  assert.match(lines.join('\n'), /location=http:\/\/192\.168\.1\.1\/root\?\?desc\.xml/)
+  assert.equal(bad, 0, 'the trace is ASCII whatever field a device fills')
 })
 
 function mapped(externalIp: string): MappingOutcome {
