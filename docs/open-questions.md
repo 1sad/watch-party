@@ -71,7 +71,7 @@ it everywhere.
 | 95%→100% rate nudging is inaudible on laptop/TV speakers | standard practice; pitch correction is on by default | someone notices on good speakers | raise the slow-down threshold, accept more hard seeks |
 | Four-second HLS segments are fine (v2 only) | Apple recommends 6 s | seek lands on a segment boundary and feels coarse | 2 s segments; more requests |
 | A 3 s report interval is enough to keep five people together | every reference project uses 3–5 s | corrections lag on a fast connection | drop to 1 s while a member is being corrected |
-| Five viewers is the ceiling | stated by the user | it is 8 | the ceiling is a design constant, not a setting |
+| Ten viewers is the ceiling | stated by the user; raised from five by ADR-044 (2026-11-22) | it is 10 | the ceiling is a design constant, not a setting |
 | Mirrors of the same episode differ by a constant offset | mirror encodes usually share the source master | one mirror truncates the OP/ED or inserts an ad break | E5; anchor points move into v1 (ADR-017) |
 | Sub and dub differ by a constant, if at all | most dubs pad or trim silence; the video is often identical | the dub is a different edit | same as above |
 | Chat and control traffic is small enough to never matter | it is text and timestamps, ~1 KB/s | a room with 100 messages tail per join is still tiny | nothing |
@@ -172,5 +172,6 @@ own browser.
   promise now belongs to website mode only (R22).
 - **WebRTC, STUN and TURN (ADR-005).** The mesh is plain WebSocket over an opened port.
 - **iOS.** No add-on, and an app store path we are not taking.
-- **The five-viewer "hard constraint" as a setting (`MAX_MEMBERS=8`).** It is a design constant now, stated in the
+- **The ten-viewer "hard constraint" as a setting (`MAX_MEMBERS=8`).** It is a design constant now (ten since ADR-044,
+  which raised it from five), stated in the
   UI, because there is no server config to get wrong.

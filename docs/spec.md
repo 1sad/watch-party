@@ -746,7 +746,7 @@ watch-party.exe
   simply lose chat and control until someone starts a new room.
 - **Files:** file mode serves from the owner's disk directly. No cache directory, no conversion unless the file is
   already browser-safe (which is checked when it is picked, and refused with a plain message if not).
-- **Nothing to configure.** No `PUBLIC_URL`, no `MAX_MEMBERS` — the hard ceiling is five people, stated in the UI,
+- **Nothing to configure.** No `PUBLIC_URL`, no `MAX_MEMBERS` — the hard ceiling is ten people, stated in the UI,
   and it is a constraint of the design rather than a setting nobody will change.
 
 ## 13. Milestones

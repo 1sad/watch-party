@@ -1200,7 +1200,12 @@ cleanup is where that belongs.
 
 **Decision.** A caller who arrives at the room's port with nothing but the address gets a gate page and no more: no
 roster, no chat, no room state, no version. The link carries the room code and that code is the only credential; a
-wrong one is refused, and repeated refusals close the door on that caller. The room holds **ten** members, not five.
+wrong one is refused, and repeated refusals close the door on that caller. Refusals have numbers, and both doors share
+one book: five refused joins close a socket (`SOCKET_REFUSAL_LIMIT`); twenty refused joins from one address inside a
+minute bar it for sixty seconds (`ADDRESS_REFUSAL_LIMIT`, `ADDRESS_REFUSAL_WINDOW_MS`), and a barred address is
+refused for the whole sixty seconds even when it then presents the real code (`ADDRESS_BLOCK_MS`) - over the socket
+and at the HTTP gate alike (`src/server/socket.ts:106-109`, `app.ts:8`). A visit that presents no code is never
+counted. The room holds **ten** members, not five.
 
 **Why.** The first release handed the room code to anyone who could reach the port (`GET /discovery` returned
 `roomCode` and the whole invite link unconditionally), so an open port was a room with the key taped to the door -
