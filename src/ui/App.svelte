@@ -156,6 +156,11 @@
   // could not use, or why the clipboard was unreadable.
   let pageDraft = $state('')
   let pageNotice = $state<string | null>(null)
+  /**
+   * T95b: the field itself, so a refused clipboard read can leave the caret
+   * where the person's Ctrl+V would go.
+   */
+  let addressInput = $state<HTMLInputElement | null>(null)
 
   /**
    * T04b: R37's line in the same top row. The host cancels every `window.open`
@@ -1396,21 +1401,22 @@
   }
 
   /**
-   * T03b: Enter in the address bar. `setPageFrame` is the whole decision — a
-   * blank field or an unusable address yields no frame, so nothing leaves this
-   * window (the authority would otherwise drop it silently, ticket 03).
+   * T03b / T95b: the one send both routes use - Enter in the address bar and the
+   * Paste button (ticket 105 will call it for a site's own navigation too).
+   * `setPageFrame` is the whole decision — a blank field or an unusable address
+   * yields no frame, so nothing leaves this window (the authority would otherwise
+   * drop it silently, ticket 03).
    */
-  function submitPage(event: SubmitEvent): void {
-    event.preventDefault()
-    if (pageDraft.trim().length === 0) {
+  function sendPage(address: string): void {
+    if (address.trim().length === 0) {
       pageNotice = null
       return
     }
 
-    const frame = setPageFrame(pageDraft, epoch)
+    const frame = setPageFrame(address, epoch)
     if (frame === null) {
       pageNotice = 'That is not a web address — paste a page link like example.com/watch.'
-      if (dev) console.info(`[page] refused as unusable: ${pageDraft.trim()}`)
+      if (dev) console.info(`[page] refused as unusable: ${address.trim()}`)
       return
     }
     if (socket === null || selfId === null) {
@@ -1429,6 +1435,12 @@
     // T03b's live check reads this line's absence for a bad address, so the
     // success is as explicit as the refusal above.
     if (dev) console.info(`[page] setPage ${frame.page}`)
+  }
+
+  /** T03b: Enter in the address bar — the field's own text, sent by the one path. */
+  function submitPage(event: SubmitEvent): void {
+    event.preventDefault()
+    sendPage(pageDraft)
   }
 
   /**
@@ -1570,23 +1582,32 @@
   }
 
   /**
-   * T03b: the visible Paste button. WebView2's own clipboard grant does the
-   * reading (the host allows `ClipboardRead` for this one view), and Ctrl+V and
-   * the right-click menu are the engine's, so neither passes through here.
+   * T03b / T95b: the visible Paste button. WebView2's own clipboard grant does
+   * the reading (the host allows `ClipboardRead` for this one view), and Ctrl+V
+   * and the right-click menu are the engine's, so neither passes through here.
+   * T95b: the press does the whole job - fills the field and sends it down
+   * `sendPage`, the same path Enter takes - so there is nothing left to press.
+   * A refused or empty read sends nothing and leaves the field focused, where
+   * Ctrl+V belongs; a stale address is never sent in its place.
    */
   async function pasteAddress(): Promise<void> {
     pageNotice = null
+    let text: string
     try {
-      const text = await navigator.clipboard.readText()
-      if (text.trim().length === 0) {
-        pageNotice = 'The clipboard has nothing to paste.'
-        return
-      }
-      pageDraft = text.trim()
+      text = await navigator.clipboard.readText()
     } catch (error) {
       pageNotice = 'This window could not read the clipboard — press Ctrl+V in the field instead.'
       if (dev) console.info(`[page] clipboard read failed: ${String(error)}`)
+      addressInput?.focus()
+      return
     }
+    if (text.trim().length === 0) {
+      pageNotice = 'The clipboard has nothing to paste.'
+      addressInput?.focus()
+      return
+    }
+    pageDraft = text.trim()
+    sendPage(pageDraft)
   }
 
   function submitRename(event: SubmitEvent): void {
@@ -1702,17 +1723,40 @@
        and a visible Paste button are the engine's own behaviour. The host owns
        the strip's height and nothing else. -->
   <header class="address-bar" data-address-bar>
-    <form onsubmit={submitPage}>
-      <input
-        type="text"
-        aria-label="Page address"
-        placeholder="Paste a page address"
-        autocomplete="off"
-        spellcheck="false"
-        bind:value={pageDraft}
-      />
-      <button type="button" class="paste" onclick={() => void pasteAddress()}>Paste</button>
-    </form>
+    <!-- T95b / ADR-047: one row carries both routes at every moment. The Paste
+         press acts on its own (fill and send, the same `sendPage` Enter uses),
+         and Open a file sits beside the field rather than in a section of its
+         own, so a page room and a file room show the same bar. -->
+    <div class="bar-row">
+      <form onsubmit={submitPage}>
+        <div class="bar-field">
+          <input
+            type="text"
+            aria-label="Page address"
+            placeholder="Paste a page address"
+            autocomplete="off"
+            spellcheck="false"
+            bind:this={addressInput}
+            bind:value={pageDraft}
+          />
+          <button type="button" class="paste" data-paste onclick={() => void pasteAddress()}>Paste</button>
+        </div>
+      </form>
+      {#if canPick}
+        <button
+          type="button"
+          class="open-file"
+          data-open-file
+          onclick={requestFile}
+          disabled={picking || host === null}
+        >
+          {picking ? 'Waiting for the file…' : 'Open a file'}
+        </button>
+      {/if}
+    </div>
+    {#if pickNotice !== null}
+      <p class="bar-notice {pickNotice.kind}" role="status">{pickNotice.text}</p>
+    {/if}
     {#if pendingPreview !== null}
       <!-- T03c: R29's countdown, beside the address the room is still on, so the
            person can see the change they just made has not landed for anyone
@@ -1919,18 +1963,6 @@
         {/if}
       </section>
 
-      {#if canPick}
-        <section class="pick">
-          <h2>File mode</h2>
-          <button type="button" data-pick onclick={requestFile} disabled={picking || host === null}>
-            {picking ? 'Waiting for the file…' : 'Open a file'}
-          </button>
-          {#if pickNotice !== null}
-            <p class="notice {pickNotice.kind}" role="status">{pickNotice.text}</p>
-          {/if}
-        </section>
-      {/if}
-
       {#if selfId !== null}
         <div class="room-body">
           <section class="chat" aria-label="Chat">
@@ -2066,10 +2098,9 @@
   .watch {
     display: grid;
     grid-template-columns: minmax(0, 1fr) var(--chat-column, 380px);
-    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     grid-template-areas:
       'picture invite'
-      'picture pick'
       'picture body';
     gap: 0.75rem 1rem;
     flex: 1 1 auto;
@@ -2082,20 +2113,6 @@
     flex-direction: column;
     min-width: 0;
     min-height: 0;
-  }
-
-  /* T96: the picker is a route, not the picture, and it sits on the column with
-     the chat (ADR-047's bar) rather than over the picture - the picture's height
-     is bounded, and a heading in that column would come out of the bound. */
-  .watch .pick {
-    grid-area: pick;
-    margin: 0;
-    min-width: 0;
-  }
-
-  .watch .pick h2 {
-    margin: 0 0 0.4rem;
-    font-size: 0.95rem;
   }
 
   /* T97 / ADR-047: the invite bar is one row of the chat column - the code, the
@@ -2196,10 +2213,6 @@
     max-height: 60%;
   }
 
-  :global(html[data-layout='narrow']) .watch .pick {
-    flex: 0 0 auto;
-  }
-
   /* T97: the bar is the chat's first row in narrow too, so it stays between the
      picture and the messages and never floats over either. */
   :global(html[data-layout='narrow']) .invite-bar {
@@ -2231,17 +2244,54 @@
     border-bottom: 1px solid #2c2d36;
   }
 
-  .address-bar form {
+  /* T95b / ADR-047: the bar's one row - the field (with the Paste button drawn
+     over its right end) and Open a file beside it. The two routes are always
+     both here: the field sends a page, the button opens a file. */
+  .bar-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
+  .bar-row form {
+    flex: 1 1 auto;
+    min-width: 0;
     align-items: center;
   }
 
-  .address-bar input {
-    padding: 0.35rem 0.5rem;
+  .bar-field {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  /* The field's text stops short of the button, so a long address never runs
+     under it: the right padding is the button's own width and its margin. */
+  .bar-field input {
+    width: 100%;
+    padding: 0.35rem 4.9rem 0.35rem 0.5rem;
   }
 
   .address-bar .paste {
+    position: absolute;
+    right: 0.3rem;
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 0.25rem 0.65rem;
+    font-size: 0.9rem;
+  }
+
+  .open-file {
     flex: 0 0 auto;
     padding: 0.35rem 0.7rem;
+  }
+
+  .open-file:disabled {
+    opacity: 0.6;
+    cursor: default;
   }
 
   .bar-notice {
@@ -2249,6 +2299,10 @@
     font-size: 0.8rem;
     line-height: 1.25;
     color: #ffb3a7;
+  }
+
+  .bar-notice.ok {
+    color: #7fd0a5;
   }
 
   /* T04b: the popup line, in the bar's own quiet grey. It is information, not
@@ -2579,23 +2633,5 @@
     font-family: Consolas, monospace;
     font-size: 0.8rem;
     color: #6f6f7e;
-  }
-
-  .pick {
-    margin: 0 0 1.5rem;
-  }
-
-  .pick button:disabled {
-    opacity: 0.6;
-    cursor: default;
-  }
-
-  .pick .notice {
-    margin: 0.75rem 0 0;
-    font-size: 1.05rem;
-  }
-
-  .pick .notice.ok {
-    color: #7fd0a5;
   }
 </style>
