@@ -77,6 +77,14 @@ public sealed class MainForm : Form
 
     private Process? _sidecar;
     private string _root = string.Empty;
+    /// <summary>
+    /// T93, ADR-047 ("window size"): the browser profile folder, resolved once so
+    /// the window's saved rectangle sits inside the same folder the log names -
+    /// <c>&lt;exe folder&gt;\profile</c> in a packaged copy (ADR-043),
+    /// <c>%TEMP%\watchparty-dev-&lt;port&gt;</c> in a dev window. Null when this
+    /// build has no profile at all, and then nothing is saved.
+    /// </summary>
+    private string? _profileFolder;
     private bool _closing;
     private bool _navigated;
     /// <summary>
@@ -207,6 +215,7 @@ public sealed class MainForm : Form
         _topStrip.Visible = false;
 
         Load += OnLoad;
+        FormClosing += OnFormClosing;
         FormClosed += OnFormClosed;
         _portTimeout.Tick += OnPortTimeout;
     }
@@ -236,6 +245,13 @@ public sealed class MainForm : Form
         }
 
         HostLog.Write($"host started; program folder {_root}");
+
+        // T93, ADR-047 ("window size"): the saved size belongs to the profile, so
+        // the file sits inside the profile folder the log names, and this window
+        // opens the way the last one on that profile was closed - maximised on a
+        // first run with no file.
+        _profileFolder = ProfileFolder();
+        RestoreWindowState();
 
         // Packaged only (ADR-043): the one line that says which unpacked payload
         // this window is running, and the folder it sits in - which is also where
@@ -309,6 +325,33 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
+    /// T93: the one browser profile this window opens, named in the log as
+    /// <c>profile:</c>. A packaged copy keeps it at <c>&lt;exe folder&gt;\profile</c>
+    /// (T46, ADR-043), and a developer build asked for a CDP port keeps its
+    /// <c>%TEMP%\watchparty-dev-&lt;port&gt;</c> folder - its own profile, because
+    /// WebView2 refuses a second controller in the browser process another window
+    /// already owns (0x8007139F), and two windows on one debugging port could not
+    /// be told apart. Null when this build has no profile: no payload and no port.
+    /// </summary>
+    private static string? ProfileFolder()
+    {
+        if (Payload.IsPresent)
+        {
+            string folder = Payload.ProfileFolder;
+            Directory.CreateDirectory(folder);
+            return folder;
+        }
+#if DEBUG
+        string? debugPort = Environment.GetEnvironmentVariable("WATCHPARTY_CDP_PORT");
+        if (debugPort is not null)
+        {
+            return Path.Combine(Path.GetTempPath(), $"watchparty-dev-{debugPort}");
+        }
+#endif
+        return null;
+    }
+
+    /// <summary>
     /// Both of the window's WebView2 controls, created against one environment so
     /// they share a browser process: §14's autoplay policy is process-wide, and in
     /// a Debug build one loopback CDP port then lists both views as targets.
@@ -343,19 +386,7 @@ public sealed class MainForm : Form
         // share this profile by design. A developer build asked for a CDP port
         // keeps its %TEMP%\watchparty-dev-<port> folder (parity with every earlier
         // ticket).
-        string? userData = null;
-        if (Payload.IsPresent)
-        {
-            userData = Payload.ProfileFolder;
-            Directory.CreateDirectory(userData);
-        }
-        else if (debugPort is not null)
-        {
-            // Its own profile: WebView2 refuses a second controller in the
-            // browser process another window already owns (0x8007139F), and
-            // two windows on one debugging port could not be told apart.
-            userData = Path.Combine(Path.GetTempPath(), $"watchparty-dev-{debugPort}");
-        }
+        string? userData = ProfileFolder();
 
         if (userData is not null) HostLog.Write($"profile: {userData}");
 
@@ -1825,6 +1856,81 @@ public sealed class MainForm : Form
             + "font:1.15rem 'Segoe UI',system-ui,sans-serif\">"
             + $"<p>{System.Net.WebUtility.HtmlEncode(sentence)}</p></body></html>";
         _page.CoreWebView2.NavigateToString(html);
+    }
+
+    /// <summary>
+    /// T93, ADR-047 ("window size"): the first launch of a copy is maximised;
+    /// after that the window reopens at the rectangle and state it was closed at,
+    /// clamped to the virtual screen that exists and never smaller than the
+    /// existing <see cref="Form.MinimumSize"/>, and falls back to maximised when
+    /// the saved rectangle is off every screen. One ASCII log line per launch.
+    /// </summary>
+    private void RestoreWindowState()
+    {
+        WindowPlacement.Saved? saved = _profileFolder is null
+            ? null
+            : WindowPlacement.TryRead(WindowPlacement.PathIn(_profileFolder));
+
+        if (saved is null)
+        {
+            WindowState = FormWindowState.Maximized;
+            HostLog.Write("window: first run maximised");
+            return;
+        }
+
+        Rectangle rectangle = new(saved.X, saved.Y, saved.Width, saved.Height);
+        if (!Screen.AllScreens.Any(screen => screen.Bounds.IntersectsWith(rectangle)))
+        {
+            // The screen that held it is gone, and off-screen would hide the
+            // window: it opens the way a first run does.
+            WindowState = FormWindowState.Maximized;
+            HostLog.Write($"window: restored {rectangle.Width}x{rectangle.Height} maximised=true "
+                + "(the saved rectangle was off every screen)");
+            return;
+        }
+
+        Rectangle allowed = ClampToVirtualScreen(rectangle);
+        StartPosition = FormStartPosition.Manual;
+        Bounds = allowed;
+        if (saved.Maximised) WindowState = FormWindowState.Maximized;
+        HostLog.Write($"window: restored {allowed.Width}x{allowed.Height} "
+            + $"maximised={saved.Maximised.ToString().ToLowerInvariant()}");
+    }
+
+    /// <summary>
+    /// T93 item 2: a saved rectangle never hides the window on a smaller monitor
+    /// and is never smaller than <see cref="Form.MinimumSize"/>.
+    /// </summary>
+    private Rectangle ClampToVirtualScreen(Rectangle rectangle)
+    {
+        Rectangle screen = SystemInformation.VirtualScreen;
+        int minWidth = MinimumSize.Width;
+        int minHeight = MinimumSize.Height;
+        int width = Math.Clamp(rectangle.Width, minWidth, Math.Max(screen.Width, minWidth));
+        int height = Math.Clamp(rectangle.Height, minHeight, Math.Max(screen.Height, minHeight));
+        int x = Math.Clamp(rectangle.X, screen.Left, Math.Max(screen.Left, screen.Right - width));
+        int y = Math.Clamp(rectangle.Y, screen.Top, Math.Max(screen.Top, screen.Bottom - height));
+        return new Rectangle(x, y, width, height);
+    }
+
+    /// <summary>
+    /// T93: remember the rectangle and state the window is closed at. A maximised
+    /// close saves <see cref="Form.RestoreBounds"/> - the normal rectangle it must
+    /// come back from - and the fact it was maximised. One ASCII log line says
+    /// what was saved; nothing here can refuse the close.
+    /// </summary>
+    private void OnFormClosing(object? sender, FormClosingEventArgs e)
+    {
+        if (_profileFolder is null) return;
+
+        Rectangle rectangle = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+        if (rectangle.Width <= 0 || rectangle.Height <= 0) rectangle = Bounds;
+        bool maximised = WindowState == FormWindowState.Maximized;
+        string file = WindowPlacement.PathIn(_profileFolder);
+        WindowPlacement.Write(file,
+            new WindowPlacement.Saved(rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, maximised));
+        HostLog.Write($"window: saved {rectangle.Width}x{rectangle.Height} "
+            + $"maximised={maximised.ToString().ToLowerInvariant()} at {file}");
     }
 
     private void OnFormClosed(object? sender, FormClosedEventArgs e)
