@@ -38,10 +38,21 @@ export function contentTypeFor(filePath: string): string | null {
  * this window is connected to — rather than this page's own: a guest loads the
  * page from its own sidecar, which holds no file and would answer 404 (§7.2).
  * `null` means the room has no file yet, so there is nothing to load at all.
+ *
+ * T85: the code travels in the query, exactly as `/join?c=` already carries it.
+ * A guest's page comes from its own sidecar, so its browser has no `wp_key`
+ * cookie for the owner's origin and the gate (ADR-044) would refuse the request;
+ * the room code is the key, and this is where the page can present it. A window
+ * with no code yet asks without one, and is answered as any other caller is.
  */
-export function mediaUrl(ownerOrigin: string, media: { id: string } | null): string | null {
+export function mediaUrl(
+  ownerOrigin: string,
+  media: { id: string } | null,
+  code: string | null,
+): string | null {
   if (media === null) return null
-  return `${ownerOrigin.replace(/\/+$/, '')}/media/${encodeURIComponent(media.id)}`
+  const url = `${ownerOrigin.replace(/\/+$/, '')}/media/${encodeURIComponent(media.id)}`
+  return code === null || code.length === 0 ? url : `${url}?c=${encodeURIComponent(code)}`
 }
 
 /** Letters whose written names begin with a vowel sound; `an MKV`, `a WEBM`. */

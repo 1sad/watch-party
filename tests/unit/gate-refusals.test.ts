@@ -17,7 +17,7 @@ import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
 
-import { createSidecarServer } from '../../src/server/app.ts'
+import { createSidecarServer, type RegisteredMedia } from '../../src/server/app.ts'
 import { createRoom } from '../../src/server/room.ts'
 import {
   ADDRESS_BLOCK_MS,
@@ -57,7 +57,11 @@ interface Door {
  */
 async function withDoor(
   run: (door: Door) => Promise<void>,
-  options: { sharedSocket?: boolean; isLocal?: (remoteAddress: string | undefined) => boolean } = {},
+  options: {
+    sharedSocket?: boolean
+    isLocal?: (remoteAddress: string | undefined) => boolean
+    media?: () => RegisteredMedia | null
+  } = {},
 ): Promise<void> {
   const distDir = await mkdtemp(join(tmpdir(), 'watch-party-gate-'))
   await writeFile(join(distDir, 'index.html'), '<!doctype html><h1>Watch Party</h1>')
@@ -73,6 +77,7 @@ async function withDoor(
     start: () => ({ status: 'ready', roomCode: CODE }),
     refusals: book,
     isLocal: options.isLocal ?? (() => false),
+    ...(options.media === undefined ? {} : { media: options.media }),
     log: (line) => log.push(line),
   })
   const room = createRoom(CODE, clock.now)
@@ -163,4 +168,70 @@ test('a bar set over the HTTP door also holds the socket door', async () => {
     },
     { sharedSocket: true },
   )
+})
+
+/**
+ * T85: a packaged guest loads the page from its own sidecar, so it holds no
+ * `wp_key` cookie for the owner's origin - the code must travel on the media
+ * request itself (the link's `c`, exactly as `/join?c=` already carries it).
+ * The door is unchanged for everyone else: no code is still the gate page and
+ * is still free; a wrong one is refused and billed.
+ */
+test('a joined guest can fetch the room file, and the door still refuses everyone else', async () => {
+  const mediaDir = await mkdtemp(join(tmpdir(), 'watch-party-media-'))
+  const mediaPath = join(mediaDir, 'clip.mp4')
+  await writeFile(mediaPath, 'clip-bytes')
+
+  try {
+    await withDoor(
+      async ({ base, log }) => {
+        // Address only: the gate page, on the page route and on the media
+        // route alike, and neither file bytes nor a refusal charge.
+        const root = await fetch(`${base}/`)
+        assert.equal(root.status, 403, 'GET / without the code is the gate')
+        assert.match(await root.text(), /Enter the room code/)
+
+        const bareMedia = await fetch(`${base}/media/f1`)
+        assert.equal(bareMedia.status, 403, 'GET /media/<id> without the code is refused')
+        const gateBody = await bareMedia.text()
+        assert.match(gateBody, /Enter the room code/)
+        assert.ok(!gateBody.includes('clip-bytes'), 'no file bytes reach a caller with no code')
+        assert.equal(log.length, 0, 'a code-less media request is free, like a code-less page request')
+
+        // The invite link still opens: 200, and the cookie it sets is the key
+        // the page's own asset requests carry.
+        const join = await fetch(`${base}/join?c=${CODE}`)
+        assert.equal(join.status, 200, '/join?c=<code> still answers the page')
+        assert.match(join.headers.get('set-cookie') ?? '', new RegExp(`wp_key=${CODE}`))
+
+        // The guest's page asks for the file itself: no cookie on this origin,
+        // the code on the URL. A `<video>`'s range request must be honoured.
+        const guestMedia = await fetch(`${base}/media/f1?c=${CODE}`, {
+          headers: { range: 'bytes=0-3' },
+        })
+        assert.equal(guestMedia.status, 206, 'the guest\'s media request is answered')
+        assert.equal(await guestMedia.text(), 'clip')
+
+        // A browser that did visit the owner's page still gets the cookie path.
+        const cookieMedia = await fetch(`${base}/media/f1`, {
+          headers: { cookie: `wp_key=${CODE}`, range: 'bytes=0-3' },
+        })
+        assert.equal(cookieMedia.status, 206, 'the cookie is still a key on the media route')
+
+        // A wrong code is still refused, on the media route as on the door.
+        const wrongMedia = await fetch(`${base}/media/f1?c=${WRONG}`)
+        assert.equal(wrongMedia.status, 403, 'a wrong code on a media request is refused')
+        assert.ok(!(await wrongMedia.text()).includes('clip-bytes'), 'a wrong code gets no bytes')
+
+        // And a wrong code is still billed: twenty of them bar the address.
+        for (let attempt = 1; attempt < ADDRESS_REFUSAL_LIMIT; attempt += 1) {
+          await fetch(`${base}/media/f1?c=${WRONG}`)
+        }
+        assert.equal(log.filter((line) => line.startsWith('[gate]')).length, 1, 'the address was barred')
+      },
+      { media: () => ({ id: 'f1', path: mediaPath, contentType: 'video/mp4' }) },
+    )
+  } finally {
+    await rm(mediaDir, { recursive: true, force: true })
+  }
 })

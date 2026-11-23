@@ -129,12 +129,20 @@ function roomCodeOf(options: SidecarOptions): string | null {
   return typeof code === 'string' && code.length > 0 ? code : null
 }
 
-/** The two places a key can arrive: the link's `c`, and the cookie that link set. */
+/**
+ * The two places a key can arrive: the query's `c`, and the cookie the invite
+ * link set. The query is read on `/join` (the link itself) and on `/media/*`
+ * (T85): a guest's page is served by its own sidecar, so its browser holds no
+ * `wp_key` cookie for the owner's origin, and the media request is the only
+ * place that page can bring the code - the same code, in the same parameter,
+ * not a second credential.
+ */
 function presentedCode(
   request: IncomingMessage,
   url: URL,
 ): { link: string | null; cookie: string | null } {
-  const raw = url.pathname === '/join' ? (url.searchParams.get('c') ?? '') : ''
+  const carriesQuery = url.pathname === '/join' || url.pathname.startsWith('/media/')
+  const raw = carriesQuery ? (url.searchParams.get('c') ?? '') : ''
   const link = raw.trim().toUpperCase()
 
   let cookie: string | null = null

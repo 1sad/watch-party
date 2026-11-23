@@ -212,7 +212,7 @@
    */
   let ownerOrigin = $state<string | null>(null)
   /** Where the player loads the room's file from, or `null` while the room has none. */
-  const playerSrc = $derived(ownerOrigin === null ? null : mediaUrl(ownerOrigin, media))
+  const playerSrc = $derived(ownerOrigin === null ? null : mediaUrl(ownerOrigin, media, roomCode))
 
   /**
    * T03b: §5's address bar follows §4.2 — the room's committed state is a site or
