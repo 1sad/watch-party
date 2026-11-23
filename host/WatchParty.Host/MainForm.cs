@@ -49,6 +49,15 @@ public sealed class MainForm : Form
     private const int WideLayoutMinCssWidth = 900;
 
     /// <summary>
+    /// T107, ADR-047 ("window narrower than 900 px"): in page mode the app view is
+    /// docked along the bottom rather than the right, and it takes this share of the
+    /// form's client height so the picture keeps the rest. The minimum below applies
+    /// when the share would be smaller - the chat column must stay usable.
+    /// </summary>
+    private const double NarrowDockHeightShare = 0.4;
+    private const int NarrowDockMinHeight = 240;
+
+    /// <summary>
     /// T08 item 3: how long an <c>enter</c> that arrives while the layout is
     /// already full is read as the echo of the press that filled it rather than
     /// as a second press. One press can be named twice — by the page's intent
@@ -124,6 +133,12 @@ public sealed class MainForm : Form
     /// even when the window's width did not change.
     /// </summary>
     private string? _publishedPanel;
+    /// <summary>
+    /// T107: the page-mode dock shape last logged (<c>wide</c> or <c>narrow</c>), so
+    /// a resize inside one shape writes no second line and a shape change writes
+    /// exactly one. Null when the window is not in page mode.
+    /// </summary>
+    private string? _pageDockShape;
     private bool _navigated;
     /// <summary>
     /// The port the sidecar reported, which together with <c>127.0.0.1</c> is the
@@ -257,7 +272,14 @@ public sealed class MainForm : Form
         // T94, ADR-047: a resize is the form's client size changing, which is
         // also the one event a monitor's DPI change arrives as - and the width in
         // CSS pixels changes only when the client size does.
-        ClientSizeChanged += (_, _) => PublishLayout();
+        // T107: in page mode the same event moves the app view between the right
+        // dock and the bottom one, so the two views always match the published
+        // layout attribute.
+        ClientSizeChanged += (_, _) =>
+        {
+            ApplyPageDock(CurrentLayout());
+            PublishLayout();
+        };
     }
 
     private async void OnLoad(object? sender, EventArgs e)
@@ -1642,18 +1664,12 @@ public sealed class MainForm : Form
     {
         if (_site.Visible) return;
 
-        _page.Dock = DockStyle.Right;
-        _page.Width = SidebarWidth;
         _site.Visible = true;
         // Docking follows Visible, but not before the message returns, so the
-        // rectangles below are the ones the window is about to show.
-        PerformLayout();
-        // T99 item 4: one line per shape, with the numbers actually used and the
-        // site view's own rectangle, so the band's absence is readable here -
-        // `at 0,0` is the form's client top-left - without a second tool.
-        HostLog.Write(
-            $"layout: page mode - site {_site.Width}x{_site.Height} at {_site.Left},{_site.Top} "
-            + $"left of a {SidebarWidth} px app view");
+        // rectangles the dock logs are the ones the window is about to show.
+        // T107: which dock that is depends on the window's width - the app view
+        // is the right-hand column when wide and the bottom one when narrow.
+        ApplyPageDock(CurrentLayout());
         PublishLayout();
     }
 
@@ -1675,6 +1691,8 @@ public sealed class MainForm : Form
         _site.Visible = false;
         // The app view takes the whole window back (ADR-038's file-mode picture).
         _page.Dock = DockStyle.Fill;
+        // T107: page mode is over, so the next page mode logs its own shape line.
+        _pageDockShape = null;
         // Docking follows Visible, but not before the message returns.
         PerformLayout();
         HostLog.Write($"layout: file mode - site view hidden, the {_page.Width} px app view fills the window");
@@ -1831,6 +1849,66 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
+    /// T94, ADR-047 ("one threshold, owned by the host"): the form's client width
+    /// in CSS pixels, turned into the page's two layout names. One helper, so the
+    /// dock and the published attribute can never disagree about which shape the
+    /// window is in.
+    /// </summary>
+    private string CurrentLayout()
+    {
+        // The form's client width in CSS pixels, which is what the page sees as
+        // innerWidth when it fills the window (ADR-047). Not the app view's width,
+        // which is the docked column at every window size, and not the outer
+        // width, which the border and - at any scaling but 100% - the DPI factor
+        // keep apart from it.
+        int dpi = DeviceDpi;
+        int cssWidth = dpi > 0 ? (int)Math.Round(ClientSize.Width * 96.0 / dpi) : ClientSize.Width;
+        return cssWidth >= WideLayoutMinCssWidth ? "wide" : "narrow";
+    }
+
+    /// <summary>
+    /// T107, ADR-047 ("window narrower than 900 px"): in page mode the dock has two
+    /// shapes. Wide is T99's - the app view is a 380 px column on the right and the
+    /// site view takes the rest. Narrow puts the app view along the bottom at
+    /// <c>max(240, 40% of the client height)</c> and the site view above it, so the
+    /// picture is never squeezed beside the chat. Called on every resize and when
+    /// page mode starts; one ASCII line per shape change carries the numbers the
+    /// window actually used, read after <see cref="Control.PerformLayout"/>, so a
+    /// check can read the log without eyes on the window. Fullscreen does not call
+    /// this: it changes nothing but the window's size.
+    /// </summary>
+    private void ApplyPageDock(string layout)
+    {
+        // No page mode, no dock to apply; a minimised window has no client area to
+        // share and is laid out again when it is restored.
+        if (!_site.Visible || WindowState == FormWindowState.Minimized) return;
+
+        if (layout == "narrow")
+        {
+            int height = Math.Max(
+                NarrowDockMinHeight,
+                (int)Math.Round(ClientSize.Height * NarrowDockHeightShare));
+            _page.Dock = DockStyle.Bottom;
+            _page.Height = height;
+        }
+        else
+        {
+            _page.Dock = DockStyle.Right;
+            _page.Width = SidebarWidth;
+        }
+
+        // Docking follows these properties, but not before the message returns, so
+        // the rectangles below are the ones the window is about to show.
+        PerformLayout();
+
+        if (layout == _pageDockShape) return;
+        _pageDockShape = layout;
+        HostLog.Write(layout == "narrow"
+            ? $"layout: page mode narrow - site {_site.Width}x{_site.Height} above a {_page.Height} px app view"
+            : $"layout: page mode - site {_site.Width}x{_site.Height} left of a {SidebarWidth} px app view");
+    }
+
+    /// <summary>
     /// T94, ADR-047 ("one threshold, owned by the host"): the window tells the
     /// page which layout it is and how wide the chat column is, both on the app
     /// view's root element - the page's CSS reads the attribute for the threshold
@@ -1850,14 +1928,7 @@ public sealed class MainForm : Form
     {
         if (_closing || _page.CoreWebView2 is null) return;
 
-        // The form's client width in CSS pixels, which is what the page sees as
-        // innerWidth when it fills the window (ADR-047). Not the app view's width,
-        // which is the docked column at every window size, and not the outer
-        // width, which the border and - at any scaling but 100% - the DPI factor
-        // keep apart from it.
-        int dpi = DeviceDpi;
-        int cssWidth = dpi > 0 ? (int)Math.Round(ClientSize.Width * 96.0 / dpi) : ClientSize.Width;
-        string layout = cssWidth >= WideLayoutMinCssWidth ? "wide" : "narrow";
+        string layout = CurrentLayout();
         // The host's dock, not the width, decides the panel (ADR-047): a page-mode
         // window is the column at every width, so the page must not fall back to
         // its picture-and-chat layout because the window is narrow.
