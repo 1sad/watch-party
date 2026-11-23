@@ -1280,3 +1280,79 @@ on the owner's origin): a CORS surface and a fragile first-frame ordering for th
 **Cost / risk.** The media URL is a bearer URL: anyone who has it can stream the file until the room closes, exactly as
 anyone who has the invite link can join. That is ADR-044's own bargain, stated here so nobody reads it as new. The
 owner's page also requests `/media/<id>?c=<code>` now - one URL shape for the room's file.
+
+---
+
+## ADR-047 - The app has two screens, and the picture fills the window with the chat beside it
+
+> **Amends ADR-038:** its layout sentences (the 380 px app-view dock, the file-mode picture not being squeezed, the
+> staged preview's column) become the watching-screen rule below. Its two-view decision, the bridge, the request
+> filter, the fullscreen interception and "the host contains no product logic" all stand unchanged.
+>
+> **Consistent with ADR-043:** the window's remembered size is a file inside the app's own folder, like the profile
+> and the logs.
+
+**Decision.** The page shows exactly one of two screens, chosen from room state alone by one predicate:
+
+- **The first screen** - invite and join only. It offers **Start a room** and the box to paste a link into; an error
+  from a failed link stays there. It has no picture, no chat and no file picker.
+- **The watching screen** - the room. Pressing **Start a room** switches to it at once (the user's answer,
+  2026-11-23), so a new room's link is in the invite bar from its first second. A guest who arrives by a link that
+  connects lands on it; a link that fails leaves the first screen showing the reason.
+
+**The watching screen's layout.** The picture takes whatever is left; the chat is a **380 px column on its right**
+(the width the app-view dock already uses), with the invite bar as that column's top row and the controls under the
+picture. The picture is the site view in website mode and our own `<video>` in file mode, and the rule is the same in
+both:
+
+- **Window 900 px wide or more:** picture left, chat column right, invite bar on top of the column.
+- **Window narrower than 900 px:** the chat column moves **below** the picture (in website mode the host docks the app
+  view along the bottom; in file mode the page stacks them). It is never squeezed beside the picture.
+
+**One threshold, owned by the host.** The app view is 380 px wide in website mode whatever the window is, so its own
+width cannot say whether the window is narrow. On every resize the host sets `data-layout="wide|narrow"` on the app
+view's root element and docks its two views to match; the page's CSS reads the attribute and carries no width number
+of its own. A page with no attribute (a browser, a test) is `wide`.
+
+**What can be watched is chosen on the watching screen.** The address bar and the file picker live there, and an empty
+room shows the picture area with the two routes offered (paste a page address, play a file). Nothing picks media from
+the first screen.
+
+**The host's dock wins.** When the host docks the app view as a column - website mode, and the staged-preview second
+while a file room previews a page - it also sets `data-panel="chat"` on the app view's root element, and the page then
+renders the chat column alone (invite bar, chat, roster, controls) with no picture. Otherwise the page owns the
+picture-and-chat layout. The staged preview therefore keeps its two seconds (ADR-038, R31) without squeezing a
+picture into a 380 px column.
+
+**The invite bar** carries the room code, the link and one copy button, with the raw address and code one click
+inside. It is a row of the chat column, not a second panel and not a modal, and it stays visible in fullscreen.
+
+**Room end.** A guest whose room ends returns to the first screen with one line saying so; the dead room's code and
+link are cleared. The host's dead-sidecar page is unchanged: a sidecar that stops is a fault to report, not the end of
+a room.
+
+**Window size.** The first launch of a copy is maximised; after that the window reopens at the size and state it was
+closed at, clamped to a screen that exists and never smaller than 640x420.
+
+**Fullscreen** keeps the chat column (R30) and changes nothing but the window's size; the empty 48 px band the host
+draws above the site view is not drawn at all, because there is nothing for it to hold.
+
+**Deferred.** Chat that hides itself or floats over the picture is a later phase. The column is the panel that will
+later be able to float; no code for it is written now.
+
+**Why.** Today the page is one scrolling column, 832 px wide at most (`max-width: 52rem`) and left-aligned, with the
+chat under the player: maximising it adds margin, not picture. The invite - needed once - and the link - needed all
+evening - share that column with the chat and the controls, and the room's end leaves a dead player in place. The
+user's six points (`.scratch/phase-5-layout/answers.md`) are the requirement.
+
+**Rejected.** (a) A top bar spanning the whole window for the invite - the site view is a native control filling the
+window, so the page cannot draw over it, and a WinForms-drawn bar would put product logic in the host (ADR-034,
+ADR-038). (b) A CSS-only breakpoint - see "one threshold" above; in website mode the app view is 380 px wide at every
+window size. (c) One screen with panels that show and hide - the user asked for two screens, and that is what leaves
+a dead player. (d) An invite modal or a second panel - the user asked for "minimally somewhere", not a dialog.
+
+**Cost.** There is no resize handler in the host today; resizing now runs layout code, and a dropped layout message
+shows as a wrong column until the next resize. Two dock shapes double the window states the pictures and the gate must
+cover. The threshold is one more number to keep in step with the manual's pictures, and it lives in C# only. A fresh
+portable folder has no saved size, so its first run is maximised like any other first run.
+

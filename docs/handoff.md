@@ -266,7 +266,12 @@ T1 again as of 2026-11-16.
 | T15 | Per-viewer offset: "align here", ±1/±5 nudges, mismatch badge, per-source memory | a 6 s offset is set in one click and survives to next week |
 | T16 | Ready gate on seek during playback | R10; nobody plays alone |
 
-### M3 — Resilience and polish
+### M2b - The window uses its space
+
+One line: runs **before M3** (the user's order, 2026-11-23) - two screens, the picture filling the window with a
+380 px chat column beside it, chat below under 900 px, a remembered size; ADR-047, R39-R40, tracked as phase 5.
+
+### M3 - Resilience and polish
 
 | # | Ticket | Acceptance |
 | --- | --- | --- |

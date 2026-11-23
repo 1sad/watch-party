@@ -5,15 +5,15 @@ carries its own browser window, everyone lands on the same streaming page, playb
 the same connection. No accounts, no server to rent, no paid services. There is also a deliberately small "watch my
 own file" mode, which exists mainly to test sync without a website in the way.
 
-**Status: Phase 2 (M2a, "the room and the page") closed 2026-11-22**; M1 is closed, and phase 3 is **M7 "portable
-build"** — 23 of its 25 ticket files done, and 51 and 52 are `blocked` on the phase 4 (M3) plan
-(the phase record the owner keeps on their machine). M3 "the room obeys" comes after it (`spec.md`
-§13: M7 runs before M3). Nothing has shipped. The only status line kept current is the phase record on the owner's machine (`.scratch/<phase>/spec.md`) → `## Status`;
+**Status: phases 1-4 are closed** — M1, M2a, M7 "portable build" and the invite work (0.2.1). The next phase is
+**M2b "the window uses its space"** (two screens, the picture filling the window with the chat beside it), and M3
+"the room obeys" comes after it (`spec.md` §13). 51 and 52 are `blocked` on the M3 plan
+(the phase record the owner keeps on their machine). Nothing has shipped. The only status line kept current is the phase record on the owner's machine (`.scratch/<phase>/spec.md`) → `## Status`;
 read it before believing any claim about what works. **The working record -
 specs, tickets, session notes, costs - is kept on the owner's machine and is not in this public repo**, so a fresh
 clone has the code and `docs/` only.
 
-**Rebuilt on 2026-11-16** around ADR-022 … ADR-027. **ADR-046** (a joined guest's media URL carries the room code) is the newest, after **ADR-045** (the UPnP search leaves
+**Rebuilt on 2026-11-16** around ADR-022 … ADR-027. **ADR-047** (two screens; the picture fills the window with the chat beside it) is the newest and amends ADR-038; before it **ADR-046** (a joined guest's media URL carries the room code), **ADR-045** (the UPnP search leaves
 UDP 1900) and **ADR-044** (every request is gated on the code); **ADR-043** (the portable copy is its folder, and nothing leaves
 it) amends ADR-042; ADR-041 (one portable executable; the browser is the only dependency outside
 it), ADR-040 (the ad list is share-alike data), ADR-038 (two views), ADR-039 (a quarter-second deadband) and ADR-034
