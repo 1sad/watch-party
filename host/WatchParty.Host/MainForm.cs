@@ -610,8 +610,10 @@ public sealed class MainForm : Form
     /// <summary>
     /// ADR-038: the app view is the room's only client and may not navigate. A
     /// document that is not the sidecar's own origin is cancelled here, so a
-    /// third-party page never gets the picker bridge's messages. The host's own
-    /// failure page arrives as <c>about:blank</c> and stays allowed.
+    /// third-party page never gets the picker bridge's messages. <c>about:</c>
+    /// stays allowed because the engine's own initial document is
+    /// <c>about:blank</c>; the host's failure sentence does not navigate at all
+    /// (T114 - <c>NavigateToString</c>'s <c>data:</c> document was refused here).
     /// </summary>
     private void InstallAppOriginLock()
     {
@@ -633,7 +635,7 @@ public sealed class MainForm : Form
         HostLog.Write($"site: app-view navigation refused {shown} (engine saw {e.Uri})");
     }
 
-    /// <summary>The sidecar's own origin, or the failure page the host writes itself.</summary>
+    /// <summary>The sidecar's own origin, or the engine's initial blank document.</summary>
     private bool IsAppOrigin(string uri)
     {
         if (!Uri.TryCreate(uri, UriKind.Absolute, out Uri? target)) return false;
@@ -1912,7 +1914,8 @@ public sealed class MainForm : Form
     /// <summary>
     /// The one plain sentence drawn on a window no view can draw in: the title and
     /// the body both name it, so it is legible and can be photographed. Used by the
-    /// folder failure (T46c) and the no-engine failure (T47b).
+    /// folder failure (T46c), the no-engine failure (T47b) and every other failure
+    /// page (T114).
     /// </summary>
     private void ShowSentence(string sentence)
     {
@@ -1934,25 +1937,25 @@ public sealed class MainForm : Form
         notice.BringToFront();
     }
 
+    /// <summary>
+    /// ADR-043 ("a copy that fails says so") and ADR-034: the sentence is drawn by
+    /// the host, never by the room's page. It goes on the window itself, exactly as
+    /// the folder and no-engine failures do (T46c, T47b).
+    ///
+    /// T114, measured: <c>NavigateToString</c> produces a <c>data:</c> document,
+    /// and the app view's navigation lock contradicts it - the sentence was logged
+    /// as `failure page:` and then refused as
+    /// `app-view navigation refused text/html;charset=utf-8;base64,...`, so nobody
+    /// saw it. Widening the lock to <c>data:</c> would let the room's own page
+    /// navigate there too. Drawing it here needs no navigation at all: the lock
+    /// keeps its single rule (the sidecar's origin, ADR-038), and a dead sidecar
+    /// leaves the room's page nothing to say. The window still waits for the person
+    /// to close it, and closing it still exits at once.
+    /// </summary>
     private void ShowFailure(string sentence)
     {
         HostLog.Write($"failure page: {sentence}");
-
-        if (_page.CoreWebView2 is null)
-        {
-            // No engine means no view to navigate, so the sentence goes on the
-            // window itself rather than into a title bar a person cannot read
-            // (T47b). The window still waits for the person to close it.
-            ShowSentence(sentence);
-            return;
-        }
-
-        string html =
-            "<!doctype html><html><head><meta charset=\"utf-8\"><title>Watch Party</title></head>"
-            + "<body style=\"margin:0;padding:3rem;background:#14151a;color:#e9e9ef;"
-            + "font:1.15rem 'Segoe UI',system-ui,sans-serif\">"
-            + $"<p>{System.Net.WebUtility.HtmlEncode(sentence)}</p></body></html>";
-        _page.CoreWebView2.NavigateToString(html);
+        ShowSentence(sentence);
     }
 
     /// <summary>
