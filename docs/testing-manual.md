@@ -36,8 +36,13 @@ node scripts/run-host.mjs --cdp-port 9223
 That is window B — **not** `npm run dev:debug` a second time. Two windows need two ports *and* two browser profiles, and
 the profile is derived from the port, so the second window must be started with a different one.
 
-Join B to A's room with the invite link A shows (or the six-character room code). Both windows now play the same file
-from A's sidecar.
+A opens on the **first screen**. Press **Start a room**: the six-character room code and the link appear in the
+**invite bar** - the thin column on the right of the watching screen, and at the top of the chat column when the window
+is narrow. Join B with that link: opening the `watchparty://` link lands it straight on the watching screen, and typing
+the code into B's own front door works too. Both windows now play the same file from A's sidecar.
+
+A window joined by typing the code keeps no `?join=` in its address, so reloading it lands back on its own front door;
+a window that opened the link reloads straight into the room (measured 2026-11-24, tickets 106b and 120).
 
 To find the two logs afterwards:
 
@@ -51,20 +56,25 @@ which window.
 
 ## 4. The gate, step by step
 
-1. Open A with `npm run dev:debug`. Note its room code and its log path.
-2. Open B with `node scripts/run-host.mjs --cdp-port 9223`. Join it with A's link.
-3. Press play in A and let both run. Check A's roster shows two people.
-4. Scrub A's player to the middle. B must be at the same position, within a fraction of a second, without a reload.
-5. Stall one window on purpose — the dev switch T7b2 added. On this build the frozen window is pulled back by §6.3's
+1. Open A with `npm run dev:debug`. It prints its log path, and it opens on the **first screen**.
+2. Press **Start a room**. The watching screen appears: the address bar with **Paste** and **Open a file** across its
+   top, the film filling the left of the window, and the chat column on the right carrying the invite bar (**Room
+   <code>**, the link, **Copy**, **Raw address**) at its top; under the picture sit **Pause**, the seek slider,
+   **Mute** and the volume slider. Note the room code and the link from the invite bar.
+3. Open B with `node scripts/run-host.mjs --cdp-port 9223`. Join it with A's invite link: B lands on the watching
+   screen, not on a front door of its own.
+4. Press play in A and let both run. Check A's roster shows two people.
+5. Scrub A's player to the middle. B must be at the same position, within a fraction of a second, without a reload.
+6. Stall one window on purpose — the dev switch T7b2 added. On this build the frozen window is pulled back by §6.3's
    four-second hard-seek rule, so the stall lasts about four seconds whatever the switch is set to (measured
    2026-11-22, ticket 49: `drift=-4.203 … action=seek` at the fourth second, the healthy window untouched). Do not
    fight it; the stall's job is the next step.
-6. Watch the other window for the whole stall: **it must not jump.** A small rate change is allowed and intended; a
+7. Watch the other window for the whole stall: **it must not jump.** A small rate change is allowed and intended; a
    jump, a freeze, or a double restart is a failure.
-7. Drag the scrubber several times, quickly, in the **owner's** window: each drag must send one command, not a stream
+8. Drag the scrubber several times, quickly, in the **owner's** window: each drag must send one command, not a stream
    of corrections (R6), and the other window must arrive at that position once. A **guest's** drag sends nothing — one
    write per action (ADR-030) — and is undone locally; its evidence is the absence of a command, not a correction.
-8. Ten minutes of that, with one stall in the middle, is the gate.
+9. Ten minutes of that, with one stall in the middle, is the gate.
 
 What a healthy run looked like on this machine (recorded, not imagined): a pause in one window stopped the other in
 18 ms; a hard scrub sent one command, not a flood; a third window joining 30 s in landed within 118 ms; a reload
@@ -89,6 +99,26 @@ and, when the window closes, its own last line:
 
 If `logs/` holds a file per window but one of them lacks its own `PORT` line, or shows a port another window also
 names, the two are sharing a sidecar — that is the failure this log split exists to catch.
+
+The window and its layout say what they decided, in both builds. Timestamps shortened; every shape below appeared in
+this phase's runs (tickets 89, 93, 94, 99, 104, 107):
+
+```
+[host 00:41:06.242] window: restored 1400x900 maximised=false
+[host 00:41:07.302] layout: window 1400x900 wide
+[host hh:mm:ss.mmm] layout: page mode - site 1002x853 left of a 380 px app view
+[host hh:mm:ss.mmm] layout: page mode narrow - site 782x392 above a 261 px app view
+[host hh:mm:ss.mmm] layout: file mode - site view hidden, the 1382 px app view fills the window
+[host 00:28:28.706] relay: pageAddress http://127.0.0.1:8123/probe-2.html
+[host hh:mm:ss.mmm] watchparty:// registered for this user: "C:\dev\Code\misc\watch-party\host\WatchParty.Host\bin\Debug\net10.0-windows\WatchParty.Host.exe" "%1"
+```
+
+`window: first run maximised` replaces `window: restored ...` on a machine's very first launch, and a size the user
+set is written as `window: saved <w>x<h> maximised=<bool> at <path>` when the window closes (ticket 93). `layout:
+window <w>x<h> wide|narrow` is the 900 px decision (94); one `layout: page mode`, `layout: page mode narrow` or
+`layout: file mode` line follows each change of shape (99, 107); `relay: pageAddress <url>` is the site view's top
+document reporting where it went, and it is the line a page room follows, with `pageCommitted` when the room takes it
+(104, 105). `watchparty:// registered ...` is written at every start, because every start rewrites the key (89).
 
 Website mode adds one prefix per speaker, quoted from a real run on 2026-11-21 (`logs/host-20261121-183017-716-5412.log`):
 
@@ -125,11 +155,12 @@ rtt 1.0 ms, with a 137 ms skew injected reading back as 136.5 ms with the right 
 right and this page is wrong: correct it here rather than working around it.
 
 **The Release host log has no invite line.** Measured on the 0.2.0 portable copy (ticket 83, 2026-11-23): 31 lines, and
-none carries the room code or the link - they exist only on the start screen. For a packaged copy, photograph the start
-screen with `window-shot.ps1` and read the code from the picture. If the page is already scrolled past the code, the
-copy answers `http://127.0.0.1:<PORT>/discovery` **on loopback** (over the LAN it is `403`) with the JSON the start
-screen renders - `roomCode`, `lanIp`, `localPort`, `invite.primary`, `invite.raw` - which is how ticket 87 read it on
-0.2.1 (2026-11-23).
+none carries the room code or the link. On this build both live in the **invite bar** at the top of the chat column, so
+a packaged copy is read from its bar: the code is the `Room <code>` pill, **Copy** puts the link on the clipboard and
+**Raw address** shows it in full (ticket 97). No scrolling and no code read out of a picture. A copy that cannot be
+looked at answers `http://127.0.0.1:<PORT>/discovery` **on loopback** (over the LAN it is `403`) with the JSON the page
+renders - `roomCode`, `lanIp`, `localPort`, `invite.primary`, `invite.raw` - which is how ticket 87 read it on 0.2.1
+(2026-11-23).
 
 ## 6. The clock panel: what it does and does not tell you
 
@@ -182,7 +213,8 @@ Check `document.visibilityState` before believing a refusal (ticket 23).
 Anything a person would read off the screen, ask the page for instead. That is what makes a check cheap and what makes
 it possible for the lead to check a worker's claim without repeating the mouse work.
 
-For the whole window — site view, strip and sidebar in one frame, which `shot` cannot give you — use the camera:
+For the whole window — site view and chat column in one frame, with the address and invite bars above and beside
+them, which `shot` cannot give you — use the camera:
 
 ```
 powershell -NoProfile -File scripts/window-shot.ps1 .scratch/run.png
@@ -192,9 +224,8 @@ powershell -NoProfile -File scripts/window-shot.ps1 .scratch/pair.png -Pids 1234
 It prints each window's pid, rectangle and capture instant plus the PNG's own size, so a cropped or stale picture shows
 in its output rather than in your judgement. `-Pid`/`-Pids` pick by process, which is what two windows need: they share
 a title, so the plain form only ever photographs the topmost. `-Place` stacks them first and never puts one back, so run
-it last. A window restored from the taskbar draws again, but its page stays scrolled where it was: scrolled to the
-top, this page puts the invite panel where the player should be (measured 2026-11-22, ticket 49), so scroll each
-window to its player before the shot.
+it last. The bar is a row of the chat column and the page no longer carries a scrolling column with its player below
+the fold, so the whole window is in the frame without scrolling it first (measured 2026-11-24, ticket 100).
 
 ### Pictures at two window sizes
 
@@ -280,6 +311,22 @@ That yields 720.0 s and 44.5 MB (measured 2026-11-22, `.scratch/phase-3-m7/gate-
 ffmpeg is not installed, any long video will do. Point `WATCHPARTY_PICK_PATHS` at it and **read the host log's
 `[media] registered ... duration=<n>` line before starting the clock** - a duration line costs a second, ten minutes on
 the wrong file costs the run. The picture moves, so two windows can be compared by eye as well as by number.
+
+### Four traps that cost a re-run
+
+Each was measured in this phase and each has caught a run since:
+
+- **A still does not show a state change.** `window-shot.ps1` returned a frame byte-identical to the one taken before a
+  fullscreen exit, because nothing in the window had moved between the two captures. Take two captures about 1.5 s
+  apart and compare their sizes and hashes, or quote the log line that names the state (ticket 116).
+- **The window comes back at its last saved size.** The camera restores the size the window was closed at, so a run
+  that cares about size passes `-Width`/`-Height` (or `-Maximise`) every time; ticket 100's run opened at the previous
+  ticket's 1400x900 without being asked (tickets 107, 100).
+- **A picture taken inside the page commit's two-second countdown shows the countdown, not the layout.** Wait for the
+  room to settle before the shot (ticket 107).
+- **A control below the viewport is not where a press lands.** `cdp.mjs click` at a control's centre while the control
+  is scrolled out of view presses `BODY`, and `cdp.mjs type` then refuses with `activeElement BODY`. Scroll it into view
+  and focus it first: a real press does not scroll the page for you (ticket 117).
 
 ## 8. If something is wrong
 
