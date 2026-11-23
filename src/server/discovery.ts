@@ -483,12 +483,16 @@ async function mapWithNatPmp(
     // carry it so the screen can name the router's own reason (T73). A code
     // that is not a result code (EADDRINUSE and friends) is a socket error
     // that never reached the router, so it does not make the router a
-    // replier and the step stays silent (T78).
+    // replier when `map()` never came back, and the step stays silent (T78).
+    // A `map()` that already resolved is the router replying, whatever the
+    // address read after it throws: the local fact wins over the error's own
+    // code (T81). Only a run where `map()` never resolved and the code is not
+    // a result code stays silent (T78).
     const faultCode = faultCodeOf(error)
     return {
       outcome: { type: 'refused', detail: messageOf(error), faultCode },
-      silent: faultCode === null ? ['natpmp'] : [],
-      replied: faultCode !== null,
+      silent: replied || faultCode !== null ? [] : ['natpmp'],
+      replied: replied || faultCode !== null,
     }
   } finally {
     clearTimeout(timer)

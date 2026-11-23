@@ -413,6 +413,40 @@ test('a NAT-PMP map that succeeds and then hangs still counts as the router answ
   assert.match(result.sentence, /Your router answered, but opening the port did not finish/)
 })
 
+test('a NAT-PMP map that succeeds and then fails without a code is still the router answering (T81)', async () => {
+  // A map that resolved is the router replying, whatever the address read does
+  // next. A code-less rejection there (a socket error, the library's own
+  // 'Unknown opcode') used to be written back as `replied: false`, so the
+  // screen said "No router answered" over a trace holding result=mapped.
+  const result = await discover({
+    localPort: 45123,
+    lanIp: '192.168.10.20',
+    timeoutMs: 3_000,
+    natPmpGateways: ['192.168.10.1'],
+    natPmpClient: () => ({
+      map: async () => ({
+        externalHost: '',
+        externalPort: 45123,
+        internalHost: '192.168.10.20',
+        internalPort: 45123,
+        protocol: 'TCP' as const,
+      }),
+      externalIp: async () => {
+        throw new Error('bad reply')
+      },
+      stop: async () => {},
+    }),
+    upnpSearch: async () => [],
+  })
+
+  console.log(`SENTENCE: natpmp mapped, external read failed -> replied=${result.replied} kind=${result.kind} sentence=${result.sentence}`)
+  assert.equal(result.replied, true)
+  assert.equal(result.kind, 'upnp_unavailable')
+  assert.equal(result.faultCode, null)
+  assert.doesNotMatch(result.sentence, /No router answered/)
+  assert.match(result.sentence, /Your router answered, but opening the port did not finish/)
+})
+
 test("a NAT-PMP refusal keeps the router's own code as a field (T73)", () => {
   const error = Object.assign(new Error('Not Authorized/Refused (gateway may have NAT-PMP disabled)'), {
     code: 2,
