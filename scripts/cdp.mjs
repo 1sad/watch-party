@@ -11,10 +11,12 @@
 //   node scripts/cdp.mjs eval <target-id|index> <expression> [--port 9222]
 //   node scripts/cdp.mjs shot <target-id|index> <file.png> [--port 9222]
 //   node scripts/cdp.mjs click <target-id|index> <x> <y> [--double] [--port 9222]
+//   node scripts/cdp.mjs type <target-id|index> <text> [--at <x> <y>] [--port 9222]
 //
 // stdout carries the answer and nothing else: JSON for `targets`, the
 // expression's value for `eval`, the file's path for `shot`, one line naming
-// the target, the point and the focused element for `click`. Every complaint is
+// the target, the point and the focused element for `click`, the same plus the
+// characters entered and the field's new length for `type`. Every complaint is
 // one line on stderr and a non-zero exit, so a check never hangs on a window
 // that is not there.
 //
@@ -22,6 +24,14 @@
 // `Input.dispatchMouseEvent`, so the page sees a real gesture and a handler it
 // reaches may call `requestFullscreen()`. An `eval`led call is refused with
 // `TypeError: not granted` (T08, T19).
+//
+// `type` enters text the way a person's typing or paste does: it goes through
+// `Input.insertText`, so the page's own `input` handler sees it and a bound
+// field updates. `Runtime.evaluate` writing `element.value` is not the same
+// thing - no event fires, so the page never learns (T111). It types into the
+// page's focused field, or into the field at `--at <x> <y>` (a real press
+// first), and refuses when nothing typeable is focused. The point it prints is
+// the `--at` point when given, otherwise the centre of the focused field.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
@@ -34,6 +44,7 @@ const USAGE = [
   '  node scripts/cdp.mjs eval <target-id|index> <expression> [--port 9222]',
   '  node scripts/cdp.mjs shot <target-id|index> <file.png> [--port 9222]',
   '  node scripts/cdp.mjs click <target-id|index> <x> <y> [--double] [--port 9222]',
+  '  node scripts/cdp.mjs type <target-id|index> <text> [--at <x> <y>] [--port 9222]',
 ].join('\n')
 
 /** A problem worth one line on stderr. `usage` separates a typo from a failure. */
@@ -53,6 +64,7 @@ function isPort(value) {
 function parseArgs(argv) {
   let port = DEFAULT_PORT
   let double = false
+  let at = null
   const configured = process.env.WP_DEBUG_PORT
 
   if (configured) {
@@ -67,6 +79,16 @@ function parseArgs(argv) {
     const arg = argv[index]
     if (arg === '--double') {
       double = true
+    } else if (arg === '--at') {
+      const x = argv[++index]
+      const y = argv[++index]
+      const pointX = Number(x)
+      const pointY = Number(y)
+      if (x === undefined || y === undefined || !Number.isFinite(pointX) || !Number.isFinite(pointY)) {
+        const got = [x, y].filter((part) => part !== undefined).map((part) => `"${part}"`).join(' ')
+        throw new CliError(`--at needs numbers for x and y, got ${got === '' ? 'nothing' : got}`, true)
+      }
+      at = { x: pointX, y: pointY }
     } else if (arg === '--port') {
       const value = argv[++index]
       port = Number(value)
@@ -84,7 +106,7 @@ function parseArgs(argv) {
     }
   }
 
-  return { port, positional, double }
+  return { port, positional, double, at }
 }
 
 /** The page targets of the window on `port`, or one clear line saying there is none. */
@@ -210,9 +232,57 @@ function clickSteps(x, y, double) {
   return [move, ...gestures, { method: 'Runtime.evaluate', params: { expression: ACTIVE_ELEMENT_AFTER_CLICK, returnByValue: true, awaitPromise: true } }]
 }
 
-async function run(command, rest, port, double) {
+/**
+ * The page's focused element as a field: its tag, id, value length and the
+ * centre of its box, which is the point a check quotes. `valueLength` is null
+ * for an element that holds no text, which is how `type` knows to refuse before
+ * anything is entered.
+ */
+const READ_ACTIVE_FIELD = `(() => {
+  const element = document.activeElement
+  if (!element) return null
+  const rect = element.getBoundingClientRect()
+  const value = typeof element.value === 'string' ? element.value : null
+  return {
+    tag: element.tagName,
+    id: element.id || '',
+    valueLength: value !== null ? value.length : (element.isContentEditable ? element.textContent.length : null),
+    x: Math.round(rect.left + rect.width / 2),
+    y: Math.round(rect.top + rect.height / 2),
+  }
+})()`
+
+const READ_ACTIVE_FIELD_STEP = {
+  method: 'Runtime.evaluate',
+  params: { expression: READ_ACTIVE_FIELD, returnByValue: true },
+}
+
+/**
+ * A press at the point when one is given, then the field before the text is
+ * entered, then `Input.insertText`, then the field again: the browser's own
+ * input path, so the page's `input` handler runs and a bound field updates.
+ */
+function typeSteps(text, at) {
+  return [
+    ...(at ? clickSteps(at.x, at.y, false) : []),
+    READ_ACTIVE_FIELD_STEP,
+    { method: 'Input.insertText', params: { text } },
+    READ_ACTIVE_FIELD_STEP,
+  ]
+}
+
+/** The field a `Runtime.evaluate` of `READ_ACTIVE_FIELD` answered, or a refusal. */
+function readField(result, what) {
+  if (result.exceptionDetails) {
+    const thrown = result.exceptionDetails.exception?.description ?? result.exceptionDetails.text
+    throw new CliError(`reading the ${what} element threw: ${thrown.split('\n')[0]}`)
+  }
+  return result.result?.value === undefined ? null : result.result.value
+}
+
+async function run(command, rest, port, double, at) {
   // Checked before the endpoint is dialled: a typo is not a missing window.
-  if (command !== 'targets' && command !== 'eval' && command !== 'shot' && command !== 'click') {
+  if (command !== 'targets' && command !== 'eval' && command !== 'shot' && command !== 'click' && command !== 'type') {
     throw new CliError(`"${command ?? ''}" is not a subcommand.\n${USAGE}`, true)
   }
 
@@ -289,6 +359,41 @@ async function run(command, rest, port, double) {
     process.stdout.write(
       `${gesture} ${key} at (${pointX}, ${pointY}) on ${target.title || target.id}: activeElement ${element ?? 'null'}\n`,
     )
+    return
+  }
+
+  if (command === 'type') {
+    // The text is everything after the target, spaces included, so a link
+    // pasted from a shell arrives whole. Validated after the dial, like `eval`.
+    const [key, ...textParts] = rest
+    const text = textParts.join(' ')
+    if (key === undefined || text.length === 0) {
+      throw new CliError('type needs a target and the text to enter', true)
+    }
+
+    const target = pickTarget(targets, key)
+    const results = await exchange(target.webSocketDebuggerUrl, typeSteps(text, at))
+    // After a press the list is [move, press, release, activeElement, field,
+    // insert, field]; without one it is [field, insert, field].
+    const before = readField(results[results.length - 3], 'focused')
+    const after = readField(results[results.length - 1], 'focused')
+
+    const field = after ?? before
+    if (field === null) {
+      throw new CliError('nothing to type into: no field is focused - press the field first (cdp.mjs click) or pass --at <x> <y>')
+    }
+    if (field.valueLength === null) {
+      const label = `${field.tag}${field.id ? `#${field.id}` : ''}`
+      throw new CliError(`nothing to type into: the focused ${label} holds no text - press a text field first (cdp.mjs click) or pass --at <x> <y>`)
+    }
+
+    // The field's own centre is the point when no press was asked for.
+    const point = at ?? { x: field.x, y: field.y }
+    const label = `${field.tag}${field.id ? `#${field.id}` : ''}`
+    const entered = [...text].length
+    process.stdout.write(
+      `typed ${entered} char${entered === 1 ? '' : 's'} at (${point.x}, ${point.y}) on ${target.title || target.id}: activeElement ${label} (value length ${field.valueLength})\n`,
+    )
   }
 }
 
@@ -302,7 +407,7 @@ async function main() {
 
   const [command, ...rest] = parsed.positional
   try {
-    await run(command, rest, parsed.port, parsed.double)
+    await run(command, rest, parsed.port, parsed.double, parsed.at)
   } catch (error) {
     fail(error)
   }
