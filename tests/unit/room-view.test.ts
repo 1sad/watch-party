@@ -16,6 +16,7 @@ import assert from 'node:assert/strict'
 import {
   pageSide,
   pageCommitFields,
+  pageFollowOutcome,
   screenFor,
   siteAfterPreview,
   closeOutcome,
@@ -131,4 +132,152 @@ test('a close with no roomOver frame is a lost connection, not an ending', () =>
 test('a socket that has not closed is still connected, whatever it has seen', () => {
   assert.equal(closeOutcome({ sawRoomOver: false, closed: false }), 'connected')
   assert.equal(closeOutcome({ sawRoomOver: true, closed: false }), 'ended')
+})
+
+/**
+ * T105 / ADR-048: a site's own navigation is a page change like one typed into
+ * the address bar. The decision compares through `canonicalPage` (ADR-032), so
+ * only a genuinely different address can stage or be put back. Seven facts a
+ * window can hold, one test each, plus the two "no address at all" cases.
+ */
+const followedRoom = 'https://example.com/watch/1'
+
+test('a site that lands on the address the room is already on is not a change', () => {
+  assert.equal(
+    pageFollowOutcome({
+      address: followedRoom,
+      roomPage: followedRoom,
+      previewPage: null,
+      controller: true,
+    }),
+    'ignore',
+  )
+})
+
+test('a reload or route change to the same canonical address is not a change', () => {
+  // The query string is dropped by `canonicalPage` (ADR-032), so a reload with
+  // a fresh cache-buster or a route that canonicalises back is the same page.
+  assert.equal(
+    pageFollowOutcome({
+      address: 'https://example.com/watch/1?reload=2',
+      roomPage: followedRoom,
+      previewPage: null,
+      controller: true,
+    }),
+    'ignore',
+  )
+})
+
+test('a fragment on the room page is not a change', () => {
+  assert.equal(
+    pageFollowOutcome({
+      address: 'https://example.com/watch/1#t=90',
+      roomPage: followedRoom,
+      previewPage: null,
+      controller: true,
+    }),
+    'ignore',
+  )
+  // Neither is the same address written in another case.
+  assert.equal(
+    pageFollowOutcome({
+      address: 'https://Example.COM/watch/1',
+      roomPage: followedRoom,
+      previewPage: null,
+      controller: true,
+    }),
+    'ignore',
+  )
+})
+
+test('a controller that lands on a new path stages it for the ordinary two seconds', () => {
+  assert.equal(
+    pageFollowOutcome({
+      address: 'https://example.com/watch/2',
+      roomPage: followedRoom,
+      previewPage: null,
+      controller: true,
+    }),
+    'stage',
+  )
+})
+
+test('a guest that lands on a new path is put back on the room page', () => {
+  assert.equal(
+    pageFollowOutcome({
+      address: 'https://example.com/watch/2',
+      roomPage: followedRoom,
+      previewPage: null,
+      controller: false,
+    }),
+    'return',
+  )
+})
+
+test("the navigation this window's own preview caused is not a second stage", () => {
+  const previewPage = 'https://example.com/watch/2'
+  assert.equal(
+    pageFollowOutcome({
+      address: previewPage,
+      roomPage: followedRoom,
+      previewPage,
+      controller: true,
+    }),
+    'ignore',
+  )
+  // A fragment on the preview's address is still that same staged page.
+  assert.equal(
+    pageFollowOutcome({
+      address: 'https://example.com/watch/2#resume',
+      roomPage: followedRoom,
+      previewPage,
+      controller: true,
+    }),
+    'ignore',
+  )
+})
+
+test('a guest in a room with no page yet is put back too, and the view is hidden', () => {
+  assert.equal(
+    pageFollowOutcome({
+      address: 'https://example.com/watch/2',
+      roomPage: null,
+      previewPage: null,
+      controller: false,
+    }),
+    'return',
+  )
+})
+
+test('a controller in a room with no page yet stages the address it landed on', () => {
+  assert.equal(
+    pageFollowOutcome({
+      address: 'https://example.com/watch/2',
+      roomPage: null,
+      previewPage: null,
+      controller: true,
+    }),
+    'stage',
+  )
+})
+
+test('no address, or one that cannot be shared, is ignored rather than staged', () => {
+  assert.equal(
+    pageFollowOutcome({
+      address: null,
+      roomPage: followedRoom,
+      previewPage: null,
+      controller: true,
+    }),
+    'ignore',
+  )
+  assert.equal(
+    pageFollowOutcome({
+      address: 'javascript:alert(1)',
+      roomPage: followedRoom,
+      previewPage: null,
+      controller: true,
+    }),
+    'ignore',
+  )
 })

@@ -25,12 +25,13 @@
     mediaUrl,
     type LoadRefusal,
   } from '../shared/media.ts'
-  import { PAGE_STAGE_MS, playbackAfterPageCommit, setPageFrame } from '../shared/page.ts'
+  import { PAGE_STAGE_MS, canonicalPage, playbackAfterPageCommit, setPageFrame } from '../shared/page.ts'
   import { previewHolds, type PendingPreview } from './preview.ts'
   import {
     closeOutcome,
     pageSide,
     pageCommitFields,
+    pageFollowOutcome,
     screenFor,
     siteAfterPreview,
     HIDE_SITE_MESSAGE,
@@ -153,7 +154,8 @@
   let nameDraft = $state('')
 
   // T03b: §5's address bar. `pageNotice` is the bar's one line: what the field
-  // could not use, or why the clipboard was unreadable.
+  // could not use, why the clipboard was unreadable, or (T105) why a guest's
+  // site view was put back.
   let pageDraft = $state('')
   let pageNotice = $state<string | null>(null)
   /**
@@ -953,17 +955,72 @@
   let driftLineAt: number | null = null
 
   /**
-   * The relay's other half: one frame's report or one reload event. The host has
-   * already refused every kind but the two (`RelaySiteEvent`), so this only has
-   * to keep the shape honest.
+   * T105 / ADR-048: the top document says where it went, and this window decides
+   * what that means. The host already drops a `pageAddress` sent from a player
+   * frame, but the page does not trust a frame's word either: a payload that does
+   * not say `top === true` is ignored outright, and so is one with no usable
+   * address.
+   *
+   * A controller's new address goes through `stagePage` - the ordinary `setPage`
+   * with the two-second preview, its countdown and Cancel (ADR-032) - but the
+   * site view is not navigated again, because the site itself is already there.
+   * A guest has no page to offer, so its site view is put back on `roomPage`
+   * (or hidden in a room with no page), with one line in the bar saying so.
+   */
+  function onPageAddress(body: Record<string, unknown>): void {
+    if (body.top !== true) return
+    if (typeof body.href !== 'string' || body.href.length === 0) return
+    const address = canonicalPage(body.href)
+    if (address === null) return
+
+    const outcome = pageFollowOutcome({
+      address,
+      roomPage,
+      previewPage: pendingPreview === null ? null : pendingPreview.page,
+      controller: isController(),
+    })
+    if (outcome === 'ignore') return
+
+    if (outcome === 'stage') {
+      // The site view already shows this address, so only the wire is told.
+      if (stagePage(address, false) && dev) console.info(`[page] followed ${address}`)
+      return
+    }
+
+    if (dev) console.info(`[page] put back from ${address}`)
+    // ADR-048: the room is not asked; the existing restore route takes the site
+    // view to the committed page, or hides it when the room has none yet.
+    restoreSiteAfterPreview()
+    pageNotice =
+      roomPage === null
+        ? 'The room has no page yet, so this window was put back.'
+        : `The room is on ${roomPage}, so this window was put back.`
+  }
+
+  /**
+   * The relay's other half: one frame's report, one reload event, or the top
+   * document's address. The host has already refused every kind but those
+   * (`RelaySiteEvent`), so this only has to keep the shape honest.
    */
   function onSiteEvent(message: object): void {
+    // T105 / ADR-048: a site's own navigation is heard even while the room holds
+    // a file. A staged page over a file room has both views up (`media` set,
+    // `roomPage` null), and its site view navigates like any other - so this
+    // branch comes before T26's gate, not after it.
+    const payload = (message as { payload?: unknown }).payload
+    if (typeof payload === 'object' && payload !== null) {
+      const body = payload as Record<string, unknown>
+      if (body.kind === 'pageAddress') {
+        onPageAddress(body)
+        return
+      }
+    }
+
     // T26 / ADR-038: a room with a file has no site view, so nothing the hidden
     // one still says describes what the room plays. A report in flight at the
     // switch must not elect a player, realign it, or write a `player:` line.
     if (media !== null) return
     const source = (message as { source?: unknown }).source
-    const payload = (message as { payload?: unknown }).payload
     if (typeof source !== 'string' || source.length === 0) return
     if (typeof payload !== 'object' || payload === null) return
 
@@ -1413,27 +1470,30 @@
   }
 
   /**
-   * T03b / T95b: the one send both routes use - Enter in the address bar and the
-   * Paste button (ticket 105 will call it for a site's own navigation too).
+   * T03b / T95b / T105: the one send every route uses - Enter in the address bar,
+   * the Paste button, and (ADR-048) a controller's site navigating itself.
    * `setPageFrame` is the whole decision — a blank field or an unusable address
    * yields no frame, so nothing leaves this window (the authority would otherwise
    * drop it silently, ticket 03).
+   *
+   * `moveView` is true for the bar, whose window has to show the page it just
+   * asked for, and false for a site that has already navigated: there the
+   * ordinary `setPage` is the preview, and navigating again would reload the page
+   * the site just loaded — the visible revert ADR-032 exists to avoid.
+   *
+   * Returns whether the frame left, so the route that logged "followed" only
+   * says so when the room really heard it.
    */
-  function sendPage(address: string): void {
-    if (address.trim().length === 0) {
-      pageNotice = null
-      return
-    }
-
+  function stagePage(address: string, moveView: boolean): boolean {
     const frame = setPageFrame(address, epoch)
     if (frame === null) {
       pageNotice = 'That is not a web address — paste a page link like example.com/watch.'
       if (dev) console.info(`[page] refused as unusable: ${address.trim()}`)
-      return
+      return false
     }
     if (socket === null || selfId === null) {
       pageNotice = 'This window is not in the room, so the address was not sent.'
-      return
+      return false
     }
 
     socket.send(JSON.stringify(frame))
@@ -1443,10 +1503,20 @@
     // at the instant the frame leaves, because that is when the authority's
     // window starts too.
     pendingPreview = { page: frame.page, epoch, sentAt: Date.now() }
-    moveSiteView(frame.page)
+    if (moveView) moveSiteView(frame.page)
     // T03b's live check reads this line's absence for a bad address, so the
     // success is as explicit as the refusal above.
     if (dev) console.info(`[page] setPage ${frame.page}`)
+    return true
+  }
+
+  /** T03b: the bar's field, sent by the one path; blank sends nothing at all. */
+  function sendPage(address: string): void {
+    if (address.trim().length === 0) {
+      pageNotice = null
+      return
+    }
+    stagePage(address, true)
   }
 
   /** T03b: Enter in the address bar — the field's own text, sent by the one path. */

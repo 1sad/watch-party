@@ -16,6 +16,7 @@
  * same arrangement `ui/preview.ts` keeps).
  */
 
+import { canonicalPage } from '../shared/page.ts'
 import type { Media } from '../shared/protocol.ts'
 
 /** The two fields of a room snapshot that decide what the window shows (§4.1, §4.2). */
@@ -146,4 +147,43 @@ export type SiteRestore = { kind: 'show'; page: string } | { kind: 'hide' }
  */
 export function siteAfterPreview(roomPage: string | null): SiteRestore {
   return roomPage === null ? { kind: 'hide' } : { kind: 'show', page: roomPage }
+}
+
+/** The four facts one `pageAddress` is judged by (ADR-048, T105). */
+export interface PageFollowFields {
+  /** The top document's address as the bridge announced it, or `null` when none. */
+  address: string | null
+  /** The room's committed page (§4.1), or `null` in a file room or a room with no page. */
+  roomPage: string | null
+  /** This window's own staged page (`pendingPreview.page`), or `null`. */
+  previewPage: string | null
+  /** Whether this window holds control (ADR-024, ADR-030). */
+  controller: boolean
+}
+
+/** What one announced address means for this window: nothing, stage it, or put the view back. */
+export type PageFollow = 'ignore' | 'stage' | 'return'
+
+/**
+ * T105 / ADR-048: the room follows the page's **own** navigation, not only the
+ * address bar. A controller that lands on a new address stages it through the
+ * ordinary `setPage` — the same two-second window and Cancel a typed address
+ * gets (ADR-032) — and a window that does not hold control puts its site view
+ * back on the room's page instead. The comparison is `canonicalPage`'s
+ * (ADR-032): a reload, a fragment, a query string or a case difference is the
+ * same page and never a second stage, and neither is the navigation this
+ * window's own preview caused.
+ *
+ * The decision lives here so a unit test can hold it: this project has no DOM
+ * test, so a rule kept only inside the component is a rule nothing checks (the
+ * same arrangement `pageSide` above keeps).
+ */
+export function pageFollowOutcome(fields: PageFollowFields): PageFollow {
+  const address = fields.address === null ? null : canonicalPage(fields.address)
+  if (address === null) return 'ignore'
+  const room = fields.roomPage === null ? null : canonicalPage(fields.roomPage)
+  if (room !== null && room === address) return 'ignore'
+  const preview = fields.previewPage === null ? null : canonicalPage(fields.previewPage)
+  if (preview !== null && preview === address) return 'ignore'
+  return fields.controller ? 'stage' : 'return'
 }
