@@ -142,10 +142,10 @@ alone, fed by the stream the owner's app is already playing. One person, on requ
 
 ## Layout of the window
 
-**First screen** — the room's front door. It shows the host's invite in full (the code, the link, the raw fallback,
+**First screen** - the room's front door. It shows the host's invite in full (the code, the link, the raw fallback,
 the same-network link, and the router's state including the failure card), then the box to paste someone else's
-invite into. It has no picture, chat or file picker. Pressing **Start a room** leaves it; a room is already live
-behind it (ADR-047).
+invite into. It has no picture, chat, address bar or file picker. Pressing **Start a room** leaves it; a room is
+already live behind it (ADR-047).
 
 **Watching screen** - the room itself: the picture with the chat column beside it, and the player's own controls (play,
 scrub, volume) under the picture in file mode and the room's controls in the column. Every room in progress is on this

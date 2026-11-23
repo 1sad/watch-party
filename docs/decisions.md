@@ -1332,7 +1332,8 @@ invite payload of its own while it is in it.
 picture. The picture is the site view in website mode and our own `<video>` in file mode, and the rule is the same in
 both:
 
-- **Window 900 px wide or more:** picture left, chat column right, invite bar on top of the column.
+- **Window 900 px wide or more** (the form's client width, in CSS pixels): picture left, chat column right, invite bar
+  on top of the column.
 - **Window narrower than 900 px:** the chat column moves **below** the picture (in website mode the host docks the app
   view along the bottom; in file mode the page stacks them). It is never squeezed beside the picture. The picture is
   bounded to **at most 60% of the content height** so the chat always has room, keeps its 16:9 shape inside that

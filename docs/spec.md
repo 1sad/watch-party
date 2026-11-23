@@ -24,10 +24,11 @@ prove the sync engine is v2 (see `open-questions.md` §F).
 
 ## 1. Flows
 
-**Create.** The owner opens the app and clicks **Start a room**. The app opens its port, learns its own public
-address, and shows a single link that carries both the address and the room code. There is no account, no sign-in,
-and nothing to configure. If the address cannot be learned or the port cannot be opened, the app says so plainly at
-this point rather than at join time (§14).
+**Create.** The owner opens the app. It opens its port, learns its own public address, and shows a single link that
+carries both the address and the room code on its first screen; the room is live from that moment (ADR-047). There is
+no account, no sign-in, and nothing to configure. If the address cannot be learned or the port cannot be opened, the
+app says so plainly at this point rather than at join time (§14). Pressing **Start a room** enters the room's watching
+screen; it creates nothing.
 
 The link uses a custom `watchparty://` scheme that the copy registers for itself every time it starts (ADR-042), so
 clicking it launches the app. Alongside
@@ -64,19 +65,21 @@ button does the same thing, and nothing the site does can take the screen or hid
 rules are in ADR-029: a player is always a follower on load, a controller's skip becomes a room seek, and everyone
 else converges.
 
-**Two screens, and the window used.** The first screen is invite and join only: **Start a room**, the box to paste a
-link into, and the reason when a link fails. Pressing Start a room switches at once to the watching screen (ADR-047).
-There the picture takes whatever is left and the chat is a **380 px column on its right** — member count, message
-list, input — with the invite bar (room code, link, Copy) as that column's top row and, when the room is on an
-external page, the align/offset controls beside it. A bottom control bar mirrors play/pause/seek where the page allows
-it, plus subtitle selection in file mode. Under **900 px** wide the chat column moves below the picture, never beside
-it. Nothing else: the product is the picture, the chat, and four controls.
+**Two screens, and the window used.** The first screen is the room's front door: the room code, the invite link and
+Copy, the raw fallback, the router's state and its failure card when there is no public link, and the box to paste
+someone else's link into - and no picture, chat, address bar or picker (ADR-047). Pressing Start a room switches at
+once to the watching screen. There the picture takes whatever is left and the chat is a **380 px column on its right** - member
+count, message list, input, with the align/offset controls beside it - and the invite bar (room code, link, Copy) as
+that column's top row, the address bar with its Paste button inside the field and **Open a file** beside it, and the
+player's own controls (play, scrub, volume) plus subtitle selection under the picture in file mode. Under **900 px** of
+window width (the form's client width) the chat column moves below the picture, never beside it, and the picture is
+bounded so the chat always has room. Nothing else: the product is the picture, the chat, and the controls.
 
-**Two ways to watch (R28).** *Sidebar* keeps chat beside the picture, always visible; when the page's own player
-goes fullscreen it stays inside our window rather than taking the screen, which is what makes this possible. *Cinema*
-hides the sidebar and floats a translucent chat panel over the picture, which fades out after ~3 s without pointer
-movement and comes back on any pointer movement, on a keypress, or briefly when a message arrives. The choice is
-per member and remembered. Cinema is the better default for a film, sidebar for catching up during one.
+**Two ways to watch (R28).** The **chat column** keeps chat beside the picture, always visible; when the page's own
+player goes fullscreen it stays inside our window rather than taking the screen, which is what makes this possible.
+*Cinema* hides the column and floats a translucent chat panel over the picture, which fades out after ~3 s without
+pointer movement and comes back on any pointer movement, on a keypress, or briefly when a message arrives. The choice
+is per member and remembered. Cinema is the better default for a film, the column for catching up during one.
 
 **Leave.** Closing a member's app removes them. If the **owner** leaves in file mode, the room ends. If the **host**
 (the app holding authority) leaves in website mode, authority passes to another connected app and playback is
@@ -742,8 +745,9 @@ watch-party.exe
 - **Install:** one file to copy, not an installer (ADR-041, ADR-042). `portable` carries the .NET runtime, the Node
   runtime and the page and uses the WebView2 runtime Windows has; `portable-full` carries the browser engine too. No
   Docker, no Caddy, no TLS certificate, no database, no service.
-- **Start:** one click. The app opens its port, learns its address, and shows the link. If either step fails it
-  says so *now*, with the reason, and offers the fallbacks in §14.
+- **Start:** the app opens on its first screen with its port already open, its address learned and its link shown; one
+  press enters the watching screen (ADR-047). If opening the port or learning the address fails it says so *now*, with
+  the reason, and offers the fallbacks in §14.
 - **Join:** the invite link is the key (ADR-044). A caller who has only the address gets a gate page and nothing
   else; a wrong code is refused and repeated refusals close the door on that caller. The room holds **ten** members
   (ADR-044, 2026-11-22: raised from five, which the design had assumed rather than required).
