@@ -13,8 +13,9 @@ read it before believing any claim about what works. **The working record -
 specs, tickets, session notes, costs - is kept on the owner's machine and is not in this public repo**, so a fresh
 clone has the code and `docs/` only.
 
-**Rebuilt on 2026-11-16** around ADR-022 … ADR-027. **ADR-043** (the portable copy is its folder, and nothing leaves
-it) is the newest and amends ADR-042; ADR-041 (one portable executable; the browser is the only dependency outside
+**Rebuilt on 2026-11-16** around ADR-022 … ADR-027. **ADR-046** (a joined guest's media URL carries the room code) is the newest, after **ADR-045** (the UPnP search leaves
+UDP 1900) and **ADR-044** (every request is gated on the code); **ADR-043** (the portable copy is its folder, and nothing leaves
+it) amends ADR-042; ADR-041 (one portable executable; the browser is the only dependency outside
 it), ADR-040 (the ad list is share-alike data), ADR-038 (two views), ADR-039 (a quarter-second deadband) and ADR-034
 (the .NET host around WebView2) are the ones that bind the code. If a document contradicts an ADR, the ADR wins and
 the document is stale.

@@ -354,6 +354,7 @@ in for a stranger's view because the server sees a non-loopback caller either wa
 | Request, over the LAN address | Answer |
 | --- | --- |
 | `/`, `/discovery`, `/healthz`, `/join`, `/join?c=WRONG`, `/bridge.js`, `/fixture`, and `/` with a wrong `wp_key` cookie | `403` **and the gate page**: `<!doctype html>`, one code form (`id="c"`), 1162 bytes, no bundle, no version, no roster, no chat, no room code |
+| `/media/<id>` with no code, and with a wrong one (0.2.1, ticket 87) | `403` **and the gate page**, no file bytes, and the media route never runs: the gate answers first. With `?c=<the real code>` the same URL answers `206` with the file's bytes (ADR-046) |
 | `/join?c=<the real room code>` | `200`, the app - from an address not currently barred; `403` while it is |
 | `/` on `127.0.0.1` (the owner's own window) | `200`, the app |
 

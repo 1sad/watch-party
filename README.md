@@ -100,7 +100,7 @@ file" mode, kept mostly to prove sync without a website in the way.
 
 ## Hard constraints going in
 
-- ≤ 5 viewers. No accounts: a name, or "anonymous", set whenever.
+- Up to ten viewers. No accounts: a name, or "anonymous", set whenever.
 - **Free, permanently.** No paid tunnel, no rented server, no third-party meeting service, no sign-ups.
 - The host's own PC is the only machine involved, and it is on for the evening only.
 - Windows first. Linux and Android later; iOS never (no add-on exists there).

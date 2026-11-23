@@ -126,7 +126,10 @@ right and this page is wrong: correct it here rather than working around it.
 
 **The Release host log has no invite line.** Measured on the 0.2.0 portable copy (ticket 83, 2026-11-23): 31 lines, and
 none carries the room code or the link - they exist only on the start screen. For a packaged copy, photograph the start
-screen with `window-shot.ps1` and read the code from the picture.
+screen with `window-shot.ps1` and read the code from the picture. If the page is already scrolled past the code, the
+copy answers `http://127.0.0.1:<PORT>/discovery` **on loopback** (over the LAN it is `403`) with the JSON the start
+screen renders - `roomCode`, `lanIp`, `localPort`, `invite.primary`, `invite.raw` - which is how ticket 87 read it on
+0.2.1 (2026-11-23).
 
 ## 6. The clock panel: what it does and does not tell you
 
