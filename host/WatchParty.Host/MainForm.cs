@@ -33,12 +33,11 @@ public sealed class MainForm : Form
 
     /// <summary>
     /// ADR-038's layout, in pixels: the sidebar is a fixed width so a resize
-    /// never reflows the site, and the top strip is the height the host reserves.
-    /// The strip's contents are our page's own, drawn inside the app view (03b);
-    /// the strip over the site is empty until then.
+    /// never reflows the site. ADR-047 removes the empty 48 px band the host used
+    /// to reserve above the site view, so the site view's top is the form's own
+    /// client top and the host has no vertical furniture at all.
     /// </summary>
     private const int SidebarWidth = 380;
-    private const int TopStripHeight = 48;
 
     /// <summary>
     /// T94, ADR-047 ("one threshold, owned by the host"): the window's client
@@ -77,7 +76,6 @@ public sealed class MainForm : Form
 
     private readonly WebView2 _page = new() { Dock = DockStyle.Fill };
     private readonly WebView2 _site = new() { Dock = DockStyle.Fill };
-    private readonly Panel _topStrip = new() { Dock = DockStyle.Top };
     private readonly System.Windows.Forms.Timer _portTimeout = new() { Interval = 20_000 };
 
     // Command-line arguments, untouched: when the app was opened from a clicked
@@ -120,6 +118,12 @@ public sealed class MainForm : Form
     /// page has been told once.
     /// </summary>
     private string? _publishedLayout;
+    /// <summary>
+    /// T99: the panel last published to the page - <c>chat</c> while the app view
+    /// is the docked column, null when it is not - so a dock change is published
+    /// even when the window's width did not change.
+    /// </summary>
+    private string? _publishedPanel;
     private bool _navigated;
     /// <summary>
     /// The port the sidecar reported, which together with <c>127.0.0.1</c> is the
@@ -226,27 +230,25 @@ public sealed class MainForm : Form
         StartPosition = FormStartPosition.CenterScreen;
 
         // Docking runs from the last child added, so each Fill control goes in
-        // before the control that takes space off it: the sidebar takes its
-        // width from the right, the strip takes its height off the top of what
-        // is left, and the site view keeps the rest.
+        // before the control that takes space off it: the app view takes its
+        // width from the right in page mode, and the site view keeps the rest.
         //
         // The site view is a child of the form itself (T08 attempt 2): nested in
         // an intermediate panel it was refused every fullscreen request
         // (`TypeError: not granted`) while the same page in the app view — a
         // direct child — was granted. The layout is otherwise unchanged.
-        _topStrip.Height = TopStripHeight;
-        // The same dark chrome as our page's own body, so the reserved strip is
-        // an empty row rather than a glare next to a dark window (03b fills it).
-        _topStrip.BackColor = Color.FromArgb(0x14, 0x15, 0x1A);
+        //
+        // T99 / ADR-047: there is no strip above the site view any more. The
+        // old empty 48 px band held nothing, and the address bar is drawn by the
+        // page inside the app view, so the site view's top is the form's client
+        // top (this is the `site ... at 0,0` reading in `layout:`).
         Controls.Add(_site);
-        Controls.Add(_topStrip);
         Controls.Add(_page);
 
         // ADR-038: with no page there is no site view. A window opens with no
         // room, so this is file mode until something sets a page (03), and the
         // app view fills the window exactly as in M1.
         _site.Visible = false;
-        _topStrip.Visible = false;
 
         Load += OnLoad;
         FormClosing += OnFormClosing;
@@ -1630,10 +1632,11 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
-    /// ADR-038's page mode: the app view becomes a fixed sidebar on the right and
-    /// the site view takes the rest, with the top strip reserved above the site.
-    /// Called only when the room has a page — until 03 sets one, that is the
-    /// measuring build's <c>WATCHPARTY_SPIKE_URL</c> alone.
+    /// ADR-038's page mode, as ADR-047 amends it: the app view becomes a fixed
+    /// sidebar on the right and the site view takes the rest, from the form's own
+    /// client top - the empty band above it is gone. Called only when the room has
+    /// a page, and on every dock change it tells the page it is the column
+    /// (`data-panel="chat"`, ADR-047's "the host's dock wins").
     /// </summary>
     private void ShowSiteView()
     {
@@ -1642,9 +1645,16 @@ public sealed class MainForm : Form
         _page.Dock = DockStyle.Right;
         _page.Width = SidebarWidth;
         _site.Visible = true;
-        _topStrip.Visible = true;
+        // Docking follows Visible, but not before the message returns, so the
+        // rectangles below are the ones the window is about to show.
+        PerformLayout();
+        // T99 item 4: one line per shape, with the numbers actually used and the
+        // site view's own rectangle, so the band's absence is readable here -
+        // `at 0,0` is the form's client top-left - without a second tool.
         HostLog.Write(
-            $"layout: page mode - site view left of a {SidebarWidth} px app view, top strip {TopStripHeight} px");
+            $"layout: page mode - site {_site.Width}x{_site.Height} at {_site.Left},{_site.Top} "
+            + $"left of a {SidebarWidth} px app view");
+        PublishLayout();
     }
 
     /// <summary>
@@ -1663,12 +1673,13 @@ public sealed class MainForm : Form
         if (_siteFull) SetFullscreenLayout(false);
 
         _site.Visible = false;
-        _topStrip.Visible = false;
         // The app view takes the whole window back (ADR-038's file-mode picture).
         _page.Dock = DockStyle.Fill;
         // Docking follows Visible, but not before the message returns.
         PerformLayout();
         HostLog.Write($"layout: file mode - site view hidden, the {_page.Width} px app view fills the window");
+        // T99: the dock changed, so the page stops being the column.
+        PublishLayout();
 
         // T26: the player goes with the pane. A hidden engine keeps running its
         // page - its timers, its reports and, if it was playing, its sound - so
@@ -1681,11 +1692,11 @@ public sealed class MainForm : Form
 
     /// <summary>
     /// ADR-028: fullscreen is a layout decision and the app owns it (T08). The
-    /// picture fills our window and our UI stays: on enter the reserved top strip
-    /// goes, which gives the site view the column's whole height while the app
-    /// column on the right stays visible; on exit the strip comes back and the
-    /// layout is exactly what it was. No window is created and the window's state
-    /// is never touched.
+    /// picture fills our window and our UI stays: the app column on the right
+    /// stays visible and no window is created. ADR-047 removed the 48 px band
+    /// above the site view, so there is nothing left for fullscreen to take or
+    /// give back - the dock is the same in both states and only the transition is
+    /// recorded. No window is created and the window's state is never touched.
     ///
     /// Two things name the same transition. The page's own intent arrives from
     /// the bridge as a <c>fullscreen</c> message (<see cref="OnFullscreenIntent"/>),
@@ -1765,11 +1776,9 @@ public sealed class MainForm : Form
 
         _siteFull = full;
         _siteFullAt = DateTime.UtcNow;
-        // The strip is the whole of the enter, and showing it again is the whole
-        // of the exit: nothing else about the layout is touched, so the previous
-        // one comes back exactly.
-        _topStrip.Visible = !full;
-        // Docking follows Visible, but not before the message returns.
+        // ADR-047: the band above the site view is gone, so the dock is the same
+        // in both states. Laid out anyway, so the sizes logged below are the ones
+        // the window shows.
         PerformLayout();
 
         HostLog.Write($"site: fullscreen={(full ? "enter" : "exit")} w={_site.Width} h={_site.Height}");
@@ -1828,6 +1837,14 @@ public sealed class MainForm : Form
     /// and the variable for the width and spells neither number itself. Sent on a
     /// change only, and once after the app view loads because a new document has
     /// lost it; a failure is a log line and never stops a resize.
+    ///
+    /// T99, ADR-047 ("the host's dock wins"): the same script carries
+    /// <c>data-panel="chat"</c> while the app view is the docked column, and
+    /// removes the attribute when it is not. The page then draws the chat column
+    /// alone, and the attribute beats <c>data-layout</c>. Called after every dock
+    /// change (<see cref="ShowSiteView"/>, <see cref="HideSiteView"/>) and once
+    /// after the app view loads, so a fresh document never paints the wrong
+    /// column for a frame.
     /// </summary>
     private async void PublishLayout(bool afterLoad = false)
     {
@@ -1841,18 +1858,25 @@ public sealed class MainForm : Form
         int dpi = DeviceDpi;
         int cssWidth = dpi > 0 ? (int)Math.Round(ClientSize.Width * 96.0 / dpi) : ClientSize.Width;
         string layout = cssWidth >= WideLayoutMinCssWidth ? "wide" : "narrow";
-        if (!afterLoad && layout == _publishedLayout) return;
+        // The host's dock, not the width, decides the panel (ADR-047): a page-mode
+        // window is the column at every width, so the page must not fall back to
+        // its picture-and-chat layout because the window is narrow.
+        string? panel = _site.Visible ? "chat" : null;
+        if (!afterLoad && layout == _publishedLayout && panel == _publishedPanel) return;
 
         // Claimed before the await: a second change while this one runs publishes
         // nothing, and a failure gives the value back so the next resize retries.
         string? previous = _publishedLayout;
+        string? previousPanel = _publishedPanel;
         _publishedLayout = layout;
+        _publishedPanel = panel;
         // The one column width travels with it, from the same constant the dock
         // uses, so the page's chat column and the host's app view cannot drift
         // apart (ADR-047, "one column width, owned by the host too").
         string script =
             "(()=>{const r=document.documentElement;"
             + $"r.dataset.layout='{layout}';"
+            + (panel is null ? "delete r.dataset.panel;" : $"r.dataset.panel='{panel}';")
             + $"r.style.setProperty('--chat-column','{SidebarWidth}px');}})();";
         try
         {
@@ -1868,6 +1892,7 @@ public sealed class MainForm : Form
         catch (Exception error)
         {
             _publishedLayout = previous;
+            _publishedPanel = previousPanel;
             HostLog.Write($"layout: could not tell the page: {error.Message}");
         }
     }
@@ -1922,7 +1947,6 @@ public sealed class MainForm : Form
         Text = sentence;
         _page.Visible = false;
         _site.Visible = false;
-        _topStrip.Visible = false;
         Label notice = new()
         {
             Dock = DockStyle.Fill,

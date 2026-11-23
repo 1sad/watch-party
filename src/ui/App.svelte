@@ -289,6 +289,18 @@
     document.documentElement.dataset.screen = screen
   })
 
+  /**
+   * T99 / ADR-047 ("the host's dock wins"): `chat` while the host docks the app
+   * view as a column - website mode, and the staged-preview second while a file
+   * room previews a page - and null otherwise. The host sets `data-panel` on the
+   * root element after every dock change and once the app view has loaded, so the
+   * page watches it rather than reading it once. With `chat` the page draws the
+   * chat column alone and no picture, and that wins over `data-layout` at every
+   * window width: a narrow page-mode window must not draw a second, empty
+   * picture (the narrow dock that makes it narrow is ticket 107).
+   */
+  let panel = $state<string | null>(null)
+
   /** T95: Start a room enters the room that is already live; it creates nothing. */
   function enterRoom(): void {
     endedNotice = false
@@ -1681,6 +1693,18 @@
   }
 
   onMount(() => {
+    // T99 / ADR-047: the host's dock is an attribute on the root element, and it
+    // arrives after this page's first paint, so the page watches it rather than
+    // reading it once. A document with no attribute (a browser, a test) has no
+    // panel and owns its own picture-and-chat layout.
+    const root = document.documentElement
+    const readPanel = (): void => {
+      panel = root.dataset.panel ?? null
+    }
+    readPanel()
+    const panelWatch = new MutationObserver(readPanel)
+    panelWatch.observe(root, { attributes: true, attributeFilter: ['data-panel'] })
+
     // R26's no-typing path: `?join=<encoded link>` is parsed before the first
     // discovery answer can claim this window's own room. T64: the invite link's
     // own form (`/join?c=<code>`) carries the room in this window's address, so
@@ -1709,6 +1733,7 @@
 
     host?.addEventListener('message', onHostMessage)
     return () => {
+      panelWatch.disconnect()
       host?.removeEventListener('message', onHostMessage)
       clearTimeout(timer)
       stopPopupTimer()
@@ -1887,22 +1912,28 @@
          number is written in this file - the fallbacks in the CSS are for a
          browser or a test. -->
     <div class="watch">
-      <div class="picture">
-        {#if selfId !== null && playback !== null && !roomEnded}
-          <Player
-            {playback}
-            {revision}
-            {realign}
-            {nudge}
-            {media}
-            src={playerSrc}
-            {devPlay}
-            clock={authorityClock}
-            rtt={() => estimate.rtt}
-            send={sendCommand}
-          />
-        {/if}
-      </div>
+      <!-- T99 / ADR-047 ("the host's dock wins"): while the host docks the app
+           view as a column the page is the chat column alone, so there is no
+           picture element at all - not an empty one - whatever `data-layout`
+           says. In file mode the picture is ours and stays. -->
+      {#if panel !== 'chat'}
+        <div class="picture">
+          {#if selfId !== null && playback !== null && !roomEnded}
+            <Player
+              {playback}
+              {revision}
+              {realign}
+              {nudge}
+              {media}
+              src={playerSrc}
+              {devPlay}
+              clock={authorityClock}
+              rtt={() => estimate.rtt}
+              send={sendCommand}
+            />
+          {/if}
+        </div>
+      {/if}
 
       <!-- T97 / ADR-047: the invite bar is the chat column's top row, not a
            second panel: the room's code, the host's link and one Copy, with the
@@ -2094,7 +2125,11 @@
   /* ADR-047: picture left, chat column right, and an unset `data-layout` is
      `wide` - the attribute is the host's, and the threshold is read from it, not
      from a media query. The column's top row is where the routes to something to
-     watch live (`bar`), under it the chat and the roster (`body`). */
+     watch live (`bar`), under it the chat and the roster (`body`).
+     T99 / ADR-047 ("the host's dock wins"): `data-panel="chat"` on the root
+     element means the host has docked this page as the column - the picture is
+     the site view then, not ours - and the rules after the narrow ones below
+     turn this grid into that one column. */
   .watch {
     display: grid;
     grid-template-columns: minmax(0, 1fr) var(--chat-column, 380px);
@@ -2225,6 +2260,27 @@
   :global(html[data-layout='narrow']) .room-body {
     flex: 1 1 0;
     min-height: 8rem;
+  }
+
+  /* T99 / ADR-047 ("the host's dock wins"): the host has docked this page as the
+     chat column, so the picture is the site view's and this page draws one
+     column - the invite bar, then the chat, the roster and the controls. These
+     rules sit after the narrow ones on purpose: they have the same specificity,
+     so `data-panel="chat"` wins over `data-layout="narrow"` by coming later, and
+     a narrow page-mode window draws no second, empty picture. */
+  :global(html[data-panel='chat']) .watch {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem 0;
+  }
+
+  :global(html[data-panel='chat']) .invite-bar {
+    flex: 0 0 auto;
+  }
+
+  :global(html[data-panel='chat']) .room-body {
+    flex: 1 1 0;
+    min-height: 0;
   }
 
   /* T03b: the 48 px the host reserves across the top, drawn inside the app
