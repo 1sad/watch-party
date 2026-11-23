@@ -35,10 +35,11 @@ interface FakeRouter {
 /**
  * A gateway that answers the description and the three SOAP calls, so the
  * app's own UPnP arm is exercised without a router on the network (T66b).
- * A `mapFault` makes `AddPortMapping` fail the way a real router does.
+ * A `mapFault` makes `AddPortMapping` fail the way a real router does; a
+ * `hangMap` makes it never answer at all (T78, fault 6).
  */
 async function fakeRouter(
-  options: { mapFault?: number; externalIp?: string; faultText?: string } = {},
+  options: { mapFault?: number; externalIp?: string; faultText?: string; hangMap?: boolean } = {},
 ): Promise<FakeRouter> {
   const actions: string[] = []
   const server = createServer((request, response) => {
@@ -51,6 +52,11 @@ async function fakeRouter(
     const action = header.split('#')[1]?.replace(/"/g, '') ?? 'none'
     actions.push(action)
     request.resume()
+    if (action === 'AddPortMapping' && options.hangMap === true) {
+      // The request is read and never answered: only the client's own timeout
+      // ends it, which is what a router stuck on the map looks like (T78).
+      return
+    }
     request.on('end', () => {
       if (action === 'AddPortMapping' && options.mapFault !== undefined) {
         response.writeHead(500, { 'Content-Type': 'text/xml' })
@@ -236,6 +242,147 @@ test('both arms silent says no gateway answered, and it is not a clock running o
   assert.deepEqual(result.silent, ['gateway', 'upnp-search'])
 })
 
+/** Run `discover` with its trace lines kept, the way T75's capture does. */
+async function withCapturedTrace<T>(run: () => Promise<T>): Promise<{ value: T; lines: string[] }> {
+  const writes: string[] = []
+  const originalWrite = process.stdout.write
+  const capture = (chunk: string | Uint8Array, ...rest: unknown[]): boolean => {
+    const text = typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8')
+    if (text.startsWith('discovery: ')) {
+      writes.push(text.replace(/\r?\n$/, ''))
+      return true
+    }
+    return (originalWrite as unknown as (...args: unknown[]) => boolean).call(process.stdout, chunk, ...rest)
+  }
+  process.stdout.write = capture as typeof process.stdout.write
+  try {
+    return { value: await run(), lines: writes }
+  } finally {
+    process.stdout.write = originalWrite
+  }
+}
+
+test('a router that answers the description but never the map is not "no router answered" (T78)', async () => {
+  // Fault 6: the search found the gateway and the description answered, then
+  // AddPortMapping hangs. T73 inferred "answered" from the outcome's shape, so
+  // this run ended with silent ['upnp-map'] and the screen denied the router
+  // had answered at all.
+  const router = await fakeRouter({ hangMap: true })
+  try {
+    const { value: result, lines } = await withCapturedTrace(() =>
+      discover({
+        localPort: 45123,
+        lanIp: '192.168.10.20',
+        timeoutMs: 1_500,
+        natPmpGateways: [],
+        upnpSearch: async () => [{ location: `${router.base}/rootDesc.xml`, host: '127.0.0.1' }],
+      }),
+    )
+
+    const description = lines.find((line) => line.includes('upnp=description'))
+    console.log(`TRACE: ${description ?? 'no description line'}`)
+    console.log(
+      `SENTENCE: description answered, map hung -> kind=${result.kind} sentence=${result.sentence || '(none)'}`,
+    )
+    // The trace says the router answered, so the verdict must not deny it.
+    assert.match(description ?? '', /upnp=description host=127\.0\.0\.1 result=ok/)
+    assert.equal(router.actions[0], 'AddPortMapping')
+    assert.equal(result.replied, true)
+    assert.equal(result.kind, 'upnp_unavailable')
+    assert.doesNotMatch(result.sentence, /No router answered/)
+    assert.match(result.sentence, /Your router answered, but opening the port did not finish/)
+  } finally {
+    await router.close()
+  }
+})
+
+test('a NAT-PMP socket error is not the router refusing, but its result code still is (T78)', async () => {
+  // The library rejects map() with a socket error's own code, a string that is
+  // not a result code. T73 treated every non-abort rejection as an answer, so
+  // the screen blamed the router for a failure it never saw.
+  const localError = Object.assign(new Error('bind EADDRINUSE 0.0.0.0:5351'), { code: 'EADDRINUSE' })
+  const socketError = await discover({
+    localPort: 45123,
+    lanIp: '192.168.10.20',
+    timeoutMs: 3_000,
+    natPmpGateways: ['192.168.10.1'],
+    natPmpClient: () => ({
+      map: async () => {
+        throw localError
+      },
+      externalIp: async () => '',
+      stop: async () => {},
+    }),
+    upnpSearch: async () => [],
+  })
+
+  console.log(`SENTENCE: local socket error -> kind=${socketError.kind} sentence=${socketError.sentence}`)
+  assert.equal(faultCodeOf(localError), null)
+  assert.equal(socketError.replied, false)
+  assert.equal(socketError.faultCode, null)
+  assert.equal(socketError.kind, 'no_gateway')
+  assert.match(socketError.sentence, /No router answered/)
+  assert.doesNotMatch(socketError.sentence, /refused|did not open the port/)
+
+  // The counter-case: the router's own NAT-PMP result code is a number, and it
+  // does make the router a replier, so the same seam still says it refused.
+  const refusedError = Object.assign(new Error('Not Authorized/Refused'), { code: 2 })
+  const refused = await discover({
+    localPort: 45123,
+    lanIp: '192.168.10.20',
+    timeoutMs: 3_000,
+    natPmpGateways: ['192.168.10.1'],
+    natPmpClient: () => ({
+      map: async () => {
+        throw refusedError
+      },
+      externalIp: async () => '',
+      stop: async () => {},
+    }),
+    upnpSearch: async () => [],
+  })
+
+  assert.equal(refused.replied, true)
+  assert.equal(refused.kind, 'upnp_unavailable')
+  assert.equal(refused.faultCode, 2)
+  assert.match(refused.sentence, /answered and refused/)
+  assert.match(refused.sentence, /code 2/)
+})
+
+test('a NAT-PMP map that succeeds and then hangs still counts as the router answering (T78)', async () => {
+  // Fault 2: map() came back, then the external-address read never does. Before
+  // T78 this ended at `timeout` with silent ['natpmp'] and the screen said the
+  // router had not answered, while the trace held natpmp=response result=mapped.
+  const result = await discover({
+    localPort: 45123,
+    lanIp: '192.168.10.20',
+    timeoutMs: 1_500,
+    natPmpGateways: ['192.168.10.1'],
+    natPmpClient: () => ({
+      map: async () => ({
+        externalHost: '',
+        externalPort: 45123,
+        internalHost: '192.168.10.20',
+        internalPort: 45123,
+        protocol: 'TCP' as const,
+      }),
+      externalIp: (options) =>
+        new Promise<string>((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+        }),
+      stop: async () => {},
+    }),
+    upnpSearch: async () => [],
+  })
+
+  console.log(`SENTENCE: natpmp mapped, external read hung -> kind=${result.kind} sentence=${result.sentence}`)
+  assert.equal(result.replied, true)
+  assert.equal(result.kind, 'upnp_unavailable')
+  assert.equal(result.faultCode, null)
+  assert.doesNotMatch(result.sentence, /No router answered/)
+  assert.match(result.sentence, /Your router answered, but opening the port did not finish/)
+})
+
 test("a NAT-PMP refusal keeps the router's own code as a field (T73)", () => {
   const error = Object.assign(new Error('Not Authorized/Refused (gateway may have NAT-PMP disabled)'), {
     code: 2,
@@ -244,13 +391,13 @@ test("a NAT-PMP refusal keeps the router's own code as a field (T73)", () => {
   assert.equal(faultCodeOf(new Error('no code attached')), null)
   assert.equal(faultCodeOf('no object'), null)
 
-  const text = sentenceFor({ kind: 'upnp_unavailable', faultCode: 2, mappingDisabled: false })
+  const text = sentenceFor({ kind: 'upnp_unavailable', faultCode: 2, mappingDisabled: false, replied: true })
   assert.match(text, /code 2/)
   assert.doesNotMatch(text, /gave no error code/)
 })
 
 function facts(overrides: Partial<SentenceFacts>): SentenceFacts {
-  return { kind: 'upnp_unavailable', faultCode: null, mappingDisabled: false, ...overrides }
+  return { kind: 'upnp_unavailable', faultCode: null, mappingDisabled: false, replied: false, ...overrides }
 }
 
 test('the deliberate off switch is a field, not a sentence to search (T73)', () => {

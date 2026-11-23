@@ -33,8 +33,13 @@ export interface DiscoveryResult {
   faultCode: number | null
   /** The gateway's LAN address, when the route table or the NAT-PMP list named one. */
   gatewayIp: string | null
-  /** The steps that produced no answer at all; empty when something answered. */
+  /**
+   * The steps that produced no answer at all, named for the trace; one step can
+   * be listed even when another answered (T78).
+   */
   silent: string[]
+  /** True when some arm heard a router itself answer, whatever came of it (T78). */
+  replied: boolean
   /** True when the run deliberately skipped mapping (WATCHPARTY_NO_MAP). */
   mappingDisabled: boolean
   /** The plain sentence the start screen shows for this state (spec §14). */
@@ -87,15 +92,19 @@ export function classifyMapping(outcome: MappingOutcome): {
 }
 
 /** The facts a sentence is built from; never its English `detail`. */
-export type SentenceFacts = Pick<DiscoveryResult, 'kind' | 'faultCode' | 'externalIp' | 'mappingDisabled'>
+export type SentenceFacts = Pick<
+  DiscoveryResult,
+  'kind' | 'faultCode' | 'externalIp' | 'mappingDisabled' | 'replied'
+>
 
 /**
- * One plain sentence per reason (spec §14, T2 item 7, T67, T73). Four distinct
- * endings: no router answered; the router answered and refused, with its own
- * code; a mapping was made but the address it reports is itself private or
- * shared (ADR-023's CGNAT case); and a public address, which is the only one
- * that gets no warning. The code, the address and the reason are fields, so
- * nothing is guessed from `detail` here.
+ * One plain sentence per reason (spec §14, T2 item 7, T67, T73, T78). Five
+ * distinct endings: no router answered; the router answered and refused, with
+ * its own code; the router answered but the step that opens the port did not
+ * finish and named no code; a mapping was made but the address it reports is
+ * itself private or shared (ADR-023's CGNAT case); and a public address, which
+ * is the only one that gets no warning. The code, the address, the reason and
+ * whether a router replied are fields, so nothing is guessed from `detail` here.
  */
 export function sentenceFor(facts: SentenceFacts): string {
   const sameNetwork = 'Everyone on the same network can join with the link above'
@@ -112,6 +121,12 @@ export function sentenceFor(facts: SentenceFacts): string {
       }
       if (facts.faultCode !== null) {
         return `Your router answered and refused to open the port, with its own error code ${facts.faultCode}. Friends on other networks cannot join yet. ${sameNetwork}${manual}`
+      }
+      if (facts.replied) {
+        // The router spoke, then the step that opens the port never finished
+        // and named no code. Denying it answered would contradict the trace
+        // (T78).
+        return `Your router answered, but opening the port did not finish and it gave no error code. Friends on other networks cannot join yet. ${sameNetwork}${manual}`
       }
       return `Your router did not open the port and gave no error code. Friends on other networks cannot join yet. ${sameNetwork}${manual}`
     case 'no_gateway':
@@ -145,6 +160,9 @@ export function findLanIp(interfaces: ReturnType<typeof networkInterfaces> = net
   return candidates[0] ?? null
 }
 
+/** The parts of a NAT-PMP gateway the attempt drives (T78). */
+export type NatPmpClient = Pick<Gateway, 'map' | 'externalIp' | 'stop'>
+
 export interface DiscoverOptions {
   localPort: number
   lanIp: string | null
@@ -158,12 +176,19 @@ export interface DiscoverOptions {
    */
   natPmpGateways?: string[]
   upnpSearch?: (options: { timeoutMs: number; t0: number }) => Promise<UpnpGateway[]>
+  /**
+   * T78 seam: the NAT-PMP client the arm drives. The real one is the library's
+   * `pmpNat`; a test supplies one whose `map()` fails with a socket error.
+   */
+  natPmpClient?: (gatewayIp: string) => NatPmpClient
 }
 
 interface AttemptStep {
   outcome: MappingOutcome
   /** The steps that produced no answer, named for the final `verdict=` line. */
   silent: string[]
+  /** True when this arm heard a router itself, whatever came of it (T78). */
+  replied: boolean
 }
 
 /** One attempt. Never throws; every ending is a `DiscoveryResult`. */
@@ -198,9 +223,9 @@ export async function discover(options: DiscoverOptions): Promise<DiscoveryResul
   } catch (error) {
     // mapPort catches everything it knows about; this is the last belt.
     trace(t0, `map=error ${describeError(error)}`)
-    step = { outcome: { type: 'refused', detail: messageOf(error) }, silent: ['unexpected'] }
+    step = { outcome: { type: 'refused', detail: messageOf(error) }, silent: ['unexpected'], replied: false }
   }
-  return finish(step.outcome, options, t0, step.silent, gatewayIp)
+  return finish(step.outcome, options, t0, step.silent, gatewayIp, step.replied)
 }
 
 function finish(
@@ -209,11 +234,15 @@ function finish(
   t0: number,
   silent: string[],
   gatewayIp: string | null,
+  replied = false,
 ): DiscoveryResult {
-  const result = toResult(outcome, options, gatewayIp, silent)
+  const result = toResult(outcome, options, gatewayIp, silent, replied)
   const mappedPort = result.mappedPort === null ? 'none' : String(result.mappedPort)
   const silentSteps = result.silent.length === 0 ? 'none' : result.silent.join(',')
-  trace(t0, `verdict=${result.kind} address_class=${result.addressClass} mapped_port=${mappedPort} silent=${silentSteps}`)
+  trace(
+    t0,
+    `verdict=${result.kind} address_class=${result.addressClass} mapped_port=${mappedPort} replied=${String(result.replied)} silent=${silentSteps}`,
+  )
   return result
 }
 
@@ -222,6 +251,7 @@ function toResult(
   options: DiscoverOptions,
   gatewayIp: string | null,
   silent: string[],
+  replied: boolean,
 ): DiscoveryResult {
   const { kind, addressClass } = classifyMapping(outcome)
   // `detail` is for humans only: the arms' own words, plus the router's page
@@ -236,6 +266,7 @@ function toResult(
     faultCode: outcome.type === 'refused' ? (outcome.faultCode ?? null) : null,
     gatewayIp,
     silent: [...new Set(silent)],
+    replied: replied || outcome.type === 'mapped',
     mappingDisabled: options.map === false,
     sentence: '',
   }
@@ -246,7 +277,7 @@ function toResult(
 
 // A successful mapping must outlive this call: stopping the gateway unmaps the
 // port. The router's own lease (one hour) is the cleanup if the app is killed.
-let activeGateway: Gateway | null = null
+let activeGateway: NatPmpClient | null = null
 // T66b: the app's own UPnP mapping, undone on a clean stop (ADR-045); the
 // router's lease is what covers a crash.
 let activeUpnp: (() => Promise<SoapResult>) | null = null
@@ -287,9 +318,9 @@ async function mapPort(
   const attempts: string[] = []
   const silent: string[] = []
   let sawTimeout = false
-  // Whether any arm answered at all, and the first code a refusal named. They
-  // decide "no gateway answered" without waiting for the clock (T73).
-  let answered = false
+  // Whether any arm heard a router reply at all, and the first code a refusal
+  // named. `replied` decides "no gateway answered" (T73, T78).
+  let replied = false
   let faultCode: number | null = null
 
   const candidates: string[] = options.natPmpGateways ?? (gatewayIp === null ? [] : [gatewayIp])
@@ -309,17 +340,16 @@ async function mapPort(
       break
     }
     trace(t0, `natpmp=request gateway=${gatewayIp} local_port=${localPort} budget_ms=${budget}`)
-    const pmp = await mapWithNatPmp(localPort, lanIp, gatewayIp, budget, t0)
+    const pmp = await mapWithNatPmp(localPort, lanIp, gatewayIp, budget, t0, options.natPmpClient ?? pmpNat)
     if (pmp.outcome.type === 'mapped') {
       trace(t0, 'upnp=skipped reason=mapped-by-natpmp')
-      return { outcome: pmp.outcome, silent }
+      return { outcome: pmp.outcome, silent, replied: true }
     }
+    if (pmp.replied) replied = true
     if (pmp.outcome.type === 'timeout') {
       sawTimeout = true
       silent.push('natpmp')
     } else if (pmp.outcome.type === 'refused') {
-      // A refusal is an answer: the router spoke, even if it named no code.
-      answered = true
       if (pmp.outcome.faultCode !== undefined && pmp.outcome.faultCode !== null && faultCode === null) {
         faultCode = pmp.outcome.faultCode
       }
@@ -352,16 +382,16 @@ async function mapPort(
           detail: `router reported ${upnp.outcome.externalIp} (${addressClass})`,
         },
         silent,
+        replied: true,
       }
     }
+    // A gateway the search returned is a router that answered, whatever the
+    // description, map or external step then does (T78).
+    if (gateways.length > 0) replied = true
     if (upnp.outcome.type === 'timeout') {
       sawTimeout = true
-    } else {
-      // A fault or a bad answer is not silence: the gateway replied.
-      if (upnp.silent.length === 0) answered = true
-      if (upnp.outcome.type === 'refused' && upnp.outcome.faultCode !== null && faultCode === null) {
-        faultCode = upnp.outcome.faultCode
-      }
+    } else if (upnp.outcome.type === 'refused' && upnp.outcome.faultCode !== null && faultCode === null) {
+      faultCode = upnp.outcome.faultCode
     }
     silent.push(...upnp.silent)
     attempts.push(`UPnP: ${upnp.outcome.detail}`)
@@ -372,15 +402,22 @@ async function mapPort(
   }
 
   trace(t0, `attempts="${oneLine(attempts.join('; '))}"`)
-  if (answered) {
-    return { outcome: { type: 'refused', detail: attempts.join('; '), faultCode }, silent }
+  // A router that replied gets its say: the refusal carries its code when it
+  // named one, and the step's own words when it did not. Only a run where no
+  // router replied at all may say "no router answered" (T78).
+  if (replied) {
+    return { outcome: { type: 'refused', detail: attempts.join('; '), faultCode }, silent, replied: true }
   }
   // The two silent arms end at about 5 s, well short of the 8 s budget: the
   // reason is their silence, not a clock running out (T73).
   if (sawTimeout && Date.now() >= deadline - 100) {
-    return { outcome: { type: 'timeout', detail: `no answer within ${Math.round(timeoutMs / 1000)} seconds` }, silent }
+    return {
+      outcome: { type: 'timeout', detail: `no answer within ${Math.round(timeoutMs / 1000)} seconds` },
+      silent,
+      replied: false,
+    }
   }
-  return { outcome: { type: 'silent', detail: attempts.join('; ') }, silent }
+  return { outcome: { type: 'silent', detail: attempts.join('; ') }, silent, replied: false }
 }
 
 async function mapWithNatPmp(
@@ -389,11 +426,15 @@ async function mapWithNatPmp(
   gatewayIp: string,
   timeoutMs: number,
   t0: number,
+  clientFor: (gatewayIp: string) => NatPmpClient,
 ): Promise<AttemptStep> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
-  const gateway = pmpNat(gatewayIp)
+  const gateway = clientFor(gatewayIp)
   let keepMapping = false
+  // Whether `map()` itself came back: the router answered, even when the
+  // address read that follows it does not (T78, fault 2).
+  let replied = false
 
   try {
     const mapping = await gateway.map(localPort, lanIp, {
@@ -401,6 +442,7 @@ async function mapWithNatPmp(
       description: 'Watch Party',
       signal: controller.signal,
     })
+    replied = true
     trace(t0, `natpmp=response result=mapped external_port=${mapping.externalPort}`)
     const externalIp = (await gateway.externalIp({ signal: controller.signal })).trim()
     const addressClass = classifyAddress(externalIp)
@@ -411,6 +453,7 @@ async function mapWithNatPmp(
       return {
         outcome: { type: 'refused', detail: `router reported a non-IPv4 address: ${externalIp}` },
         silent: [],
+        replied: true,
       }
     }
 
@@ -424,6 +467,7 @@ async function mapWithNatPmp(
         detail: `router reported ${externalIp} (${addressClass})`,
       },
       silent: [],
+      replied: true,
     }
   } catch (error) {
     if (controller.signal.aborted) {
@@ -431,12 +475,21 @@ async function mapWithNatPmp(
       return {
         outcome: { type: 'timeout', detail: `NAT-PMP did not answer within ${Math.round(timeoutMs / 1000)} seconds` },
         silent: ['natpmp'],
+        replied,
       }
     }
     trace(t0, `natpmp=response result=refused ${describeError(error)}`)
     // The library's NAT-PMP result code lives on `error.code` (err-code);
-    // carry it so the screen can name the router's own reason (T73).
-    return { outcome: { type: 'refused', detail: messageOf(error), faultCode: faultCodeOf(error) }, silent: [] }
+    // carry it so the screen can name the router's own reason (T73). A code
+    // that is not a result code (EADDRINUSE and friends) is a socket error
+    // that never reached the router, so it does not make the router a
+    // replier and the step stays silent (T78).
+    const faultCode = faultCodeOf(error)
+    return {
+      outcome: { type: 'refused', detail: messageOf(error), faultCode },
+      silent: faultCode === null ? ['natpmp'] : [],
+      replied: faultCode !== null,
+    }
   } finally {
     clearTimeout(timer)
     if (!keepMapping) {
