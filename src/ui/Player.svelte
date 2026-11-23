@@ -69,6 +69,73 @@
    */
   let blocked = $state(false)
 
+  // T106 / R41 / ADR-030: the volume is this window's own and never the room's.
+  // One key holds the person's level; the element is the source of truth for
+  // what the controls show, so a command or a replacement element cannot leave
+  // them disagreeing with the picture.
+  const VOLUME_KEY = 'watchparty.volume'
+  /** The picture's level, 0-1, read back from the element. */
+  let volume = $state(1)
+  /** Whether the speaker has silenced the picture, read back from the element. */
+  let muted = $state(false)
+  /** The level to return to on unmute; not stored, so a reload comes back audible. */
+  let lastVolume = 1
+
+  /** The remembered level, clamped because storage is not trusted (T106 item 3). */
+  function storedVolume(): number {
+    try {
+      const raw = localStorage.getItem(VOLUME_KEY)
+      if (raw === null) return 1
+      const value = Number(raw)
+      if (!Number.isFinite(value)) return 1
+      return Math.min(1, Math.max(0, value))
+    } catch {
+      return 1
+    }
+  }
+
+  function rememberVolume(value: number): void {
+    try {
+      localStorage.setItem(VOLUME_KEY, String(value))
+    } catch {
+      // Storage refused; the control still works for this session.
+    }
+  }
+
+  /** Both controls read the element, so the picture and the controls cannot drift apart. */
+  function onVolumeChange(): void {
+    const element = video
+    if (element === null) return
+    volume = element.volume
+    muted = element.muted
+    if (element.volume > 0) lastVolume = element.volume
+  }
+
+  /** The slider writes the element's `volume` and remembers it for the next film. */
+  function onVolumeInput(event: Event): void {
+    const element = video
+    if (element === null) return
+    const value = Math.min(1, Math.max(0, Number((event.currentTarget as HTMLInputElement).value) / 100))
+    element.volume = value
+    // A level above zero is a request to hear it, so the speaker's mute lifts.
+    if (value > 0) element.muted = false
+    rememberVolume(value)
+  }
+
+  /** The speaker writes `muted`, and silences the element so `volume` reads 0 too. */
+  function toggleMute(): void {
+    const element = video
+    if (element === null) return
+    if (element.muted || element.volume === 0) {
+      element.muted = false
+      element.volume = lastVolume > 0 ? lastVolume : 1
+      return
+    }
+    lastVolume = element.volume
+    element.muted = true
+    element.volume = 0
+  }
+
   /** The last revision applied to the element; -1 means "apply the next one whatever it is". */
   let appliedRevision = -1
   /** §6.4's scheduled start: a state may name an instant up to 1.5 s away. */
@@ -370,6 +437,19 @@
     applyNudge(next)
   })
 
+  // T106: the remembered level belongs to the element, so it is written when the
+  // element binds; after that `volumechange` is what the controls read.
+  $effect(() => {
+    const element = video
+    if (element === null) return
+    const stored = storedVolume()
+    element.volume = stored
+    element.muted = false
+    volume = stored
+    muted = false
+    lastVolume = stored > 0 ? stored : 1
+  })
+
   function onLoadedMetadata(): void {
     // The duration shown is the room's (the `duration` above) — this element's
     // own measurement is not news and must not overwrite it (T9a3).
@@ -502,6 +582,7 @@
         onpause={onPause}
         onseeking={onSeeking}
         onseeked={onSeeked}
+        onvolumechange={onVolumeChange}
       ></video>
     {:else}
       <p class="empty">No file in this room yet. The owner picks one.</p>
@@ -531,6 +612,28 @@
         onchange={onScrubChange}
       />
       <span class="time">{clockText(scrub)} / {clockText(duration)}</span>
+      <!-- T106 / R41: the speaker and the volume slider are this window's own;
+           neither sends a frame (ADR-030). -->
+      <button
+        type="button"
+        class="mute"
+        data-mute
+        aria-label={muted ? 'Unmute' : 'Mute'}
+        onclick={toggleMute}
+      >
+        {muted ? 'Unmute' : 'Mute'}
+      </button>
+      <input
+        type="range"
+        class="volume"
+        aria-label="Volume"
+        data-volume
+        min="0"
+        max="100"
+        step="1"
+        value={Math.round(volume * 100)}
+        oninput={onVolumeInput}
+      />
     </div>
   {/if}
 </section>
@@ -622,5 +725,16 @@
     font-size: 0.85rem;
     color: #9a9aab;
     white-space: nowrap;
+  }
+
+  /* T106: the speaker and its slider keep their space, while the seek bar above
+     takes what is left. */
+  .mute {
+    min-width: 4.5rem;
+  }
+
+  input[type='range'].volume {
+    flex: 0 0 7rem;
+    min-width: 7rem;
   }
 </style>
