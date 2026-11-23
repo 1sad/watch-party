@@ -1,6 +1,7 @@
 // Drives a running window from a shell, without a hand on the mouse and without
 // the screen (T8c, T19): lists the page the window is showing, runs one
-// expression inside it, saves a picture of it, presses the mouse at a point.
+// expression inside it, saves a picture of it, presses the mouse at a point,
+// enters text and presses a key.
 //
 // It speaks to the DevTools endpoint that only the measuring build opens —
 // `npm run dev:debug` — and that endpoint listens on loopback only. Nothing
@@ -12,13 +13,14 @@
 //   node scripts/cdp.mjs shot <target-id|index> <file.png> [--port 9222]
 //   node scripts/cdp.mjs click <target-id|index> <x> <y> [--double] [--port 9222]
 //   node scripts/cdp.mjs type <target-id|index> <text> [--at <x> <y>] [--port 9222]
+//   node scripts/cdp.mjs key <target-id|index> <key> [--port 9222]
 //
 // stdout carries the answer and nothing else: JSON for `targets`, the
 // expression's value for `eval`, the file's path for `shot`, one line naming
 // the target, the point and the focused element for `click`, the same plus the
-// characters entered and the field's new length for `type`. Every complaint is
-// one line on stderr and a non-zero exit, so a check never hangs on a window
-// that is not there.
+// characters entered and the field's new length for `type`, the key and the
+// focused element for `key`. Every complaint is one line on stderr and a
+// non-zero exit, so a check never hangs on a window that is not there.
 //
 // `click` is the only way here to make a *trusted* press: it goes through
 // `Input.dispatchMouseEvent`, so the page sees a real gesture and a handler it
@@ -32,6 +34,14 @@
 // page's focused field, or into the field at `--at <x> <y>` (a real press
 // first), and refuses when nothing typeable is focused. The point it prints is
 // the `--at` point when given, otherwise the centre of the focused field.
+//
+// `key` presses one key the way a person's keyboard does, through
+// `Input.dispatchKeyEvent`: a `keyDown`, the matching `char` when the key has
+// one, then a `keyUp`. The page's own `keydown` handler therefore sees a
+// trusted event - `e.isTrusted` is true - where an event built in `eval` would
+// not be. It knows `Space`, `Enter`, `Escape`, the four arrows and any single
+// character, and refuses any other name rather than guessing at one. It names
+// the key and the page's `document.activeElement`, the shape `click` prints.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
@@ -45,6 +55,7 @@ const USAGE = [
   '  node scripts/cdp.mjs shot <target-id|index> <file.png> [--port 9222]',
   '  node scripts/cdp.mjs click <target-id|index> <x> <y> [--double] [--port 9222]',
   '  node scripts/cdp.mjs type <target-id|index> <text> [--at <x> <y>] [--port 9222]',
+  '  node scripts/cdp.mjs key <target-id|index> <key> [--port 9222]',
 ].join('\n')
 
 /** A problem worth one line on stderr. `usage` separates a typo from a failure. */
@@ -280,11 +291,93 @@ function readField(result, what) {
   return result.result?.value === undefined ? null : result.result.value
 }
 
+/**
+ * The keys a check may press by name, each with the Windows virtual key code
+ * the engine reads: `Space`, `Enter`, `Escape` and the four arrows. A single
+ * character is pressed as itself. `text` is the character the key types, absent
+ * for a key that types nothing.
+ */
+const NAMED_KEYS = new Map([
+  ['Space', { key: ' ', code: 'Space', virtualKeyCode: 32, text: ' ' }],
+  ['Enter', { key: 'Enter', code: 'Enter', virtualKeyCode: 13, text: '\r' }],
+  ['Escape', { key: 'Escape', code: 'Escape', virtualKeyCode: 27 }],
+  ['ArrowLeft', { key: 'ArrowLeft', code: 'ArrowLeft', virtualKeyCode: 37 }],
+  ['ArrowUp', { key: 'ArrowUp', code: 'ArrowUp', virtualKeyCode: 38 }],
+  ['ArrowRight', { key: 'ArrowRight', code: 'ArrowRight', virtualKeyCode: 39 }],
+  ['ArrowDown', { key: 'ArrowDown', code: 'ArrowDown', virtualKeyCode: 40 }],
+])
+
+/** What one key name means, or one line refusing it: a name is never guessed at. */
+function keyDefinition(name) {
+  const named = NAMED_KEYS.get(name)
+  if (named) return named
+  if ([...name].length === 1) {
+    if (name === ' ') return NAMED_KEYS.get('Space')
+    const upper = name.toUpperCase()
+    const letter = upper.length === 1 && upper >= 'A' && upper <= 'Z' ? upper.charCodeAt(0) : null
+    const digit = name.length === 1 && name >= '0' && name <= '9' ? name.charCodeAt(0) : null
+    return {
+      key: name,
+      code: letter !== null ? `Key${upper}` : digit !== null ? `Digit${name}` : '',
+      virtualKeyCode: letter ?? digit ?? 0,
+      text: name,
+    }
+  }
+  throw new CliError(
+    `"${name}" is not a key name - use ${[...NAMED_KEYS.keys()].join(', ')} or a single character`,
+    true,
+  )
+}
+
+/**
+ * The key's name and what to press, or a refusal. Runs before the endpoint is
+ * dialled: a key name is a fixed vocabulary, so a typo in it is not reported as
+ * a missing window.
+ */
+function pressTarget(args) {
+  const [targetKey, name, ...extra] = args
+  if (targetKey === undefined || name === undefined || extra.length > 0) {
+    throw new CliError('key needs a target and the key to press', true)
+  }
+  return { targetKey, name, definition: keyDefinition(name) }
+}
+
+/** The page's point of focus once the key was handled: a tag and an id, or null. */
+const ACTIVE_ELEMENT_AFTER_KEY = `(() => {
+  const element = document.activeElement
+  if (!element) return null
+  return element.tagName + (element.id ? '#' + element.id : '')
+})()`
+
+/**
+ * One real key gesture: press, the character the key types if it types one,
+ * release, then the page's point of focus. `windowsVirtualKeyCode` is what makes
+ * the engine treat the key as the key it names.
+ */
+function keySteps(definition) {
+  const wire = {
+    key: definition.key,
+    code: definition.code,
+    windowsVirtualKeyCode: definition.virtualKeyCode,
+    nativeVirtualKeyCode: definition.virtualKeyCode,
+  }
+  return [
+    { method: 'Input.dispatchKeyEvent', params: { type: 'keyDown', ...wire } },
+    ...(definition.text === undefined
+      ? []
+      : [{ method: 'Input.dispatchKeyEvent', params: { type: 'char', ...wire, text: definition.text, unmodifiedText: definition.text } }]),
+    { method: 'Input.dispatchKeyEvent', params: { type: 'keyUp', ...wire } },
+    { method: 'Runtime.evaluate', params: { expression: ACTIVE_ELEMENT_AFTER_KEY, returnByValue: true } },
+  ]
+}
+
 async function run(command, rest, port, double, at) {
   // Checked before the endpoint is dialled: a typo is not a missing window.
-  if (command !== 'targets' && command !== 'eval' && command !== 'shot' && command !== 'click' && command !== 'type') {
+  if (command !== 'targets' && command !== 'eval' && command !== 'shot' && command !== 'click' && command !== 'type' && command !== 'key') {
     throw new CliError(`"${command ?? ''}" is not a subcommand.\n${USAGE}`, true)
   }
+
+  const press = command === 'key' ? pressTarget(rest) : null
 
   const targets = await pageTargets(port)
 
@@ -394,6 +487,21 @@ async function run(command, rest, port, double, at) {
     process.stdout.write(
       `typed ${entered} char${entered === 1 ? '' : 's'} at (${point.x}, ${point.y}) on ${target.title || target.id}: activeElement ${label} (value length ${field.valueLength})\n`,
     )
+    return
+  }
+
+  if (command === 'key') {
+    const target = pickTarget(targets, press.targetKey)
+    const results = await exchange(target.webSocketDebuggerUrl, keySteps(press.definition))
+    const focused = results[results.length - 1]
+
+    if (focused.exceptionDetails) {
+      const thrown = focused.exceptionDetails.exception?.description ?? focused.exceptionDetails.text
+      throw new CliError(`reading the focused element threw: ${thrown.split('\n')[0]}`)
+    }
+
+    const element = focused.result?.value === undefined ? null : focused.result.value
+    process.stdout.write(`key ${press.name} on ${target.title || target.id}: activeElement ${element ?? 'null'}\n`)
   }
 }
 
