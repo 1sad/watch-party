@@ -151,11 +151,20 @@ node scripts/cdp.mjs targets
 node scripts/cdp.mjs eval 0 "document.querySelectorAll('video').length"
 node scripts/cdp.mjs shot 0 .scratch/run.png
 node scripts/cdp.mjs click 0 440 144
+node scripts/cdp.mjs type 0 "watchparty://join?h=192.168.1.9&p=55327&c=AAAAAA"
+node scripts/cdp.mjs key 0 Space
 ```
 
 `targets` lists the open window's page as JSON; `eval` prints one value (a number, a string, `null`); `shot` saves a
 picture and prints its path. Add `--port 9223` to address window B. If nothing is listening, `targets` prints one line
 and exits 1 — it never hangs.
+
+`type <id|index> <text>` enters text the browser's own way (`Input.insertText`), so the page's `input` handler runs and
+a bound field sees it — an assignment to `element.value` would not. It types into the page's focused field, so press
+the field first with `click`, or pass `--at <x> <y>` to press and type in one call; it prints the point, the character
+count and the active element. `key <id|index> <key>` sends a real `Input.dispatchKeyEvent` gesture (`keyDown`, `char`,
+`keyUp`), so the page's `keydown` sees `isTrusted: true`; it knows `Space`, `Enter`, `Escape`, the four arrows and a
+single character, and refuses any other name with one line and exit 2 (tickets 108, 111).
 
 `click <id|index> <x> <y>` sends a real mouse press and release at a point in the page and prints the target, the point
 and the page's `document.activeElement`; add `--double` for a double click. Use it whenever a page will only act on a
