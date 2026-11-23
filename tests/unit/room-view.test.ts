@@ -18,6 +18,7 @@ import {
   pageCommitFields,
   screenFor,
   siteAfterPreview,
+  closeOutcome,
   HIDE_SITE_MESSAGE,
 } from '../../src/ui/room-view.ts'
 import type { Media } from '../../src/shared/protocol.ts'
@@ -110,4 +111,24 @@ test('a room that ended puts an entered window back on the first screen', () => 
 
 test('a window that never entered and whose room never ended is still on the first screen', () => {
   assert.equal(screenFor({ entered: false, roomEnded: true }), 'first')
+})
+
+/**
+ * T98 / ADR-047 and `spec.md` §6's "connection drops": only the room's own
+ * `roomOver` frame ends a room. The sidecar sends that frame and then closes
+ * every socket (§14, `socket.ts`), so a close that follows it is the room's end;
+ * a bare close is a dropped connection and must not clear the room (rejoining
+ * is M3's, section 13). Three cases, one per fact a socket can hold.
+ */
+test("the room's own word ends the room, even as the socket closes", () => {
+  assert.equal(closeOutcome({ sawRoomOver: true, closed: true }), 'ended')
+})
+
+test('a close with no roomOver frame is a lost connection, not an ending', () => {
+  assert.equal(closeOutcome({ sawRoomOver: false, closed: true }), 'lost')
+})
+
+test('a socket that has not closed is still connected, whatever it has seen', () => {
+  assert.equal(closeOutcome({ sawRoomOver: false, closed: false }), 'connected')
+  assert.equal(closeOutcome({ sawRoomOver: true, closed: false }), 'ended')
 })

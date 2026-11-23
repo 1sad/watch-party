@@ -27,7 +27,14 @@
   } from '../shared/media.ts'
   import { PAGE_STAGE_MS, playbackAfterPageCommit, setPageFrame } from '../shared/page.ts'
   import { previewHolds, type PendingPreview } from './preview.ts'
-  import { pageSide, pageCommitFields, screenFor, siteAfterPreview, HIDE_SITE_MESSAGE } from './room-view.ts'
+  import {
+    closeOutcome,
+    pageSide,
+    pageCommitFields,
+    screenFor,
+    siteAfterPreview,
+    HIDE_SITE_MESSAGE,
+  } from './room-view.ts'
   import {
     POPUP_NOTICE_MS,
     expirePopup,
@@ -225,10 +232,26 @@
 
   /**
    * §14: a file room ends with its owner's app (ADR-024), because the owner's app
-   * is the only place the bytes exist. This flag is the whole of this window's
-   * answer — an overlay, the room's one system line, and no way back into it (T9b).
+   * is the only place the bytes exist. T98 / ADR-047: the room's own `roomOver`
+   * word is the only thing that sets this, and the window then goes back to its
+   * own first screen (`endRoom`); a bare close is a lost connection instead.
    */
   let roomEnded = $state(false)
+
+  /**
+   * T98 / ADR-047: the first screen's one line after a room ended. It is not
+   * `roomEnded`, because `refresh()` reconnects to this machine's own sidecar and
+   * `connect()` clears `roomEnded` for the new connection while the line stays
+   * until the person enters a room again.
+   */
+  let endedNotice = $state(false)
+
+  /**
+   * T98 / `spec.md` §6's "connection drops": a close with no `roomOver` leaves
+   * the watching screen and one line saying so; nothing is cleared, and there is
+   * deliberately no retry (rejoining is M3's, section 13).
+   */
+  let connectionLost = $state(false)
 
   /**
    * ADR-047 / T95: the window has **entered** its room, so it is past the front
@@ -263,12 +286,19 @@
 
   /** T95: Start a room enters the room that is already live; it creates nothing. */
   function enterRoom(): void {
+    endedNotice = false
     entered = true
   }
 
   let socket: WebSocket | null = null
   /** True once this page has decided which room it dials; the poll never overrides it. */
   let enteredRoom = false
+  /**
+   * T98 / ADR-047 and §14: this connection saw the room's own `roomOver` frame.
+   * `closeOutcome` (ui/room-view.ts) reads it beside the close, so only the
+   * room's word ends a room and a bare close is a lost connection (§6).
+   */
+  let roomOverSeen = false
 
   // T5: the dev-only clock skew and overlay. A shipped page is `vite build`
   // (mode `production`), where this folds to `false` — both the flag and the
@@ -359,6 +389,10 @@
     roomPage = null
     pendingPreview = null
     roomEnded = false
+    // T98: another connection is another socket, so neither the last one's
+    // `roomOver` word nor its lost line belongs to this one.
+    roomOverSeen = false
+    connectionLost = false
     // T9a3: this connection's owner — the window and every guest fetch the room's
     // one file from here (`mediaUrl`), never from their own sidecar.
     ownerOrigin = `http://${host}:${port}`
@@ -411,43 +445,84 @@
         sentence = UNREACHABLE_ROOM
         return
       }
-      // §14: a file room ends when its owner's app does (ADR-024). This window's
-      // one connection *is* the owner's app, so its close is the room's end — no
-      // reconnect, no freeze, and no second guess about a room that cannot come
-      // back. Website mode is unbuilt in M1; when it arrives, a guest's close is
-      // the row above this one (authority transfer), and `media`/`page` will say
-      // which kind of room this is.
-      if (!inOwnRoom) endRoom(false)
+      // T98 / ADR-047 and `spec.md` §6: the close is read, never assumed. Only
+      // the room's own `roomOver` word ends a room (§14, and the sidecar sends
+      // it before closing every socket); a close with no word is a dropped
+      // connection, which leaves the room alone until M3 can rejoin it (section
+      // 13). The rule is `closeOutcome`, held by a unit test.
+      const outcome = closeOutcome({ sawRoomOver: roomOverSeen, closed: true })
+      if (outcome === 'lost') loseConnection()
+      else if (outcome === 'ended') endRoom()
     }
   }
 
   /**
-   * §14's "everyone told plainly, no pretend recovery": one flag ends this
-   * window's room view. `fromAuthority` says whether the authority already posted
-   * the system line — when its process is the thing that went, it could not, so
-   * this page states the one fact it is sure of rather than showing chat that
-   * silently misses the room's end.
+   * T98 / ADR-047 and §14: the room's own `roomOver` word ends the room. The
+   * window goes back to the **first screen**, and because that screen is this
+   * machine's own front door the dead room's state is cleared in full - code,
+   * invite, chat, roster, playback, media - and `refresh()` dials this machine's
+   * own sidecar rather than the dead room's closed socket. Only a close that
+   * follows that word reaches here; a bare close is `loseConnection` below.
    */
-  function endRoom(fromAuthority: boolean): void {
+  function endRoom(): void {
     if (roomEnded) return
     roomEnded = true
+    // The one line the first screen keeps: it says what happened, and it stays
+    // until the person enters a room again (`enterRoom`, `submitJoin`).
+    endedNotice = true
+    connectionLost = false
     stopPing()
     nudge = null
     // T14: a room that is over must not leave a sped-up element behind.
     endSiteNudge()
-    if (!fromAuthority) {
-      chat = [
-        ...chat,
-        {
-          id: 'room-over',
-          kind: 'system',
-          name: '',
-          text: ROOM_OVER_SENTENCE,
-          ts: Date.now(),
-        },
-      ]
-    }
+    // The room's state goes with it, every field of it: a dead room's code,
+    // invite, chat or roster must not appear on this machine's own front door.
+    selfId = null
+    roomCode = null
+    members = []
+    chat = []
+    chatNotices = []
+    playback = null
+    revision = 0
+    media = null
+    ownerOrigin = null
+    roomPage = null
+    pendingPreview = null
+    pageDraft = ''
+    // A guest's join box still holds the link it arrived by; that link names
+    // the dead room's code, so the first screen must not show it either.
+    joinText = ''
+    chatDraft = ''
+    nameDraft = ''
+    sentence = null
+    hideSiteView()
+    // The closed socket is no longer this window's, so its close event cannot
+    // claim the new connection (`opened !== socket` above).
+    const dead = socket
+    socket = null
+    dead?.close()
+    // ADR-047: the first screen is the room's front door. `payload` is that
+    // machine's own `/discovery` answer, so the poll below reconnects to the
+    // local sidecar - a guest's page is served from its own loopback - and
+    // shows its own code and link.
+    payload = null
+    fromLink = false
+    entered = false
+    enteredRoom = false
+    void refresh()
     if (dev) console.info('[room] ended owner-left')
+  }
+
+  /**
+   * T98 / `spec.md` §6's "connection drops": a close with no `roomOver` frame is
+   * not the end of the room. The watching screen, the room's code, chat, roster
+   * and playback all stay, and one line says the connection was lost. No retry
+   * is built and the line promises nothing: rejoining is M3's (section 13), and
+   * a second connect would join as a new member rather than the same one.
+   */
+  function loseConnection(): void {
+    connectionLost = true
+    if (dev) console.info('[room] connection lost')
   }
 
   /** The chat refusals are the panel's business; every other error stays a sentence. */
@@ -521,6 +596,8 @@
       // A late joiner's panel is the ring buffer the authority sent (R5).
       chat = [...frame.chatTail]
       sentence = null
+      // T98: a welcomed connection is a live one again, so no stale lost line.
+      connectionLost = false
       followNewest(true)
       // T110 / ADR-047: a window that joined someone else's room has entered it
       // on this frame - the one carrying this page's own id - because the room
@@ -654,9 +731,11 @@
       estimate = estimateOffset(sample, estimate)
       clockSeen = { local: t3, authority: authorityNow(t3, estimate) }
     } else if (frame.type === 'roomOver') {
-      // T9b: the authority's last word before it closes this socket. It already
-      // posted the system line, so this only ends the view.
-      endRoom(true)
+      // T98 / §14: the room's own last word, and the only thing that may end a
+      // room. The sidecar closes every socket straight after this frame, so the
+      // close that follows is what acts on it (`closeOutcome`); a bare close
+      // never sets this flag and is therefore a lost connection, not an ending.
+      roomOverSeen = true
     } else if (frame.type === 'warning') {
       notice('warning', frame.message)
     } else if (frame.type === 'error') {
@@ -1286,6 +1365,8 @@
       return
     }
     enteredRoom = true
+    // T98: joining another room is leaving the line about the one that ended.
+    endedNotice = false
     // T64: a page with no start state of its own is a guest's, and `/discovery`
     // answers only loopback now (`app.ts`). The room it just joined is what it
     // shows; the start screen's discovery fields stay empty because this window
@@ -1669,11 +1750,12 @@
          live from the sidecar's boot, so Start a room enters it rather than
          creating one, and the host's invite is here in full - failure card and
          Try again included (spec §8, §14). Nothing that watches or picks. -->
-    {#if roomEnded}
-      <section class="ended" role="alert">
-        <h2>The room ended</h2>
-        <p>{ROOM_OVER_SENTENCE} There is nothing to reconnect to.</p>
-      </section>
+    {#if endedNotice}
+      <!-- T98 / ADR-047: the dead room's one plain line. The first screen below
+           is this machine's own front door, reached by `refresh()` - not the
+           dead room with an overlay on it - so the line only says what happened
+           to the room this window was in. -->
+      <p class="ended-line" role="status">{ROOM_OVER_SENTENCE}</p>
     {/if}
 
     {#if inOwnRoom}
@@ -1813,6 +1895,13 @@
             <span class="invite-note" data-invite-note>The invite link is the host's to share.</span>
           {/if}
         </div>
+
+        {#if connectionLost}
+          <!-- T98 / §6's "connection drops": one line. The room's code, chat,
+               roster and playback all stay; there is no retry and the line
+               promises none (rejoining is M3's, section 13). -->
+          <p class="connection-lost" role="status">The connection to the room was lost.</p>
+        {/if}
 
         {#if inviteOpen && payload.invite !== null}
           <div class="invite-fallback" id="invite-fallback">
@@ -2064,6 +2153,13 @@
     color: #9a9aab;
   }
 
+  /* T98 / §6: a lost connection's one line, inside the chat column. */
+  .connection-lost {
+    margin: 0.35rem 0 0;
+    color: #ffb3a7;
+    line-height: 1.4;
+  }
+
   .invite-fallback {
     margin-top: 0.35rem;
     padding-top: 0.35rem;
@@ -2234,21 +2330,15 @@
     color: #ffb3a7;
   }
 
-  .ended {
-    margin: 1.5rem 0;
-    padding: 1rem 1.25rem;
-    border: 1px solid #6b3a3a;
+  /* T98 / ADR-047: the first screen's line after a room ended. One plain
+     sentence, not a red panel: the screen around it is a live room. */
+  .ended-line {
+    margin: 0 0 1.5rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid #2c2d36;
     border-radius: 8px;
-    background: #24191a;
-  }
-
-  .ended h2 {
-    margin: 0 0 0.5rem;
+    background: #1a1b22;
     color: #ffb3a7;
-  }
-
-  .ended p {
-    margin: 0;
     line-height: 1.5;
   }
 

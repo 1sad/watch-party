@@ -71,6 +71,36 @@ export function pageCommitFields(room: RoomPageFields, page: string): RoomPageFi
   return { ...room, page, media: null }
 }
 
+/** What a closed socket means: the two facts the page holds at that instant (§14, §6). */
+export interface CloseFacts {
+  /** The room's own last word, `roomOver`, was seen on this connection (§14). */
+  sawRoomOver: boolean
+  /** The socket has closed. */
+  closed: boolean
+}
+
+/**
+ * T98 / ADR-047 and `spec.md` §6's "connection drops": only the room's own word
+ * ends a room. The sidecar broadcasts one `roomOver` frame when the owner's
+ * socket goes and then closes every socket (`src/server/socket.ts`), so a close
+ * that follows that frame is the end of the room - but a bare close, with no
+ * `roomOver`, is a dropped connection, which §6 says must leave the room alone
+ * and wait for a rejoin (M3's job, section 13). The page therefore has to tell
+ * the two closes apart rather than reading every close as an ending.
+ */
+export type CloseOutcome = 'connected' | 'ended' | 'lost'
+
+/**
+ * The rule, kept here so a unit test can hold it (this project has no DOM test).
+ * The room's own word wins even if a close is overdue, because a room that said
+ * it ended cannot be made live again by a later event; a close with no word is
+ * `lost`, and a socket that has not closed is still `connected`.
+ */
+export function closeOutcome(facts: CloseFacts): CloseOutcome {
+  if (facts.sawRoomOver) return 'ended'
+  return facts.closed ? 'lost' : 'connected'
+}
+
 /** The two facts that decide which of the app's two screens is on show (ADR-047). */
 export interface ScreenFields {
   /** The window has entered its room - `Start a room`, or (ticket 110) its first `welcome`. */
