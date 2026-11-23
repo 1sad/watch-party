@@ -981,6 +981,11 @@ not.
 > has not committed, not a second kind of media. For the stage's two seconds both views are up: the site view appears
 > at once and the host docks the app view to its page-mode width, so the file's picture is briefly a 380 px column.
 > A commit clears the file (above) and the layout stays; a cancel hides the site view and the file room is as it was.
+>
+> **Amended 2026-11-23 (ADR-047, ticket 103):** the sentence "the file's picture is briefly a 380 px column" no longer
+> describes what happens. For the stage's two seconds the host docks the app view and sets `data-panel="chat"`, so the
+> page draws its chat column and no picture; the file's picture is hidden for those two seconds rather than squeezed
+> into a column. The rest of this amendment stands.
 
 **Decision.** The window is a native frame around two WebView2 controls, with a layout the host owns:
 
@@ -1289,16 +1294,38 @@ owner's page also requests `/media/<id>?c=<code>` now - one URL shape for the ro
 > staged preview's column) become the watching-screen rule below. Its two-view decision, the bridge, the request
 > filter, the fullscreen interception and "the host contains no product logic" all stand unchanged.
 >
-> **Consistent with ADR-043:** the window's remembered size is a file inside the app's own folder, like the profile
-> and the logs.
+> **Consistent with ADR-043:** the window's remembered size is a file **beside the profile** - the app's own folder in
+> a packaged copy, the dev profile folder in a dev window - like the profile and the logs.
+>
+> **Amended 2026-11-23 (ticket 103, the tickets critic):** the room is **live from the sidecar's boot**, so the first
+> screen is the room's front door rather than a pre-room state, and the screen predicate reads room state plus one
+> window-local flag. The first screen carries the invite **in full**, including the router-failure card. Narrow adds a
+> height rule. The address bar's Paste button **acts** as well as fills and sits inside its field, and both routes to
+> something to watch are present at every moment. The column width is a CSS variable the host sets. The remembered
+> size is per profile. A bare connection loss is **not** a room end: it keeps the watching screen with a lost-connection
+> line, and rejoining is M3's business.
 
-**Decision.** The page shows exactly one of two screens, chosen from room state alone by one predicate:
+**Decision.** The page shows exactly one of two screens, chosen by one predicate over room state and one flag the
+window owns:
 
-- **The first screen** - invite and join only. It offers **Start a room** and the box to paste a link into; an error
-  from a failed link stays there. It has no picture, no chat and no file picker.
-- **The watching screen** - the room. Pressing **Start a room** switches to it at once (the user's answer,
+- **The first screen** — invite and join. It shows the host's room **in full**: the room code, the invite link and
+  its Copy button, the raw address-and-code fallback, the same-network link, the router's state ("Asking your router
+  to open a port…"), and when no public link exists the failure card with **Try again** and the manual port-forward
+  instructions (`spec.md` §8, §14). Below them is the join box and the line a failed link leaves. It has no picture,
+  no chat and no file picker.
+- **The watching screen** — the room. Pressing **Start a room** switches to it at once (the user's answer,
   2026-11-23), so a new room's link is in the invite bar from its first second. A guest who arrives by a link that
   connects lands on it; a link that fails leaves the first screen showing the reason.
+
+**The room is live before the first press.** The sidecar creates the room, its code and its invite when the app
+starts, and the page connects to it on its first `/discovery` answer; nothing the person presses creates a room. So
+**Start a room** is not creation — it is entering the room's own screen, and the first screen is that room's front
+door, already live and already joinable. While the host sits on it the room does nothing else: a friend who joins
+early lands on the watching screen and waits on an empty picture area with the roster, and the host's first screen
+still says the link is live. The predicate is therefore `first` until the window has **entered** its room — by
+**Start a room** for the host, or by a link or the join box for a guest — and `watching` after that; the flag resets
+when the room ends. The page never invents a second room, and a window that joined someone else's room never shows an
+invite payload of its own while it is in it.
 
 **The watching screen's layout.** The picture takes whatever is left; the chat is a **380 px column on its right**
 (the width the app-view dock already uses), with the invite bar as that column's top row and the controls under the
@@ -1307,32 +1334,53 @@ both:
 
 - **Window 900 px wide or more:** picture left, chat column right, invite bar on top of the column.
 - **Window narrower than 900 px:** the chat column moves **below** the picture (in website mode the host docks the app
-  view along the bottom; in file mode the page stacks them). It is never squeezed beside the picture.
+  view along the bottom; in file mode the page stacks them). It is never squeezed beside the picture. The picture is
+  bounded to **at most 60% of the content height** so the chat always has room, keeps its 16:9 shape inside that
+  bound, and the page itself never scrolls: only the chat's own list does.
 
 **One threshold, owned by the host.** The app view is 380 px wide in website mode whatever the window is, so its own
-width cannot say whether the window is narrow. On every resize the host sets `data-layout="wide|narrow"` on the app
-view's root element and docks its two views to match; the page's CSS reads the attribute and carries no width number
-of its own. A page with no attribute (a browser, a test) is `wide`.
+width cannot say whether the window is narrow. The measure is **the form's client width in CSS pixels**
+(`ClientSize.Width * 96 / DeviceDpi`), which is what the page sees as `innerWidth` when it fills the window, and the
+window's own width in page mode. On every resize the host sets `data-layout="wide|narrow"` on the app view's root
+element and docks its two views to match; the page's CSS reads the attribute for the **threshold** and carries no width
+number of its own for it. A page with no attribute (a browser, a test) is `wide`.
 
-**What can be watched is chosen on the watching screen.** The address bar and the file picker live there, and an empty
-room shows the picture area with the two routes offered (paste a page address, play a file). Nothing picks media from
-the first screen.
+**One column width, owned by the host too.** The 380 px lives in the host's dock today; a file-mode page needs the same
+number and must not spell it a second time. The host sets `--chat-column: 380px` on the app view's root element beside
+the layout attribute, and the page's CSS uses `var(--chat-column, 380px)` — the fallback is for a browser or a test,
+not a second source of truth.
+
+**What can be watched is chosen on the watching screen.** The address bar and the file picker live there; an empty room
+shows an empty picture area, and the bar under it carries both routes (paste a page address, Open a file). Nothing picks
+media from the first screen. Both routes are present at **every** moment on the watching screen **in the owner's window** (a guest has no
+file to serve, R11): a room playing a page still offers **Open a file**, and a room playing a file still offers the
+address bar (ADR-038's 2026-11-22 amendment already lets a file room take a page). The address bar's **Paste** button both fills the field
+and takes the room there in the same press — one press is a route, not half of one — and the button is drawn **inside**
+the field's own box rather than beside it, so the bar costs no extra width. Enter and the address bar's right-click
+menu keep working as R29 says.
 
 **The host's dock wins.** When the host docks the app view as a column - website mode, and the staged-preview second
 while a file room previews a page - it also sets `data-panel="chat"` on the app view's root element, and the page then
-renders the chat column alone (invite bar, chat, roster, controls) with no picture. Otherwise the page owns the
-picture-and-chat layout. The staged preview therefore keeps its two seconds (ADR-038, R31) without squeezing a
-picture into a 380 px column.
+renders the chat column alone (invite bar, address bar, chat, roster, controls) with no picture. `data-panel="chat"`
+**wins over** `data-layout`: the app view is the chat column at every window width, so a narrow page-mode window must
+not draw a second, empty picture. Otherwise the page owns the picture-and-chat layout. The staged preview therefore
+keeps its two seconds (ADR-038, R31) without squeezing a picture into a 380 px column.
 
 **The invite bar** carries the room code, the link and one copy button, with the raw address and code one click
-inside. It is a row of the chat column, not a second panel and not a modal, and it stays visible in fullscreen.
+inside. It is a row of the chat column, not a second panel and not a modal, and it stays visible in fullscreen. A
+guest's bar has no link to offer (the invite payload is the host's): it shows the room code and one line saying the
+link is the host's to share.
 
 **Room end.** A guest whose room ends returns to the first screen with one line saying so; the dead room's code and
-link are cleared. The host's dead-sidecar page is unchanged: a sidecar that stops is a fault to report, not the end of
-a room.
+link are cleared, and the window's **entered** flag is reset, so the first screen is that machine's own front door
+again — its own sidecar's room, its own code and link. A bare socket close is **not** a room end: it keeps the
+watching screen with one lost-connection line and no retry control, because a wifi blip must not cost the room and
+rejoining is M3's (`spec.md` §6's "connection drops", T17). Only a `roomOver` frame the room itself sent ends a room.
+The host's dead-sidecar page is unchanged: a sidecar that stops is a fault to report, not the end of a room.
 
 **Window size.** The first launch of a copy is maximised; after that the window reopens at the size and state it was
-closed at, clamped to a screen that exists and never smaller than 640x420.
+closed at, clamped to a screen that exists and never smaller than 640x420. The remembered size belongs to the
+**profile**: two windows that share one profile share one size, and a dev window with its own profile has its own.
 
 **Fullscreen** keeps the chat column (R30) and changes nothing but the window's size; the empty 48 px band the host
 draws above the site view is not drawn at all, because there is nothing for it to hold.
@@ -1343,16 +1391,88 @@ later be able to float; no code for it is written now.
 **Why.** Today the page is one scrolling column, 832 px wide at most (`max-width: 52rem`) and left-aligned, with the
 chat under the player: maximising it adds margin, not picture. The invite - needed once - and the link - needed all
 evening - share that column with the chat and the controls, and the room's end leaves a dead player in place. The
-user's six points (`.scratch/phase-5-layout/answers.md`) are the requirement.
+user's six points (`.scratch/phase-5-layout/answers.md`) are the requirement. Three answers given while the plan was
+being repaired (2026-11-23) sharpened it: the address bar's Paste must **act**, not merely fill; its button belongs
+inside the field; and a room that is on a page must still be able to **open a file**, and a room on a file still able
+to take a page — "both any time seamlessly".
 
 **Rejected.** (a) A top bar spanning the whole window for the invite - the site view is a native control filling the
 window, so the page cannot draw over it, and a WinForms-drawn bar would put product logic in the host (ADR-034,
 ADR-038). (b) A CSS-only breakpoint - see "one threshold" above; in website mode the app view is 380 px wide at every
 window size. (c) One screen with panels that show and hide - the user asked for two screens, and that is what leaves
 a dead player. (d) An invite modal or a second panel - the user asked for "minimally somewhere", not a dialog.
+(e) A separate **Go** button beside Paste - it makes the same act two targets and still leaves Paste looking inert;
+Paste filling and sending in one press is the shorter route. (f) A mode switch between "website" and "file" - the two
+routes coexist in one bar, so no one has to leave a mode to use the other.
 
 **Cost.** There is no resize handler in the host today; resizing now runs layout code, and a dropped layout message
 shows as a wrong column until the next resize. Two dock shapes double the window states the pictures and the gate must
 cover. The threshold is one more number to keep in step with the manual's pictures, and it lives in C# only. A fresh
-portable folder has no saved size, so its first run is maximised like any other first run.
+portable folder has no saved size, so its first run is maximised like any other first run. The first screen's
+**entered** flag is window-local: a host who reloads while a room is live lands back on the first screen (the room
+keeps running, the invite is still there, one press returns). The Paste-inside-the-field button needs the field to
+reserve room for it, so a very long address shows fewer characters before it scrolls. Each route always present costs
+a row on a 640 px-wide window, which is why the bar's controls are one row and compact.
+
+## ADR-048 - The room follows the page's own navigation, not only the address bar
+
+> **Amends nothing.** It completes R21 and `spec.md` §1's second route ("or simply browses inside the app: search,
+> pick a title, pick an episode"), which ADR-038's two views made possible but never wired. It lives beside ADR-032
+> (staged changes) and ADR-030 (personal choices stay in the window).
+
+**Decision.** `room.page` is the address the room is on, and a site's **own** navigation is a page change like one
+typed into the address bar:
+
+- **The top document's address is what counts.** The bridge marks every message with `top` (`window === window.top`)
+  and posts one `pageAddress` message whenever the top document's address changes — after the document loads, and
+  after a same-document route change (`pushState`, `replaceState`, `popstate`), which is how most sites switch
+  episodes without a reload. Same-document changes are why the host's `NavigationCompleted` alone is not enough.
+- **Only the top document may report it.** A player frame is often a different origin (E2: 6 of 11 sites), so a
+  frame's address is its own and never the room's page. The host relays `pageAddress` only when the sender is the top
+  document (`frame is null` in `RelaySiteEvent`); anything else is dropped like an unknown kind.
+- **A controller's navigation is staged, not adopted.** When a window that holds control sees the address change to
+  something other than the room's page and other than its own pending preview, it sends the ordinary `setPage` — the
+  same two-second window, Cancel and `pageCommitted` reset to position 0, paused that ADR-032 already defines. A
+  mis-click on a thumbnail is therefore as cheap as a mis-typed address, and nothing about the room's protocol
+  changes.
+- **A guest's navigation is put back.** A window that does not hold control does not change the room. When its site
+  view lands anywhere other than `roomPage`, the page navigates it back and says so in one line. Two windows on two
+  documents is the fault this ADR exists to stop: the timing maths would otherwise keep syncing one film's clock onto
+  another film.
+- **The same address is not a change.** A reload, a route change that canonicalises to the room's page, or the
+  navigation the preview itself caused is ignored. The comparison uses `canonicalPage` (ADR-032's rule), so a
+  trailing difference in case or a fragment never causes a second stage.
+- **What is shared is unchanged.** The room still stores `protocol//host/path`; the query string and fragment are
+  dropped (ADR-032, `spec.md` §10.3), and which mirror, quality or subtitles the page is showing stays in each window
+  (ADR-030).
+
+**What this answers.** On 2026-11-23 the user reported switching episode inside `animex.one`'s own thumbnail list: the
+host's site view went to the new episode, the guest stayed on the old one, and the new episode's player was then put on
+the old episode's clock, so each window watched a different film at a number the other had measured. **The report does
+not include the two addresses.** The mechanism this ADR builds is proved on the repository's own pages by ticket 105
+(one window on `probe.html`, a real click on its link, both windows land on `probe-2.html`); the reported fault is
+consistent with it **if** the site's episode change moves the top document's address, which is assumed here because
+`animex.one`'s addresses are path-based (`/watch/<episode>`) and the limit below says what happens when they are not.
+The next live run of that site is the measurement that closes the assumption.
+
+**Why the host relays rather than reads.** The page cannot read the site view's address (different control, different
+origin). The host already has the top document's `Source`; the relay is one message per navigation, not per second,
+and the host still holds no room decision — it says where the site went, and the page decides what that means
+(ADR-034, ADR-038).
+
+**Rejected.** (a) Adopting every navigation automatically, with no stage — a thumbnail click would commit for five
+people with no undo, against ADR-032. (b) Letting a guest's navigation change the room — R21's "whoever holds
+control", and it would turn a stray ad click into a page change for everyone. (c) Comparing the elected player
+frame's URL instead of the top document's — the player is often a cross-origin iframe, so its URL is not the room's
+page. (d) Sharing the query string so `?ep=2` sites follow too — it reverses §10.3's "never store a tokenised link"
+for a convenience, and that is a separate ADR with the user's answer attached.
+
+**Cost.** One relayed message per navigation and per route change (a site that rewrites its address in a loop is
+throttled by the bridge's change check, not by the room). A page whose episode lives only in the query string is still
+not followed; the address bar remains the way, and the limitation is written down rather than silently half-fixed. The
+bridge now carries one more responsibility, so every existing site test must still pass unchanged.
+
+**Amends.** Nothing. It adds a page half to `spec.md` §7.1's realignment sentence ("the player ... gets realigned
+when a navigation finishes") and to R21, whose second route was described in §1 but never wired. The relay's
+whitelist and the bridge's message kinds gain `pageAddress`; nothing else about the two views changes.
 

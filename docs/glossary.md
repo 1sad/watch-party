@@ -140,6 +140,35 @@ This is what experiment E1 checks.
 **Rescue relay** — one stranded member (geo-blocked, broken player) asking the owner to relay the film to them
 alone, fed by the stream the owner's app is already playing. One person, on request, never the whole room.
 
+## Layout of the window
+
+**First screen** — the room's front door. It shows the host's invite in full (the code, the link, the raw fallback,
+the same-network link, and the router's state including the failure card), then the box to paste someone else's
+invite into. It has no picture, chat or file picker. Pressing **Start a room** leaves it; a room is already live
+behind it (ADR-047).
+
+**Watching screen** - the room itself: the picture with the chat column beside it, and the player's own controls (play,
+scrub, volume) under the picture in file mode and the room's controls in the column. Every room in progress is on this
+screen.
+
+**Picture** — whatever the room is playing, drawn in the big area: our own `<video>` in file mode, the site's own
+view in website mode. The chat never covers it except in cinema mode, which is not built yet.
+
+**Chat column** - the thin column to the picture's right: invite bar, address bar, chat, roster and the room's
+controls. It is 380 px wide, and that number is the host's (`--chat-column`), not the page's. Under 900 px of window
+width it moves below the picture instead.
+
+**Invite bar** — the chat column's first row: the room code, the invite link and one Copy button, with the raw address
+and code one click inside. Always reachable while watching, including in fullscreen.
+
+**Watching route** - one of the two ways a room gets something to play: paste a page address (the address bar) or
+**Open a file**. In the owner's window both are on the watching screen at all times, and neither has to be closed to
+use the other; a guest has the address bar and no Open a file, because the file is served from the owner's machine
+(R11).
+
+**Volume** — how loud this window plays, set by its own slider beside the file player's play and scrub controls. A
+personal choice: it never travels to the room (ADR-030, R34).
+
 ## Extension
 
 **Extension / add-on** — a small program inside a browser that can read and control a page. In this project it is a
@@ -197,7 +226,7 @@ page immediately with a countdown; everyone else's screen does not move, and if 
 happened.
 
 **Personal choices** — everything that must never move anyone else: which mirror or server, sub or dub, audio track,
-subtitles, volume, sidebar or cinema. Each app has its own browser, so these simply stay put.
+subtitles, volume, chat column or cinema. Each app has its own browser, so these simply stay put.
 
 **Control mode** — *gone.* There is no host-only *mode*: control is a role that anyone may be granted (ADR-025, as
 amended by ADR-030 — "everyone controls" was reversed).
@@ -239,7 +268,7 @@ browsable. Not a media server: no users, no metadata scraping, no remote access.
 
 **Cinema mode** — watching with the chat floating translucently over the picture instead of beside it. It fades out
 when the mouse stops moving so it is not in the way, and comes back when you move, type, or someone speaks. The
-alternative is **sidebar**, with chat beside the film. Per member, remembered.
+alternative is the **chat column** beside the film. Per member, remembered.
 
 **Shadow root** — an isolated sub-tree a page (or an extension) can attach to an element, so its styles in and out
 don't collide.

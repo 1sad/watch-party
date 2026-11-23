@@ -269,7 +269,9 @@ T1 again as of 2026-11-16.
 ### M2b - The window uses its space
 
 One line: runs **before M3** (the user's order, 2026-11-23) - two screens, the picture filling the window with a
-380 px chat column beside it, chat below under 900 px, a remembered size; ADR-047, R39-R40, tracked as phase 5.
+380 px chat column beside it, chat below under 900 px, a remembered size, one bar carrying the address field with its
+Paste button inside it and Open a file beside it, the local player's volume bar, and the room following a page's own
+navigation (ADR-047, ADR-048, R39-R41, tracked as phase 5).
 
 ### M3 - Resilience and polish
 

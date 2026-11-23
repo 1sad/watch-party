@@ -108,7 +108,7 @@ unaffected (ADR-024, §4.4).
 | R18 | Chat is available and identical in both front doors (app window and add-on overlay) | send from the app, read in the overlay, and vice versa |
 | R19 | Chat input never triggers the page's keyboard shortcuts, and the overlay stays visible in fullscreen | type a space on a site where space = pause; enter fullscreen |
 | R20 | The app's browser window blocks ad and tracker requests by default | load a page with known ad hosts; no ad-network request completes |
-| R21 | Setting a page in the room navigates every other app to it | two apps, one member sets a page, both land on it |
+| R21 | Setting a page in the room navigates every other app to it - by the address bar **or by browsing inside the app** (search, a title, an episode thumbnail), by a member who holds control | the controller sets a page from the bar, then picks an episode inside the app's own window; both apps land on it; a non-controller's pick is put back |
 | R22 | In website mode the room survives the owner leaving, with no interruption to anyone's film | close the owner's app mid-film; others keep playing, and control moves with the room |
 | R23 | A member behind an ordinary home router can host with no settings and no account | fresh install on a home network; the link works from outside |
 | R24 | Anyone granted control may change the page, the film, play/pause/seek — not only the owner | a promoted member pauses, seeks, and changes the page |
@@ -116,7 +116,7 @@ unaffected (ADR-024, §4.4).
 | R26 | A name may be set after joining; until then the member is `anonymous` | join without typing; set the name later from the roster |
 | R27 | Rooms form without any third-party service in the path | network trace while joining shows no rendezvous service |
 | R28 | Chat can float transparently over the video in cinema mode, fading after ~3 s idle and returning on pointer movement, keypress, or a new message | switch to cinema, stop moving the mouse for 3 s, move it; then send a message from the other window |
-| R29 | The address bar has a right-click menu (cut/copy/paste/select all) and a visible Paste button | right-click → Paste inserts; Ctrl+V also works |
+| R29 | The address bar has a right-click menu (cut/copy/paste/select all) and a visible Paste button **inside the field's own box**; one press of Paste fills the field **and** takes the room there, and Enter does the same | right-click → Paste inserts; Ctrl+V works; pressing Paste with the clipboard holding an address moves the room without a second press |
 | R30 | The app owns fullscreen: the page's fullscreen request fills our window and never hides the UI | press fullscreen on a site that used to take the screen; chat stays visible |
 | R31 | A room change is staged: the initiator sees it immediately, everyone else moves only after 2 s, and Cancel means nothing ever happened for them | click a title, press Cancel inside 2 s; note the other window never moves, not even a flicker |
 | R32 | The player is a follower: after any page load or player replacement every client realigns to the room's position, including the host | switch mirror mid-film; nobody restarts at 0 |
@@ -126,8 +126,9 @@ unaffected (ADR-024, §4.4).
 | R36 | Two controllers staging different pages at once: the later request replaces the earlier, and the first sees a "replaced" notice | both click a title within 2 s; one commits, the other is told why it did not |
 | R37 | A page's request to open a window never opens one; the app says so in one line, naming the host it asked for | click a page's popup link; no window appears, and one line names the host |
 | R38 | The app ships as one portable executable per variant, with every dependency except the browser engine inside it | copy the file to a folder on a Windows machine where nothing was installed, run it from there, and the room still syncs |
-| R39 | The first screen is invite and join only; Start a room switches to the watching screen at once, and a room that ends returns a guest to the first screen with no dead player | start a room (screen changes), close the host (the guest's window is back on the first screen with one line saying so) |
-| R40 | The watching screen spends the window: the picture takes what is left, the chat is a 380 px column on its right, and under 900 px wide the chat moves below the picture; the invite bar stays reachable in fullscreen | pictures at maximised and at 900 px; the chat's rectangle is right of the picture in one and below it in the other |
+| R39 | The first screen is invite and join only; Start a room switches to the watching screen at once; a room that ends returns a guest to the first screen with no dead player | start a room (screen changes), a second window joins by the link while the first screen is still up and lands on the watching screen itself, close the host (the guest's window is back on the first screen with one line saying so) |
+| R40 | The watching screen spends the window: the picture takes what is left, the chat is a 380 px column on its right, and under 900 px wide the chat moves below the picture (the picture bounded so the chat always has room); the invite bar stays reachable in fullscreen, and **in the owner's window** the address bar and **Open a file** are both present at every moment (a guest has no file to serve, R11) | in the owner's window, in a file room and in a page room, the address bar and Open a file are both present; pictures at maximised and at 800 px wide, the chat's rectangle right of the picture in the first and below it in the second |
+| R41 | The local file player has a volume control beside its play and scrub controls; the setting is that window's own and never travels to the room | two windows on one file at different volumes stay in sync; reopening the window keeps the volume |
 
 Rows tagged *v2* are requirements that survive the reordering (ADR-027) but are not built in v1. Nothing was
 deleted: R16 is the only one genuinely dropped, because rooms no longer outlive their members.
@@ -649,9 +650,9 @@ problems ADR-022 buys us out of by shipping an app instead.
 
 ### 10.3 Page following
 
-`room.page` is set by any member; on join or on change, the add-on navigates the tab if it isn't already there. The
-address is shared with the whole room, so: strip the query string, never store a tokenised link, and keep any
-secret in the fragment. The app does the same thing natively.
+`room.page` is set by a member who holds control (R21, R33); on join or on change, the add-on navigates the tab if it
+isn't already there. The address is shared with the whole room, so: strip the query string, never store a tokenised
+link, and keep any secret in the fragment. The app does the same thing natively.
 
 ### 10.5 Chrome and Firefox from one codebase
 
@@ -761,7 +762,7 @@ Milestones, not modes: each one is demoable. R-numbers are in §2.
 | --- | --- | --- |
 | **M1 A room that syncs** | app shell, room create/join over one direct connection, names/`anonymous`, chat, clock sync, position model, drift ladder, scheduled start, **file mode** | two apps stay within 250 ms for 10 min with one throttled; R1–R9, R11; a file is picked on one machine and plays on the other |
 | **M2 Website mode** | embedded browser, ad filtering, **app-owned fullscreen**, page following with **staged changes**, **control role, promotion and Take control**, **personal-choice isolation**, player discovery, echo suppression, per-viewer offsets | R17, R20, R21, R29, R30, R31, R33, R34, R36, R37; two apps open the same page and stay in step; typing in chat never pauses the film |
-| **M2b The window uses its space** | two screens (invite/join, then watching), the picture filling the window with a 380 px chat column beside it, chat below the picture under 900 px, the invite bar, a remembered window size | R39, R40; pictures at maximised and at 900 px, chat beside in one and below in the other, and a room that ends is back on the first screen |
+| **M2b The window uses its space** | two screens (invite/join, then watching), the picture filling the window with a 380 px chat column beside it, chat below the picture under 900 px, the invite bar, a remembered window size, both watching routes always present, the local player's volume bar | R39, R40, R41; pictures at maximised and at 800 px, chat beside in one and below in the other, and a room that ends is back on the first screen |
 | **M3 Gate and resilience** | ready gate, buffering UI, reconnects, source-mismatch badges, quit/join polish, **cinema mode (T29)**, **realign triggers (T35)**, **peer-to-peer block (T37)** | R8, R10, R28, R32, R35; a member on a different mirror is visibly flagged and can fix it in one click |
 | **M4 Peer mesh and takeover** | every app connects to every app, room replication, authority transfer with no interruption | R22, R27; the owner closes their app mid-film and nobody's picture stops, chat keeps working, a new host appears within 2 s |
 | **M5 Add-on** | website-mode extension, Chrome + Firefox manifests, chat overlay | R18, R19; add-on and app share a room; typing "ar" in chat on a site where "a" seeks does not seek |
@@ -770,7 +771,9 @@ Milestones, not modes: each one is demoable. R-numbers are in §2.
 | **v2 and later** | single-file library, subtitles for files, HLS relay, transcode, audio languages, Android | as written in §8, §9, §11 and research §23 |
 
 **M7 ran before M2b and M3** (closed 2026-11-22). **M2b runs before M3** — the user's order on 2026-11-23: the layout
-first, then "the room obeys".
+first, then "the room obeys". **M2b also pays an M2 debt:** R21's second route, browsing inside the app, is wired here
+(ADR-048), because the address bar and the site view are being reworked anyway; a site's own episode change currently
+leaves the room on the old page.
 
 ## 14. Failure behaviour
 

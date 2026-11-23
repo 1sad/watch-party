@@ -13,7 +13,7 @@ read it before believing any claim about what works. **The working record -
 specs, tickets, session notes, costs - is kept on the owner's machine and is not in this public repo**, so a fresh
 clone has the code and `docs/` only.
 
-**Rebuilt on 2026-11-16** around ADR-022 … ADR-027. **ADR-047** (two screens; the picture fills the window with the chat beside it) is the newest and amends ADR-038; before it **ADR-046** (a joined guest's media URL carries the room code), **ADR-045** (the UPnP search leaves
+**Rebuilt on 2026-11-16** around ADR-022 … ADR-027. **ADR-048** (the room follows a page's own navigation, not only the address bar) is the newest; before it **ADR-047** (two screens; the picture fills the window with the chat beside it) amends ADR-038, and before it **ADR-046** (a joined guest's media URL carries the room code), **ADR-045** (the UPnP search leaves
 UDP 1900) and **ADR-044** (every request is gated on the code); **ADR-043** (the portable copy is its folder, and nothing leaves
 it) amends ADR-042; ADR-041 (one portable executable; the browser is the only dependency outside
 it), ADR-040 (the ad list is share-alike data), ADR-038 (two views), ADR-039 (a quarter-second deadband) and ADR-034
@@ -24,7 +24,7 @@ the document is stale.
 
 1. `README.md` — one screen of orientation.
 2. `docs/open-questions.md` §A — the four blockers that change the architecture. Read before believing the spec.
-3. `docs/spec.md` — requirements (R1–R36), model, protocol, sync, modes, milestones.
+3. `docs/spec.md` — requirements (R1–R41), model, protocol, sync, modes, milestones.
 4. `docs/decisions.md` — ADR-001…033, each with the alternatives rejected and why. ADR-022 onward is current;
    **ADR-030…033 supersede earlier answers** and are the ones to read first.
 5. `docs/handoff.md` — experiments, tickets, test recipes, risks.
