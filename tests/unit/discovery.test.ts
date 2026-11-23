@@ -37,7 +37,9 @@ interface FakeRouter {
  * app's own UPnP arm is exercised without a router on the network (T66b).
  * A `mapFault` makes `AddPortMapping` fail the way a real router does.
  */
-async function fakeRouter(options: { mapFault?: number; externalIp?: string } = {}): Promise<FakeRouter> {
+async function fakeRouter(
+  options: { mapFault?: number; externalIp?: string; faultText?: string } = {},
+): Promise<FakeRouter> {
   const actions: string[] = []
   const server = createServer((request, response) => {
     if (request.method === 'GET') {
@@ -53,7 +55,7 @@ async function fakeRouter(options: { mapFault?: number; externalIp?: string } = 
       if (action === 'AddPortMapping' && options.mapFault !== undefined) {
         response.writeHead(500, { 'Content-Type': 'text/xml' })
         response.end(
-          `<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><s:Fault><faultcode>s:Client</faultcode><faultstring>UPnPError</faultstring><detail><UPnPError xmlns="urn:schemas-upnp-org:control-1-0"><errorCode>${options.mapFault}</errorCode><errorDescription>ConflictInMappingEntry</errorDescription></UPnPError></detail></s:Fault></s:Body></s:Envelope>`,
+          `<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><s:Fault><faultcode>s:Client</faultcode><faultstring>UPnPError</faultstring><detail><UPnPError xmlns="urn:schemas-upnp-org:control-1-0"><errorCode>${options.mapFault}</errorCode><errorDescription>${options.faultText ?? 'ConflictInMappingEntry'}</errorDescription></UPnPError></detail></s:Fault></s:Body></s:Envelope>`,
         )
         return
       }
@@ -125,6 +127,52 @@ test("a router's SOAP fault reaches the verdict as the router's own code (T66b)"
   } finally {
     await router.close()
   }
+})
+
+test("one non-ASCII word from the router cannot reach a discovery: line (T75)", async () => {
+  // A router that describes its refusal in its own alphabet: a non-breaking
+  // space, a curly apostrophe and an accented letter. Before T75 these bytes
+  // reached stdout, where PowerShell's Get-Content turns them to garbage.
+  const router = await fakeRouter({ mapFault: 718, faultText: 'Conflit\u00a0d\u2019entr\u00e9e \u2014 ConflictInMappingEntry' })
+  const writes: string[] = []
+  const originalWrite = process.stdout.write
+  // Capture only the trace's own lines: with `node --test` the runner shares
+  // stdout with a binary event channel, which must keep flowing and is not
+  // part of the log. `trace()` writes one complete line per call.
+  const capture = (chunk: string | Uint8Array, ...rest: unknown[]): boolean => {
+    const text = typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8')
+    if (text.startsWith('discovery: ')) {
+      writes.push(text.replace(/\r?\n$/, ''))
+      return true
+    }
+    return (originalWrite as unknown as (...args: unknown[]) => boolean).call(process.stdout, chunk, ...rest)
+  }
+  process.stdout.write = capture as typeof process.stdout.write
+  try {
+    const result = await discover({
+      localPort: 45123,
+      lanIp: '192.168.10.20',
+      timeoutMs: 3_000,
+      natPmpGateways: [],
+      upnpSearch: async () => [{ location: `${router.base}/rootDesc.xml`, host: '127.0.0.1' }],
+    })
+    // The verdict is unchanged by the alphabet: still the router's own code.
+    assert.equal(result.kind, 'upnp_unavailable')
+    assert.equal(result.faultCode, 718)
+  } finally {
+    process.stdout.write = originalWrite
+    await router.close()
+  }
+
+  const captured = writes.join('\n')
+  // Counted on the lines themselves (the joiner is not trace output): each one
+  // is a whole `discovery:` line with its terminator already removed.
+  const bad = writes.join('').match(/[^\x20-\x7e]/g)?.length ?? 0
+  console.log(`TRACE-ASCII: bad=${bad}`)
+  // The router's own words were printed, or this test proves nothing - as
+  // `?` where it left printable ASCII, which is the whole point of T75.
+  assert.match(captured, /Conflit d\?entr\?e \? ConflictInMappingEntry/)
+  assert.equal(bad, 0, 'the trace is ASCII whatever the router says')
 })
 
 function mapped(externalIp: string): MappingOutcome {

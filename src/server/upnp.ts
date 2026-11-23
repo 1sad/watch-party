@@ -79,8 +79,11 @@ function messageOf(error: unknown): string {
 }
 
 /** One line's worth of an error: ASCII, no newlines, no stray quotes. */
-function oneLine(text: string): string {
-  return text.replace(/\s+/g, ' ').replace(/"/g, "'")
+export function oneLine(text: string): string {
+  return text
+    .replace(/\s+/g, ' ')
+    .replace(/"/g, "'")
+    .replace(/[^\x20-\x7e]/g, '?')
 }
 
 function remaining(deadline: number): number {

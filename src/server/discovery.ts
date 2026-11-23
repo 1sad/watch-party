@@ -7,7 +7,7 @@ import { pmpNat } from '@achingbrain/nat-port-mapper'
 import type { Gateway } from '@achingbrain/nat-port-mapper'
 
 import { trace } from './trace.ts'
-import { mapPort as mapThroughUpnp, searchGateways } from './upnp.ts'
+import { mapPort as mapThroughUpnp, oneLine, searchGateways } from './upnp.ts'
 import type { SoapResult, UpnpGateway, UpnpMapping } from './upnp.ts'
 
 const execFileAsync = promisify(execFile)
@@ -371,7 +371,7 @@ async function mapPort(
     attempts.push('UPnP: no budget left')
   }
 
-  trace(t0, `attempts="${attempts.join('; ')}"`)
+  trace(t0, `attempts="${oneLine(attempts.join('; '))}"`)
   if (answered) {
     return { outcome: { type: 'refused', detail: attempts.join('; '), faultCode }, silent }
   }
@@ -517,8 +517,8 @@ export function faultCodeOf(error: unknown): number | null {
 
 /** The library's error text, plus the code it attached (NAT-PMP's result code). */
 function describeError(error: unknown): string {
-  const message = messageOf(error).replace(/\s+/g, ' ')
+  const message = oneLine(messageOf(error))
   const code = faultCodeOf(error)
   const codePart = code === null ? '' : `code=${String(code)} `
-  return `${codePart}detail="${message.replace(/"/g, "'")}"`
+  return `${codePart}detail="${message}"`
 }
