@@ -26,8 +26,21 @@
 # because a caller's own SetWindowPos writes logical ones and its "shrink until
 # it fits" loop never ends at 125% scaling (T88). -MaxHeight needs -Place.
 #
+# T91 gave it a size, because this phase's acceptance is pictures at two window
+# sizes. -Width <px> and -Height <px> set the window's OUTER size and -Maximise
+# maximises it, both before the picture and both followed by a settle; both
+# print the rectangle Windows ended up with, next to the PNG's own size in the
+# common tail, because PrintWindow hands back the last composited frame - a size
+# the window refused, or a picture still showing the old one, has to show in the
+# output rather than in a reader's eye (docs/testing-manual.md section 7, trap
+# 8). A size and -Maximise name one window and never combine with -Place, which
+# only ever moves: those combinations are refused rather than guessed. A size
+# the window refuses is printed and the exit code is 3, so no caller believes a
+# picture is the size it asked for when it is not.
+#
 #   powershell -NoProfile -File scripts/window-shot.ps1 <file.png> [title] [-Process <name>]
-#   powershell -NoProfile -File scripts/window-shot.ps1 <file.png> [-Pid <n>] [-Pids <n,n>] [-Place] [-MaxHeight <px>]
+#   powershell -NoProfile -File scripts/window-shot.ps1 <file.png> [-Pid <n>] [-Width <px>] [-Height <px>] [-Maximise]
+#   powershell -NoProfile -File scripts/window-shot.ps1 <file.png> [-Pids <n,n>] [-Place] [-MaxHeight <px>]
 #
 # With no arguments beyond the path it looks for the app's own window. A title
 # is a case-insensitive substring; -Process matches the owning process name; a
@@ -66,13 +79,25 @@ param(
   # MinimumSize, measured T89), so two of them plus the gaps do not fit a
   # 1080px screen before any shrinking (T88).
   [ValidateRange(120, 20000)]
-  [int]$MaxHeight = 0
+  [int]$MaxHeight = 0,
+
+  # The window's outer size, in the unit every rectangle below is printed in:
+  # physical pixels, since this process declared DPI awareness before it
+  # measured anything. Either one alone changes only that dimension.
+  [ValidateRange(120, 20000)]
+  [int]$Width = 0,
+
+  [ValidateRange(120, 20000)]
+  [int]$Height = 0,
+
+  # Maximise the window (ShowWindow SW_MAXIMIZE) before the picture.
+  [switch]$Maximise
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$usage = 'usage: powershell -NoProfile -File scripts/window-shot.ps1 <file.png> [title] [-Process <name>] [-Pid <n>] [-Pids <n,n>] [-Place] [-MaxHeight <px>]'
+$usage = 'usage: powershell -NoProfile -File scripts/window-shot.ps1 <file.png> [title] [-Process <name>] [-Pid <n>] [-Pids <n,n>] [-Place] [-MaxHeight <px>] [-Width <px>] [-Height <px>] [-Maximise]'
 
 function Fail([string]$message, [int]$code = 1) {
   [Console]::Error.WriteLine("watch-party: $message")
@@ -297,6 +322,24 @@ if ($MaxHeight -gt 0 -and -not $Place) {
   Fail '-MaxHeight needs -Place: it sizes the stack this tool is about to make; nothing was moved'
 }
 
+# A size and a maximised window are one window's business, and neither belongs
+# with -Place, which only moves. Refusing by name beats silently picking one of
+# two instructions the caller gave.
+$resize = $Width -gt 0 -or $Height -gt 0
+$sizeRefused = $false
+if ($Maximise -and $resize) {
+  Fail '-Maximise with -Width/-Height: a maximised window does not take a size, so pick one - nothing was changed'
+}
+if ($resize -and $Place) {
+  Fail '-Width/-Height with -Place: -Place only moves windows and never resizes them, so those two contradict each other - nothing was changed'
+}
+if ($Maximise -and $Place) {
+  Fail '-Maximise with -Place: -Place puts windows where the stack wants them and leaves them there, so which of the two should win is a guess - nothing was changed'
+}
+if (($resize -or $Maximise) -and $targets.Count -gt 1) {
+  Fail ("-Width/-Height and -Maximise size ONE window; $($targets.Count) were named, so which one to size would be a guess. Take the sized picture on its own")
+}
+
 # -Place: separate the named windows so none of them is the one underneath.
 # Nothing is moved at all if the stack cannot fit, and nothing is ever moved back.
 if ($Place) {
@@ -374,6 +417,82 @@ if ($Place) {
   # The move only takes effect once Windows has repainted, and a picture taken
   # before the repaint is the stale frame this switch exists to avoid.
   Start-Sleep -Milliseconds 400
+}
+
+# -Width/-Height and -Maximise: one window, sized or maximised before the
+# picture. The rectangle Windows accepted is read back and printed here, and the
+# capture loop below prints it again beside the PNG's own size, so a size the
+# window refused or a frame still showing the old one is in the output rather
+# than in a reader's judgement.
+if ($resize -or $Maximise) {
+  $only = $targets[0]
+
+  if ($Maximise) {
+    # SW_MAXIMIZE (3). ShowWindowAsync returns before Windows has finished, so
+    # the wait below is for the window to report itself zoomed.
+    [WindowShot]::ShowWindowAsync($only.Handle, 3) | Out-Null
+    $stopBy = (Get-Date).AddSeconds(3)
+    while (-not [WindowShot]::IsZoomed($only.Handle) -and (Get-Date) -lt $stopBy) { Start-Sleep -Milliseconds 100 }
+    if (-not [WindowShot]::IsZoomed($only.Handle)) {
+      Fail "pid $($only.Pid) did not report itself maximised within 3 s; it was left as Windows put it and no picture was taken"
+    }
+    # The composited frame arrives after the resize, not with it (trap 8).
+    Start-Sleep -Milliseconds 700
+
+    $now = New-Object WindowShot+RECT
+    if (-not [WindowShot]::GetWindowRect($only.Handle, [ref]$now)) { Fail "could not read the rectangle of pid $($only.Pid)" }
+    "maximise: SW_MAXIMIZE -> rectangle $($now.Left),$($now.Top) $($now.Right - $now.Left)x$($now.Bottom - $now.Top) (screen $([WindowShot]::ScreenWidth())x$([WindowShot]::ScreenHeight()) physical px; a maximised window includes its invisible resize border)"
+  }
+  else {
+    # Restoring is asynchronous, and a window that still thinks it is maximised
+    # ignores a new size outright: SetRect calls SW_RESTORE then sets the
+    # rectangle, so a restore that has not landed yet silently loses the size
+    # (measured on this ticket, pid 16188: asked 900x500, stayed 900x700).
+    if ([WindowShot]::IsZoomed($only.Handle)) {
+      [WindowShot]::ShowWindowAsync($only.Handle, 4) | Out-Null
+      $stopBy = (Get-Date).AddSeconds(3)
+      while ([WindowShot]::IsZoomed($only.Handle) -and (Get-Date) -lt $stopBy) { Start-Sleep -Milliseconds 100 }
+      if ([WindowShot]::IsZoomed($only.Handle)) {
+        Fail "pid $($only.Pid) is maximised and did not report itself restored within 3 s, so it cannot be sized; no picture was taken"
+      }
+      Start-Sleep -Milliseconds 200
+    }
+
+    $before = New-Object WindowShot+RECT
+    if (-not [WindowShot]::GetWindowRect($only.Handle, [ref]$before)) { Fail "could not read the rectangle of pid $($only.Pid)" }
+    $cx = if ($Width -gt 0) { $Width } else { $before.Right - $before.Left }
+    $cy = if ($Height -gt 0) { $Height } else { $before.Bottom - $before.Top }
+
+    # Outer size, in physical pixels: this process declared per-monitor-v2 DPI
+    # awareness before it measured anything, so SetWindowPos takes the same unit
+    # GetWindowRect returns and nothing is scaled by the monitor's DPI. SetRect
+    # restores a maximised window first (a maximised one ignores a new size) and
+    # passes SWP_NOZORDER|SWP_NOACTIVATE, so nothing is raised or focused.
+    if (-not [WindowShot]::SetRect($only.Handle, $before.Left, $before.Top, $cx, $cy)) {
+      Fail "could not size pid $($only.Pid) to ${cx}x${cy}"
+    }
+
+    # The size Windows accepted, then a settled frame: the wait after the match
+    # is for the repaint (trap 8), and a window with a larger minimum never
+    # matches at all.
+    $stopBy = (Get-Date).AddSeconds(3)
+    do {
+      Start-Sleep -Milliseconds 100
+      $now = New-Object WindowShot+RECT
+      if (-not [WindowShot]::GetWindowRect($only.Handle, [ref]$now)) { Fail "could not read the rectangle of pid $($only.Pid)" }
+      $gotWidth = $now.Right - $now.Left
+      $gotHeight = $now.Bottom - $now.Top
+      $gotLeft = $now.Left
+      $gotTop = $now.Top
+    } while (([Math]::Abs($gotWidth - $cx) -gt 2 -or [Math]::Abs($gotHeight - $cy) -gt 2) -and (Get-Date) -lt $stopBy)
+    Start-Sleep -Milliseconds 500
+
+    "size: asked ${cx}x${cy} -> rectangle $gotLeft,$gotTop ${gotWidth}x${gotHeight}"
+    if ([Math]::Abs($gotWidth - $cx) -gt 2 -or [Math]::Abs($gotHeight - $cy) -gt 2) {
+      $sizeRefused = $true
+      "size: pid $($only.Pid) did not take ${cx}x${cy}; it reports ${gotWidth}x${gotHeight} (a window keeps its own minimum), and that is the picture taken"
+    }
+  }
 }
 
 # The captures are taken back to back in this one loop: the two instants printed
@@ -491,3 +610,8 @@ if ($captures.Count -gt 1) {
 }
 "captured ${savedWidth}x${savedHeight}"
 $file
+
+# A size the caller asked for and the window did not take is a non-zero exit,
+# so a script cannot believe the picture is the size it asked for. The path is
+# already printed above.
+if ($sizeRefused) { exit 3 }
