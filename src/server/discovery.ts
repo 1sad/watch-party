@@ -16,7 +16,7 @@ const execFileAsync = promisify(execFile)
 // never throws: every failure is a value the page renders (spec §14).
 export const DISCOVERY_TIMEOUT_MS = 8_000
 
-export type DiscoveryKind = 'ok' | 'cgnat' | 'upnp_unavailable' | 'timeout'
+export type DiscoveryKind = 'ok' | 'cgnat' | 'upnp_unavailable' | 'no_gateway' | 'timeout'
 export type AddressClass = 'public' | 'private' | 'cgnat' | 'unknown'
 
 export interface DiscoveryResult {
@@ -26,15 +26,25 @@ export interface DiscoveryResult {
   /** The port a guest dials, when a mapping exists. */
   mappedPort: number | null
   localPort: number
+  /** For humans: the arms' own words and the gateway, never parsed for facts. */
   detail: string
   addressClass: AddressClass
+  /** The router's own refusal code (UPnP SOAP errorCode or NAT-PMP result code); null when none arrived. */
+  faultCode: number | null
+  /** The gateway's LAN address, when the route table or the NAT-PMP list named one. */
+  gatewayIp: string | null
+  /** The steps that produced no answer at all; empty when something answered. */
+  silent: string[]
+  /** True when the run deliberately skipped mapping (WATCHPARTY_NO_MAP). */
+  mappingDisabled: boolean
   /** The plain sentence the start screen shows for this state (spec §14). */
   sentence: string
 }
 
 export type MappingOutcome =
   | { type: 'mapped'; externalIp: string; mappedPort: number; detail: string }
-  | { type: 'refused'; detail: string }
+  | { type: 'refused'; detail: string; faultCode?: number | null }
+  | { type: 'silent'; detail: string }
   | { type: 'timeout'; detail: string }
 
 /**
@@ -65,6 +75,9 @@ export function classifyMapping(outcome: MappingOutcome): {
   addressClass: AddressClass
 } {
   if (outcome.type === 'refused') return { kind: 'upnp_unavailable', addressClass: 'unknown' }
+  // Every arm stayed silent before the budget was spent: no gateway answered.
+  // `timeout` is reserved for a run that actually used the whole budget.
+  if (outcome.type === 'silent') return { kind: 'no_gateway', addressClass: 'unknown' }
   if (outcome.type === 'timeout') return { kind: 'timeout', addressClass: 'unknown' }
 
   const addressClass = classifyAddress(outcome.externalIp)
@@ -73,33 +86,35 @@ export function classifyMapping(outcome: MappingOutcome): {
   return { kind: addressClass === 'public' ? 'ok' : 'cgnat', addressClass }
 }
 
+/** The facts a sentence is built from; never its English `detail`. */
+export type SentenceFacts = Pick<DiscoveryResult, 'kind' | 'faultCode' | 'externalIp' | 'mappingDisabled'>
+
 /**
- * One plain sentence per reason (spec §14, T2 item 7, T67). Four distinct
+ * One plain sentence per reason (spec §14, T2 item 7, T67, T73). Four distinct
  * endings: no router answered; the router answered and refused, with its own
  * code; a mapping was made but the address it reports is itself private or
  * shared (ADR-023's CGNAT case); and a public address, which is the only one
- * that gets no warning. The router's code and the address it reported travel
- * in `detail`, so nothing is guessed here.
+ * that gets no warning. The code, the address and the reason are fields, so
+ * nothing is guessed from `detail` here.
  */
-export function sentenceFor(kind: DiscoveryKind, detail = ''): string {
-  const code = /code[ =](\d+)/.exec(detail)?.[1]
-  const reported = /router reported ([\d.]+)/.exec(detail)?.[1]
+export function sentenceFor(facts: SentenceFacts): string {
   const sameNetwork = 'Everyone on the same network can join with the link above'
   const manual = `, or you can open the port yourself with the steps below.`
 
-  switch (kind) {
+  switch (facts.kind) {
     case 'ok':
       return 'This connection can accept visitors. Share the invite link with your friends.'
     case 'cgnat':
-      return `The port was opened, but the address your router reports (${reported ?? 'a private or shared one'}) is itself private or shared: your provider sits between you and the internet, so nothing on this computer can fix that. ${sameNetwork}; the steps below show the port to forward if you have a public address to forward it to.`
+      return `The port was opened, but the address your router reports (${facts.externalIp ?? 'a private or shared one'}) is itself private or shared: your provider sits between you and the internet, so nothing on this computer can fix that. ${sameNetwork}; the steps below show the port to forward if you have a public address to forward it to.`
     case 'upnp_unavailable':
-      if (detail.includes('WATCHPARTY_NO_MAP')) {
+      if (facts.mappingDisabled) {
         return `Port mapping is turned off for this run (WATCHPARTY_NO_MAP), so no public address was made. ${sameNetwork}${manual}`
       }
-      if (code !== undefined) {
-        return `Your router answered and refused to open the port, with its own error code ${code}. Friends on other networks cannot join yet. ${sameNetwork}${manual}`
+      if (facts.faultCode !== null) {
+        return `Your router answered and refused to open the port, with its own error code ${facts.faultCode}. Friends on other networks cannot join yet. ${sameNetwork}${manual}`
       }
       return `Your router did not open the port and gave no error code. Friends on other networks cannot join yet. ${sameNetwork}${manual}`
+    case 'no_gateway':
     case 'timeout':
       return `No router answered: neither way of asking produced a reply. Friends on other networks cannot join yet. ${sameNetwork}${manual}`
   }
@@ -195,17 +210,22 @@ function finish(
   silent: string[],
   gatewayIp: string | null,
 ): DiscoveryResult {
-  const result = toResult(outcome, options, gatewayIp)
+  const result = toResult(outcome, options, gatewayIp, silent)
   const mappedPort = result.mappedPort === null ? 'none' : String(result.mappedPort)
-  const silentSteps = silent.length === 0 ? 'none' : [...new Set(silent)].join(',')
+  const silentSteps = result.silent.length === 0 ? 'none' : result.silent.join(',')
   trace(t0, `verdict=${result.kind} address_class=${result.addressClass} mapped_port=${mappedPort} silent=${silentSteps}`)
   return result
 }
 
-function toResult(outcome: MappingOutcome, options: DiscoverOptions, gatewayIp: string | null): DiscoveryResult {
+function toResult(
+  outcome: MappingOutcome,
+  options: DiscoverOptions,
+  gatewayIp: string | null,
+  silent: string[],
+): DiscoveryResult {
   const { kind, addressClass } = classifyMapping(outcome)
-  // `detail` is also where the screen reads the router's page address from
-  // when it offers the manual port-forward door (T67).
+  // `detail` is for humans only: the arms' own words, plus the router's page
+  // address so the manual door can name it.
   const detail = gatewayIp === null ? outcome.detail : `${outcome.detail}; gateway ${gatewayIp}`
   const result: DiscoveryResult = {
     kind,
@@ -213,9 +233,14 @@ function toResult(outcome: MappingOutcome, options: DiscoverOptions, gatewayIp: 
     localPort: options.localPort,
     detail,
     addressClass,
-    sentence: sentenceFor(kind, detail),
+    faultCode: outcome.type === 'refused' ? (outcome.faultCode ?? null) : null,
+    gatewayIp,
+    silent: [...new Set(silent)],
+    mappingDisabled: options.map === false,
+    sentence: '',
   }
   if (outcome.type === 'mapped') result.externalIp = outcome.externalIp
+  result.sentence = sentenceFor(result)
   return result
 }
 
@@ -262,6 +287,10 @@ async function mapPort(
   const attempts: string[] = []
   const silent: string[] = []
   let sawTimeout = false
+  // Whether any arm answered at all, and the first code a refusal named. They
+  // decide "no gateway answered" without waiting for the clock (T73).
+  let answered = false
+  let faultCode: number | null = null
 
   const candidates: string[] = options.natPmpGateways ?? (gatewayIp === null ? [] : [gatewayIp])
 
@@ -288,7 +317,12 @@ async function mapPort(
     if (pmp.outcome.type === 'timeout') {
       sawTimeout = true
       silent.push('natpmp')
-    } else {
+    } else if (pmp.outcome.type === 'refused') {
+      // A refusal is an answer: the router spoke, even if it named no code.
+      answered = true
+      if (pmp.outcome.faultCode !== undefined && pmp.outcome.faultCode !== null && faultCode === null) {
+        faultCode = pmp.outcome.faultCode
+      }
       silent.push(...pmp.silent)
     }
     attempts.push(`NAT-PMP: ${pmp.outcome.detail}`)
@@ -320,7 +354,15 @@ async function mapPort(
         silent,
       }
     }
-    if (upnp.outcome.type === 'timeout') sawTimeout = true
+    if (upnp.outcome.type === 'timeout') {
+      sawTimeout = true
+    } else {
+      // A fault or a bad answer is not silence: the gateway replied.
+      if (upnp.silent.length === 0) answered = true
+      if (upnp.outcome.type === 'refused' && upnp.outcome.faultCode !== null && faultCode === null) {
+        faultCode = upnp.outcome.faultCode
+      }
+    }
     silent.push(...upnp.silent)
     attempts.push(`UPnP: ${upnp.outcome.detail}`)
   } else {
@@ -330,10 +372,15 @@ async function mapPort(
   }
 
   trace(t0, `attempts="${attempts.join('; ')}"`)
+  if (answered) {
+    return { outcome: { type: 'refused', detail: attempts.join('; '), faultCode }, silent }
+  }
+  // The two silent arms end at about 5 s, well short of the 8 s budget: the
+  // reason is their silence, not a clock running out (T73).
   if (sawTimeout && Date.now() >= deadline - 100) {
     return { outcome: { type: 'timeout', detail: `no answer within ${Math.round(timeoutMs / 1000)} seconds` }, silent }
   }
-  return { outcome: { type: 'refused', detail: attempts.join('; ') }, silent }
+  return { outcome: { type: 'silent', detail: attempts.join('; ') }, silent }
 }
 
 async function mapWithNatPmp(
@@ -387,7 +434,9 @@ async function mapWithNatPmp(
       }
     }
     trace(t0, `natpmp=response result=refused ${describeError(error)}`)
-    return { outcome: { type: 'refused', detail: messageOf(error) }, silent: [] }
+    // The library's NAT-PMP result code lives on `error.code` (err-code);
+    // carry it so the screen can name the router's own reason (T73).
+    return { outcome: { type: 'refused', detail: messageOf(error), faultCode: faultCodeOf(error) }, silent: [] }
   } finally {
     clearTimeout(timer)
     if (!keepMapping) {
@@ -457,10 +506,19 @@ function messageOf(error: unknown): string {
   return String(error)
 }
 
+/** The numeric code a thrown error carries, if any (NAT-PMP's result code). */
+export function faultCodeOf(error: unknown): number | null {
+  if (typeof error !== 'object' || error === null) return null
+  const code = (error as { code?: unknown }).code
+  if (typeof code === 'number' && Number.isInteger(code)) return code
+  if (typeof code === 'string' && /^\d+$/.test(code)) return Number(code)
+  return null
+}
+
 /** The library's error text, plus the code it attached (NAT-PMP's result code). */
 function describeError(error: unknown): string {
   const message = messageOf(error).replace(/\s+/g, ' ')
-  const code = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined
-  const codePart = code === undefined || code === null ? '' : `code=${String(code)} `
+  const code = faultCodeOf(error)
+  const codePart = code === null ? '' : `code=${String(code)} `
   return `${codePart}detail="${message.replace(/"/g, "'")}"`
 }

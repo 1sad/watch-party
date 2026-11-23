@@ -79,12 +79,20 @@
   } from '../shared/timing.ts'
 
   interface DiscoveryResult {
-    kind: 'ok' | 'cgnat' | 'upnp_unavailable' | 'timeout'
+    kind: 'ok' | 'cgnat' | 'upnp_unavailable' | 'no_gateway' | 'timeout'
     externalIp?: string
     mappedPort: number | null
     localPort: number
     detail: string
     addressClass: 'public' | 'private' | 'cgnat' | 'unknown'
+    /** The router's own refusal code, or null when none arrived (T73). */
+    faultCode: number | null
+    /** The gateway's LAN address, the page a person opens to forward by hand (T73). */
+    gatewayIp: string | null
+    /** The arms that produced no answer at all (T73). */
+    silent: string[]
+    /** True when mapping was deliberately skipped with WATCHPARTY_NO_MAP (T73). */
+    mappingDisabled: boolean
     sentence: string
   }
 
@@ -1515,15 +1523,6 @@
     }
   }
 
-  /**
-   * T67: the router's own LAN address, carried in `detail` as `gateway <ip>`.
-   * It is the page a person opens to forward a port by hand, and the sidecar
-   * looks it up even when mapping is off, so the fallback panel can name it.
-   */
-  function gatewayOf(detail: string): string | null {
-    return /gateway ([\d.]+)/.exec(detail)?.[1] ?? null
-  }
-
   async function copy(): Promise<void> {
     const text = payload?.invite?.primary
     if (text === undefined) return
@@ -1658,10 +1657,10 @@
                machine's own port to forward. -->
           <section class="manual">
             <h3>Open the port yourself</h3>
-            {#if gatewayOf(payload.result.detail) !== null}
+            {#if payload.result.gatewayIp !== null}
               <p>
                 Sign in to your router's settings page at
-                <span class="link raw">http://{gatewayOf(payload.result.detail)}/</span>
+                <span class="link raw">http://{payload.result.gatewayIp}/</span>
                 and add one port forward:
               </p>
             {:else}

@@ -426,12 +426,14 @@ function faulted(step: 'map' | 'external' | 'delete', answer: SoapResult, t0: nu
   trace(t0, `upnp=${step} response result=fault code=${code} detail="${oneLine(answer.faultText ?? 'no error text')}"`)
 }
 
-function refusedAnswer(answer: SoapResult, silent: string): { outcome: UpnpOutcome; silent: string[] } {
+function refusedAnswer(answer: SoapResult): { outcome: UpnpOutcome; silent: string[] } {
   const code = answer.faultCode ?? answer.status
   const text = answer.faultText ?? 'no error text'
+  // The router answered, so no arm is silent here (T73); the step is already
+  // named by `faulted`'s trace line above.
   return {
     outcome: { type: 'refused', detail: `router refused with code ${code} (${text})`, status: answer.status, faultCode: answer.faultCode },
-    silent: [silent],
+    silent: [],
   }
 }
 
@@ -476,7 +478,7 @@ export async function mapPort(options: UpnpMapOptions): Promise<UpnpMapping> {
   if (service === null) {
     return {
       outcome: { type: 'refused', detail: `no port-mapping service at ${options.gateway.host}`, status: 0, faultCode: null },
-      silent: ['upnp-description'],
+      silent: [],
       release: null,
     }
   }
@@ -512,7 +514,7 @@ export async function mapPort(options: UpnpMapOptions): Promise<UpnpMapping> {
 
   if (mapped.faultCode !== null || mapped.status !== 200) {
     faulted('map', mapped, t0)
-    return { ...refusedAnswer(mapped, 'upnp-mapping'), release: null }
+    return { ...refusedAnswer(mapped), release: null }
   }
   trace(t0, `upnp=map response result=mapped external_port=${externalPort} code=${mapped.status} request_ms=${Date.now() - mapStarted}`)
 
@@ -528,7 +530,7 @@ export async function mapPort(options: UpnpMapOptions): Promise<UpnpMapping> {
 
   if (external.faultCode !== null || external.status !== 200) {
     faulted('external', external, t0)
-    return { ...refusedAnswer(external, 'upnp-external'), release }
+    return { ...refusedAnswer(external), release }
   }
 
   const externalIp = (tagText(external.body, 'NewExternalIPAddress') ?? '').trim()
@@ -536,7 +538,7 @@ export async function mapPort(options: UpnpMapOptions): Promise<UpnpMapping> {
   if (!isIPv4(externalIp)) {
     return {
       outcome: { type: 'refused', detail: `router reported a non-IPv4 address: ${externalIp}`, status: external.status, faultCode: null },
-      silent: ['upnp-external'],
+      silent: [],
       release,
     }
   }

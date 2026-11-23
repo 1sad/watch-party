@@ -2,8 +2,15 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 
-import { classifyAddress, classifyMapping, discover, releaseMapping, sentenceFor } from '../../src/server/discovery.ts'
-import type { DiscoveryKind, MappingOutcome } from '../../src/server/discovery.ts'
+import {
+  classifyAddress,
+  classifyMapping,
+  discover,
+  faultCodeOf,
+  releaseMapping,
+  sentenceFor,
+} from '../../src/server/discovery.ts'
+import type { MappingOutcome, SentenceFacts } from '../../src/server/discovery.ts'
 
 const DESCRIPTION = `<?xml version="1.0"?>
 <root xmlns="urn:schemas-upnp-org:device-1-0">
@@ -111,6 +118,8 @@ test("a router's SOAP fault reaches the verdict as the router's own code (T66b)"
 
     assert.equal(result.kind, 'upnp_unavailable')
     assert.equal(result.mappedPort, null)
+    assert.equal(result.faultCode, 718)
+    assert.match(result.sentence, /718/)
     assert.match(result.detail, /718/)
     assert.deepEqual(router.actions, ['AddPortMapping'])
   } finally {
@@ -162,20 +171,55 @@ test('172.16/12 is private too, and 172.32 is not', () => {
   assert.equal(classifyAddress('172.32.0.1'), 'public')
 })
 
-test('each reason gets its own sentence, and only a public address offers the world (T67)', () => {
-  const cases: Array<[string, DiscoveryKind, string]> = [
-    ['no gateway answered', 'timeout', 'no answer within 8 seconds; gateway 192.168.10.1'],
-    [
-      'gateway answered and refused, with its own code',
-      'upnp_unavailable',
-      'UPnP: router refused with code 718 (ConflictInMappingEntry); gateway 192.168.10.1',
-    ],
-    ['mapped, but the address is private or shared', 'cgnat', 'router reported 100.64.1.5 (cgnat); gateway 192.168.10.1'],
-    ['mapped and public', 'ok', 'router reported 203.0.113.9 (public); gateway 192.168.10.1'],
+test('both arms silent says no gateway answered, and it is not a clock running out (T73)', async () => {
+  const result = await discover({
+    localPort: 45123,
+    lanIp: '192.168.10.20',
+    timeoutMs: 3_000,
+    natPmpGateways: [],
+    upnpSearch: async () => [],
+  })
+
+  console.log(`SENTENCE: no gateway answered -> ${result.sentence}`)
+  assert.equal(result.kind, 'no_gateway')
+  assert.equal(result.faultCode, null)
+  assert.match(result.sentence, /No router answered/)
+  assert.doesNotMatch(result.sentence, /did not open the port/)
+  assert.deepEqual(result.silent, ['gateway', 'upnp-search'])
+})
+
+test("a NAT-PMP refusal keeps the router's own code as a field (T73)", () => {
+  const error = Object.assign(new Error('Not Authorized/Refused (gateway may have NAT-PMP disabled)'), {
+    code: 2,
+  })
+  assert.equal(faultCodeOf(error), 2)
+  assert.equal(faultCodeOf(new Error('no code attached')), null)
+  assert.equal(faultCodeOf('no object'), null)
+
+  const text = sentenceFor({ kind: 'upnp_unavailable', faultCode: 2, mappingDisabled: false })
+  assert.match(text, /code 2/)
+  assert.doesNotMatch(text, /gave no error code/)
+})
+
+function facts(overrides: Partial<SentenceFacts>): SentenceFacts {
+  return { kind: 'upnp_unavailable', faultCode: null, mappingDisabled: false, ...overrides }
+}
+
+test('the deliberate off switch is a field, not a sentence to search (T73)', () => {
+  const text = sentenceFor(facts({ mappingDisabled: true }))
+  assert.match(text, /WATCHPARTY_NO_MAP/)
+  assert.doesNotMatch(text, /gave no error code/)
+})
+
+test('each reason gets its own sentence, and only a public address offers the world (T67, T73)', () => {
+  const cases: Array<[string, string]> = [
+    ['no gateway answered', sentenceFor(facts({ kind: 'no_gateway' }))],
+    ['gateway answered and refused, with its own code', sentenceFor(facts({ faultCode: 718 }))],
+    ['mapped, but the address is private or shared', sentenceFor(facts({ kind: 'cgnat', externalIp: '100.64.1.5' }))],
+    ['mapped and public', sentenceFor(facts({ kind: 'ok', externalIp: '203.0.113.9' }))],
   ]
 
-  const texts = cases.map(([reason, kind, detail]) => {
-    const text = sentenceFor(kind, detail)
+  const texts = cases.map(([reason, text]) => {
     console.log(`SENTENCE: ${reason} -> ${text}`)
     return text
   })
