@@ -14,9 +14,15 @@
 #     <copy folder>\logs\ -- the file name carries the pid, so a
 #     log from another window can never be mistaken for this one -- and for the
 #     "parsed sidecar PORT <n>" line inside it;
-#   - prints one block: the exe, its folder, its pid, its log path, the runtime
+#   - prints one block: the exe, its folder, its pid, the invite scheme's
+#     registration before and after that launch, its log path, the runtime
 #     folder it unpacked, the profile folder the log names, the PORT line, and
-#     the first lines of the log;
+#     the first lines of the log. The app rewrites
+#     HKCU\Software\Classes\watchparty\shell\open\command to its own
+#     Application.ExecutablePath on every start (ProtocolRegistration.cs:23,34,
+#     called at MainForm.cs:258), so each copy steals the scheme and the key
+#     follows the newest copy into the %TEMP% folder this rig leaves behind
+#     (T87). Printing it before and after makes that visible in this output;
 #   - leaves the window up, visible and not minimised, and leaves the copied
 #     folder on disk, so a later check can photograph the window and read the
 #     same log. The host is a WinExe and starts its sidecar with a hidden
@@ -54,6 +60,7 @@
 #   powershell -NoProfile -File scripts/portable-launch.ps1 -Exe <path>
 #   powershell -NoProfile -File scripts/portable-launch.ps1 -Exe <path> -Count 2
 #   powershell -NoProfile -File scripts/portable-launch.ps1 -Exe <path> -CdpPort 9300 -Count 3 -WaitSec 120
+#   powershell -NoProfile -File scripts/portable-launch.ps1 -Restore
 #
 # Switches:
 #   -Exe <path>    The packaged exe to copy. Default: the newest
@@ -64,6 +71,18 @@
 #                  port is already listening, so two windows are never told
 #                  apart by a port another process owns.
 #   -WaitSec <n>   Seconds to wait for each copy's PORT line. Default 60.
+#   -Restore       Point HKCU\Software\Classes\watchparty\shell\open\command
+#                  back at the developer host - the newest WatchParty.Host.exe
+#                  under host\WatchParty.Host\bin\Debug\ - or, when there is no
+#                  such exe, remove the HKCU\Software\Classes\watchparty tree.
+#                  It prints which of the two it did and the value written, and
+#                  touches no other key. Given alone it launches nothing and
+#                  needs no -Exe, which is how it is used after the rig: run it
+#                  once the copies have registered, so the scheme does not keep
+#                  pointing into a %TEMP% folder that a later cleanup removes.
+#                  Given together with -Exe or -Count it runs after those copies
+#                  are up, because they must register first. It never changes
+#                  what this rig launches or the environment it passes.
 #
 # Exit code: 0 only when every copy logged a PORT; otherwise one line on stderr
 # and 1. Every line printed is ASCII (AGENTS.md rule 10).
@@ -77,7 +96,9 @@ param(
   [int]$CdpPort = 0,
 
   [ValidateRange(5, 900)]
-  [int]$WaitSec = 60
+  [int]$WaitSec = 60,
+
+  [switch]$Restore
 )
 
 Set-StrictMode -Version Latest
@@ -104,6 +125,74 @@ $wmiStartup = [wmiclass]'Win32_ProcessStartup'
 function Stop-Rig([string]$Message) {
   [Console]::Error.WriteLine("portable-launch: $Message")
   exit 1
+}
+
+# --- the invite scheme's registration --------------------------------------
+# The app writes this one key on every start, to its own
+# Application.ExecutablePath (ProtocolRegistration.cs:23,34, MainForm.cs:258).
+# The value is the command Windows runs for a clicked watchparty:// link, so a
+# key left pointing into a %TEMP% folder that is later removed makes that click
+# do nothing at all (measured 2026-11-23, T87). -Restore is the repair; the
+# before/after lines below are what shows a copy stole it.
+$schemeKey = 'HKCU:\Software\Classes\watchparty'
+$registrationKey = Join-Path $schemeKey 'shell\open\command'
+
+function Get-RegistrationValue {
+  try {
+    $item = Get-ItemProperty -LiteralPath $registrationKey -Name '(default)' -ErrorAction Stop
+    $value = $item.'(default)'
+    if ($null -eq $value -or "$value" -eq '') { return $null }
+    return [string]$value
+  }
+  catch {
+    return $null
+  }
+}
+
+function Format-Registration($Value) {
+  if ($Value) { return [string]$Value }
+  return 'none'
+}
+
+# -Restore touches HKCU\Software\Classes\watchparty and nothing else: either the
+# command value of this scheme, or (when there is no developer host to point at)
+# that one tree. It never launches a copy.
+function Invoke-Restore {
+  $devRoot = Join-Path (Split-Path -Parent $PSScriptRoot) 'host\WatchParty.Host\bin\Debug'
+  $devHost = $null
+  if (Test-Path -LiteralPath $devRoot) {
+    $devHost = Get-ChildItem -Path $devRoot -Filter 'WatchParty.Host.exe' -File -Recurse -ErrorAction SilentlyContinue |
+      Sort-Object LastWriteTime -Descending | Select-Object -First 1
+  }
+
+  if ($devHost) {
+    # The same shape the app itself writes: described, marked as a protocol, and
+    # a quoted exe followed by "%1" (ProtocolRegistration.CommandFor).
+    $command = '"{0}" "%1"' -f $devHost.FullName
+    New-Item -Path $schemeKey -Force | Out-Null
+    Set-ItemProperty -Path $schemeKey -Name '(default)' -Value 'URL:Watch Party invite link'
+    New-ItemProperty -Path $schemeKey -Name 'URL Protocol' -Value '' -PropertyType String -Force | Out-Null
+    New-Item -Path $registrationKey -Force | Out-Null
+    Set-ItemProperty -Path $registrationKey -Name '(default)' -Value $command
+    Write-Output ("registration: restored to the developer host: {0}" -f $command)
+    Write-Output ("registration: read back: {0}" -f (Format-Registration (Get-RegistrationValue)))
+    return
+  }
+
+  if (Test-Path -LiteralPath $schemeKey) {
+    Remove-Item -LiteralPath $schemeKey -Recurse -Force
+    Write-Output ("registration: removed HKCU\Software\Classes\watchparty (no WatchParty.Host.exe under {0})" -f $devRoot)
+  }
+  else {
+    Write-Output ("registration: nothing to remove: HKCU\Software\Classes\watchparty was already absent (no WatchParty.Host.exe under {0})" -f $devRoot)
+  }
+}
+
+# Alone (-Exe and -Count both unbound) -Restore is the whole run: no exe is
+# looked for, nothing is copied, nothing is launched.
+if ($Restore -and -not ($PSBoundParameters.ContainsKey('Exe') -or $PSBoundParameters.ContainsKey('Count'))) {
+  Invoke-Restore
+  exit 0
 }
 
 # --- the exe ---------------------------------------------------------------
@@ -198,6 +287,8 @@ for ($i = 0; $i -lt $Count; $i++) {
   }
   $copyEnv += ('WATCHPARTY_CDP_PORT={0}' -f $cdpPorts[$i])
 
+  $registrationBefore = Get-RegistrationValue
+
   # Created by the process service, not by this script (T46b): the copy runs
   # with $copyEnv and none of the rig's handles, so a caller that captured this
   # script's output gets it back as soon as the script exits, window or no
@@ -250,6 +341,15 @@ for ($i = 0; $i -lt $Count; $i++) {
     Start-Sleep -Milliseconds 250
   }
 
+  # The app has registered by the time it logs its PORT; if the value has not
+  # moved yet, give it a moment rather than printing a half-truth.
+  $registrationAfter = Get-RegistrationValue
+  $regDeadline = (Get-Date).AddSeconds(5)
+  while ($registrationAfter -eq $registrationBefore -and (Get-Date) -lt $regDeadline -and -not $proc.HasExited) {
+    Start-Sleep -Milliseconds 250
+    $registrationAfter = Get-RegistrationValue
+  }
+
   # Visible, not minimised: a later check photographs this window (manual S7).
   $handle = [IntPtr]::Zero
   for ($wait = 0; $wait -lt 40 -and -not $proc.HasExited; $wait++) {
@@ -278,6 +378,7 @@ for ($i = 0; $i -lt $Count; $i++) {
   Write-Output ("  exe:            {0}" -f $copyExe)
   Write-Output ("  folder:         {0}" -f $folder)
   Write-Output ("  pid:            {0}" -f $proc.Id)
+  Write-Output ("  registration:   before={0} after={1}" -f (Format-Registration $registrationBefore), (Format-Registration $registrationAfter))
   Write-Output ("  cdp port:       {0} (Debug host only; the sidecar picks its own)" -f $cdpPorts[$i])
   if ($log) {
     Write-Output ("  log:            {0}" -f $log)
@@ -328,6 +429,13 @@ for ($i = 0; $i -lt $Count; $i++) {
 $duplicate = $results | Group-Object Port | Where-Object { $_.Count -gt 1 }
 if ($duplicate) {
   Stop-Rig ("two copies reported the same sidecar PORT {0}: they are sharing one room process" -f $duplicate[0].Name)
+}
+
+# After the copies, never before: each one rewrites the key as it starts, so a
+# restore done first would be overwritten by the copy that launched after it.
+if ($Restore) {
+  Write-Output ''
+  Invoke-Restore
 }
 
 Write-Output ''

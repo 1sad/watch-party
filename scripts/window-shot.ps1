@@ -21,9 +21,13 @@
 # capture, because a fully occluded window can hand back a frame painted seconds
 # ago (03d read a clock 4.3 s behind the shot); it prints every rectangle it
 # used and leaves the windows where it put them — it never moves one back.
+# -MaxHeight <px> is for a short screen: a stack that does not fit is shrunk to
+# the space available before it is captured, in this process's physical pixels,
+# because a caller's own SetWindowPos writes logical ones and its "shrink until
+# it fits" loop never ends at 125% scaling (T88). -MaxHeight needs -Place.
 #
 #   powershell -NoProfile -File scripts/window-shot.ps1 <file.png> [title] [-Process <name>]
-#   powershell -NoProfile -File scripts/window-shot.ps1 <file.png> [-Pid <n>] [-Pids <n,n>] [-Place]
+#   powershell -NoProfile -File scripts/window-shot.ps1 <file.png> [-Pid <n>] [-Pids <n,n>] [-Place] [-MaxHeight <px>]
 #
 # With no arguments beyond the path it looks for the app's own window. A title
 # is a case-insensitive substring; -Process matches the owning process name; a
@@ -53,13 +57,22 @@ param(
   [string[]]$Pids,
 
   # Move the named windows to separate rectangles before capturing them.
-  [switch]$Place
+  [switch]$Place,
+
+  # Fit a short screen: shrink the windows being stacked until the stack fits
+  # this many physical pixels (the screen's own height when it is shorter).
+  # Physical, because the DPI declaration above makes every rectangle in this
+  # process physical. The app's own window will not go below 420px tall (its
+  # MinimumSize, measured T89), so two of them plus the gaps do not fit a
+  # 1080px screen before any shrinking (T88).
+  [ValidateRange(120, 20000)]
+  [int]$MaxHeight = 0
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$usage = 'usage: powershell -NoProfile -File scripts/window-shot.ps1 <file.png> [title] [-Process <name>] [-Pid <n>] [-Pids <n,n>] [-Place]'
+$usage = 'usage: powershell -NoProfile -File scripts/window-shot.ps1 <file.png> [title] [-Process <name>] [-Pid <n>] [-Pids <n,n>] [-Place] [-MaxHeight <px>]'
 
 function Fail([string]$message, [int]$code = 1) {
   [Console]::Error.WriteLine("watch-party: $message")
@@ -107,6 +120,12 @@ public static class WindowShot
 
     [DllImport("user32.dll")]
     public static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
+
+    [DllImport("user32.dll")]
+    public static extern bool IsZoomed(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindowAsync(IntPtr hwnd, int command);
 
     [DllImport("user32.dll")]
     public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
@@ -171,6 +190,17 @@ public static class WindowShot
     // Physical pixels, because the DPI declaration above has already happened.
     public static int ScreenWidth() { return GetSystemMetrics(0); }
     public static int ScreenHeight() { return GetSystemMetrics(1); }
+
+    // Size and position, in physical pixels too: SWP_NOZORDER leaves the
+    // z-order alone, SWP_NOACTIVATE does not steal the focus. A maximised
+    // window ignores a new size, so it is restored first - a shorter window for
+    // the picture is a resize, not putting a window back where it was.
+    // SW_SHOWNOACTIVATE (4) restores it without bringing it to the front.
+    public static bool SetRect(IntPtr hwnd, int x, int y, int cx, int cy)
+    {
+        if (IsZoomed(hwnd)) { ShowWindowAsync(hwnd, 4); }
+        return SetWindowPos(hwnd, IntPtr.Zero, x, y, cx, cy, 0x0014);
+    }
 }
 '@
 
@@ -263,6 +293,10 @@ foreach ($t in $targets) {
   }
 }
 
+if ($MaxHeight -gt 0 -and -not $Place) {
+  Fail '-MaxHeight needs -Place: it sizes the stack this tool is about to make; nothing was moved'
+}
+
 # -Place: separate the named windows so none of them is the one underneath.
 # Nothing is moved at all if the stack cannot fit, and nothing is ever moved back.
 if ($Place) {
@@ -277,8 +311,52 @@ if ($Place) {
   $stackHeight = $gap * ($sizes.Count - 1)
   foreach ($s in $sizes) { $stackHeight += $s.Height }
   $screenHeight = [WindowShot]::ScreenHeight()
-  if ($stackHeight -gt $screenHeight) {
-    Fail ("$($sizes.Count) stacked windows need ${stackHeight}px and the screen is ${screenHeight}px tall; nothing was moved")
+
+  if ($MaxHeight -le 0) {
+    if ($stackHeight -gt $screenHeight) {
+      Fail ("$($sizes.Count) stacked windows need ${stackHeight}px and the screen is ${screenHeight}px tall; nothing was moved. Add -MaxHeight $screenHeight to shrink them to fit.")
+    }
+  }
+  else {
+    # The space this picture may use: the caller's cap, or the screen when that
+    # is shorter. Shrinking only happens when the stack needs it, so a stack
+    # that already fits is left the size the app chose.
+    $available = [Math]::Min($MaxHeight, $screenHeight)
+    if ($stackHeight -gt $available) {
+      $before = ($sizes | ForEach-Object { $_.Height }) -join ','
+      $perWindow = [int][Math]::Floor(($available - $gap * ($sizes.Count - 1)) / $sizes.Count)
+      if ($perWindow -lt 120) {
+        Fail ("$($sizes.Count) stacked windows cannot be made to fit ${available}px: each would have to be ${perWindow}px tall with ${gap}px gaps; nothing was moved")
+      }
+      for ($i = 0; $i -lt $targets.Count; $i++) {
+        $t = $targets[$i]
+        $r = New-Object WindowShot+RECT
+        if (-not [WindowShot]::GetWindowRect($t.Handle, [ref]$r)) { Fail "could not read the rectangle of pid $($t.Pid)" }
+        if (-not [WindowShot]::SetRect($t.Handle, $r.Left, $r.Top, $sizes[$i].Width, $perWindow)) {
+          Fail "could not size pid $($t.Pid) to $($sizes[$i].Width)x${perWindow}; the windows already resized stay that size"
+        }
+      }
+      # The size Windows accepted is what the stack is measured with: a window
+      # with a larger minimum refuses to become that short.
+      Start-Sleep -Milliseconds 400
+      $sizes = @()
+      foreach ($t in $targets) {
+        $r = New-Object WindowShot+RECT
+        if (-not [WindowShot]::GetWindowRect($t.Handle, [ref]$r)) { Fail "could not read the rectangle of pid $($t.Pid)" }
+        $sizes += [pscustomobject]@{ Width = $r.Right - $r.Left; Height = $r.Bottom - $r.Top }
+      }
+      $stackHeight = $gap * ($sizes.Count - 1)
+      foreach ($s in $sizes) { $stackHeight += $s.Height }
+      $after = ($sizes | ForEach-Object { $_.Height }) -join ','
+      if ($stackHeight -gt $available) {
+        Fail ("shrinking requested ${perWindow}px per window left heights ${after}: the stack is still ${stackHeight}px against ${available}px available (a window will not go below its own minimum); the windows resized stay that size and nothing was put back")
+      }
+      "max height ${MaxHeight}px: shrunk $($sizes.Count) windows from ${before} to ${after} so the stack fits ${stackHeight}px of ${available}px (screen ${screenHeight}px)"
+    }
+    else {
+      $heights = ($sizes | ForEach-Object { $_.Height }) -join ','
+      "max height ${MaxHeight}px: no shrink needed, heights ${heights} make a stack of ${stackHeight}px within ${available}px (screen ${screenHeight}px)"
+    }
   }
 
   $x = 0
