@@ -187,6 +187,22 @@ it last. A window restored from the taskbar draws again, but its page stays scro
 top, this page puts the invite panel where the player should be (measured 2026-11-22, ticket 49), so scroll each
 window to its player before the shot.
 
+### Pictures at two window sizes
+
+This phase's acceptance is a picture at a size nobody has to set by hand. `-Width`/`-Height` set a window's outer size
+and `-Maximise` maximises it before the shot, both in physical pixels at the current scaling - the same unit the printed
+rectangle reports - and both for one window only:
+
+```
+powershell -NoProfile -File scripts/window-shot.ps1 .scratch/<phase>/evidence/narrow.png -Pid <n> -Width 900 -Height 700
+powershell -NoProfile -File scripts/window-shot.ps1 .scratch/<phase>/evidence/max.png -Pid <n> -Maximise
+```
+
+Each prints the rectangle Windows accepted beside the PNG's own size, after the window settles; a size the window refuses
+(its minimum wins) still takes the picture but exits 3, so a wrong-size picture cannot pass for the size that was asked.
+Both are refused with `-Place` or with two pids: size one window at a time, then photograph the pair with `-Place`. A
+phase's acceptance pictures live under `.scratch/<phase>/evidence/`, named for the ticket that needed them (ticket 91).
+
 ### The rig for a live check
 
 These traps have each cost a re-run, on 06b, on 07b, on 09b and on 21b. Do these before a live check, not after it fails.
