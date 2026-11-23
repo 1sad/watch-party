@@ -233,8 +233,10 @@
    * door and on the room's own screen. It is window-local and does not cross the
    * wire, and it is not `enteredRoom` below: that flag keeps the boot poll's one
    * connection from being made twice, and both are meant to exist (ADR-047).
-   * T95 sets it from **Start a room** only - a guest's first `welcome` frame is
-   * ticket 110 - and ticket 98 resets it when the room ends.
+   * T95 sets it from **Start a room** (the host's own room), and T110 sets it
+   * from the first `welcome` in a room that is not this window's own - a guest
+   * is in the room as soon as the room says so, never on the attempt. Ticket 98
+   * resets it when the room ends.
    */
   let entered = $state(false)
   /** ADR-047: the one screen on show, decided by `ui/room-view.ts`'s `screenFor`. */
@@ -518,6 +520,15 @@
       chat = [...frame.chatTail]
       sentence = null
       followNewest(true)
+      // T110 / ADR-047: a window that joined someone else's room has entered it
+      // on this frame - the one carrying this page's own id - because the room
+      // was live from the host's boot and there is no screen between the
+      // connect and the room's answer. The attempt sets nothing: a link that
+      // never gets a `welcome` leaves the guest on the first screen, where the
+      // join box already says why (`UNREACHABLE_ROOM`). The host's own window
+      // is `inOwnRoom` here and stays on the first screen until its own press
+      // (T95), and a host that joins another room by its box is a guest too.
+      if (!inOwnRoom) entered = true
       // The one loop starts once this connection has a member identity to beat for.
       startPing()
     } else if (frame.type === 'state') {
