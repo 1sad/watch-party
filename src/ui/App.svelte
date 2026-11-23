@@ -120,6 +120,8 @@
   let fromLink = $state(false)
   let unreachable = $state(false)
   let copied = $state(false)
+  /** T97: the invite bar's disclosure - the raw address/code fallback, opened one click in. */
+  let inviteOpen = $state(false)
   let timer: ReturnType<typeof setTimeout> | undefined
 
   // The room on screen is only ever what the last frame said (T3b item 4):
@@ -1776,6 +1778,58 @@
         {/if}
       </div>
 
+      <!-- T97 / ADR-047: the invite bar is the chat column's top row, not a
+           second panel: the room's code, the host's link and one Copy, with the
+           raw fallback one click inside. A guest's bar has no link to offer, so
+           it names the code and says the link is the host's. -->
+      <section class="invite-bar" data-invite>
+        <div class="invite-row">
+          <span class="invite-code">Room <strong data-invite-code>{roomCode ?? payload.roomCode}</strong></span>
+
+          {#if payload.invite !== null}
+            <span class="invite-link" data-invite-link title={payload.invite.primary}>{payload.invite.primary}</span>
+            <button type="button" class="invite-copy" data-invite-copy onclick={() => void copy()}>
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+            <button
+              type="button"
+              class="invite-more"
+              aria-expanded={inviteOpen}
+              aria-controls="invite-fallback"
+              onclick={() => (inviteOpen = !inviteOpen)}
+            >
+              Raw address
+            </button>
+          {:else if inOwnRoom}
+            {#if payload.status === 'pending'}
+              <span class="invite-note">Asking your router to open a port…</span>
+            {:else if payload.result !== null}
+              <span class="invite-note">{payload.result.sentence}</span>
+              {#if payload.status === 'ready'}
+                <button type="button" class="invite-more" onclick={() => void retry()}>Try again</button>
+              {/if}
+            {/if}
+          {:else}
+            <span class="invite-note" data-invite-note>The invite link is the host's to share.</span>
+          {/if}
+        </div>
+
+        {#if inviteOpen && payload.invite !== null}
+          <div class="invite-fallback" id="invite-fallback">
+            <p class="invite-raw" data-invite-raw>{payload.invite.raw}</p>
+            {#if payload.invite.lanRaw !== null && payload.invite.lanRaw !== payload.invite.raw}
+              <p class="invite-raw">{payload.invite.lanRaw}</p>
+            {/if}
+            {#if payload.result !== null && payload.result.kind !== 'ok'}
+              <p class="invite-reason">{payload.result.sentence}</p>
+              {#if payload.status === 'ready'}
+                <button type="button" class="secondary" onclick={() => void retry()}>Try again</button>
+              {/if}
+            {/if}
+          </div>
+        {/if}
+      </section>
+
       {#if canPick}
         <section class="pick">
           <h2>File mode</h2>
@@ -1923,9 +1977,10 @@
   .watch {
     display: grid;
     grid-template-columns: minmax(0, 1fr) var(--chat-column, 380px);
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
     grid-template-areas:
-      'picture bar'
+      'picture invite'
+      'picture pick'
       'picture body';
     gap: 0.75rem 1rem;
     flex: 1 1 auto;
@@ -1944,7 +1999,7 @@
      the chat (ADR-047's bar) rather than over the picture - the picture's height
      is bounded, and a heading in that column would come out of the bound. */
   .watch .pick {
-    grid-area: bar;
+    grid-area: pick;
     margin: 0;
     min-width: 0;
   }
@@ -1952,6 +2007,81 @@
   .watch .pick h2 {
     margin: 0 0 0.4rem;
     font-size: 0.95rem;
+  }
+
+  /* T97 / ADR-047: the invite bar is one row of the chat column - the code, the
+     link, one Copy and the disclosure. Short lines and ellipsis keep it to a
+     row at the 380 px column; the full link stays in the DOM and in `title`. */
+  .invite-bar {
+    grid-area: invite;
+    min-width: 0;
+    padding: 0.3rem 0.5rem;
+    border: 1px solid #2c2d36;
+    border-radius: 8px;
+    background: #1a1b22;
+    font-size: 0.8rem;
+  }
+
+  .invite-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
+  .invite-code {
+    flex: 0 0 auto;
+    color: #9a9aab;
+    white-space: nowrap;
+  }
+
+  .invite-code strong {
+    font-family: Consolas, monospace;
+    letter-spacing: 0.12em;
+    color: #e9e9ef;
+  }
+
+  .invite-link {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    font-family: Consolas, monospace;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: #7fd0a5;
+  }
+
+  .invite-copy,
+  .invite-more {
+    flex: 0 0 auto;
+    padding: 0.2rem 0.55rem;
+    font-size: 0.8rem;
+  }
+
+  .invite-note {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: #9a9aab;
+  }
+
+  .invite-fallback {
+    margin-top: 0.35rem;
+    padding-top: 0.35rem;
+    border-top: 1px solid #2c2d36;
+  }
+
+  .invite-raw {
+    margin: 0 0 0.3rem;
+    font-family: Consolas, monospace;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+    color: #e9e9ef;
+  }
+
+  .invite-reason {
+    margin: 0 0 0.3rem;
+    line-height: 1.4;
+    color: #ffb3a7;
   }
 
   /* ADR-047: the column moves under the picture and the picture is bounded to
@@ -1971,6 +2101,12 @@
   }
 
   :global(html[data-layout='narrow']) .watch .pick {
+    flex: 0 0 auto;
+  }
+
+  /* T97: the bar is the chat's first row in narrow too, so it stays between the
+     picture and the messages and never floats over either. */
+  :global(html[data-layout='narrow']) .invite-bar {
     flex: 0 0 auto;
   }
 
