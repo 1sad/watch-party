@@ -97,6 +97,24 @@ public sealed class MainForm : Form
     private bool _closing;
 
     /// <summary>
+    /// T113, ADR-047 ("room end"): how long a closing window waits for the
+    /// sidecar's own <c>[room] over</c> line before it closes anyway. A person
+    /// shutting a window must not wait on a goodbye.
+    /// </summary>
+    private const int RoomGoodbyeBudgetMs = 1_500;
+    /// <summary>
+    /// T113: the sidecar prints this line itself once it has broadcast its one
+    /// <c>roomOver</c> frame and closed the guest sockets. It is the signal that
+    /// the room has spoken, and the sidecar may stop after it - never before.
+    /// </summary>
+    private readonly TaskCompletionSource<bool> _roomOverSpoken =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    /// <summary>The goodbye is in flight: a second close click waits for it.</summary>
+    private bool _goodbyeStarted;
+    /// <summary>The goodbye finished and the close this class asked for is the next one.</summary>
+    private bool _goodbyeDone;
+
+    /// <summary>
     /// T94: the layout last published to the page (<c>wide</c> or <c>narrow</c>),
     /// so a resize of one pixel after another publishes nothing; null until the
     /// page has been told once.
@@ -1500,6 +1518,11 @@ public sealed class MainForm : Form
         {
             if (line.Data is null) return;
             HostLog.Write($"sidecar: {line.Data}");
+            // T113: the room said its own last word; the window may now close.
+            if (line.Data.Contains("[room] over", StringComparison.Ordinal))
+            {
+                _roomOverSpoken.TrySetResult(true);
+            }
             if (PortLine.TryParse(line.Data, out int port))
             {
                 BeginInvoke(() => OnPortParsed(port));
@@ -1991,20 +2014,85 @@ public sealed class MainForm : Form
     /// T93: remember the rectangle and state the window is closed at. A maximised
     /// close saves <see cref="Form.RestoreBounds"/> - the normal rectangle it must
     /// come back from - and the fact it was maximised. One ASCII log line says
-    /// what was saved; nothing here can refuse the close.
+    /// what was saved; nothing here can refuse the close. T113: when the window
+    /// holds a room, the close is held back by one bounded goodbye instead, so the
+    /// sidecar can say the room ended before it stops (ADR-047).
     /// </summary>
     private void OnFormClosing(object? sender, FormClosingEventArgs e)
     {
-        if (_profileFolder is null) return;
+        // The close this class asked for once the goodbye finished.
+        if (_goodbyeDone) return;
 
-        Rectangle rectangle = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
-        if (rectangle.Width <= 0 || rectangle.Height <= 0) rectangle = Bounds;
-        bool maximised = WindowState == FormWindowState.Maximized;
-        string file = WindowPlacement.PathIn(_profileFolder);
-        WindowPlacement.Write(file,
-            new WindowPlacement.Saved(rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, maximised));
-        HostLog.Write($"window: saved {rectangle.Width}x{rectangle.Height} "
-            + $"maximised={maximised.ToString().ToLowerInvariant()} at {file}");
+        // A second click while the room is saying goodbye: wait for the close the
+        // goodbye itself makes, rather than cutting it short.
+        if (_goodbyeStarted)
+        {
+            e.Cancel = true;
+            return;
+        }
+
+        if (_profileFolder is not null)
+        {
+            Rectangle rectangle = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+            if (rectangle.Width <= 0 || rectangle.Height <= 0) rectangle = Bounds;
+            bool maximised = WindowState == FormWindowState.Maximized;
+            string file = WindowPlacement.PathIn(_profileFolder);
+            WindowPlacement.Write(file,
+                new WindowPlacement.Saved(rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, maximised));
+            HostLog.Write($"window: saved {rectangle.Width}x{rectangle.Height} "
+                + $"maximised={maximised.ToString().ToLowerInvariant()} at {file}");
+        }
+
+        // T113, ADR-047 ("room end"): the evening ends in the room's own words, so
+        // the page's socket closes while the sidecar still runs and the sidecar
+        // gets to broadcast its one `roomOver` frame before it stops. A person
+        // closing the window takes this route: a click on the close box arrives as
+        // `UserClosing`, and a posted WM_CLOSE as `TaskManagerClosing` (measured -
+        // `Process.CloseMainWindow()` reports that one). Windows shutting the
+        // session down is on a clock and gets no goodbye, and a window with no room
+        // on screen (no port yet, or the fault path, where the sidecar is already
+        // gone) simply closes.
+        HostLog.Write($"closing: reason={e.CloseReason} appPort={(_appPort?.ToString() ?? "none")} "
+            + $"sidecar={(_sidecar is null ? "none" : _sidecar.HasExited ? "exited" : "running")} "
+            + $"engine={(_page.CoreWebView2 is not null).ToString().ToLowerInvariant()}");
+        if (e.CloseReason is CloseReason.WindowsShutDown or CloseReason.None) return;
+        if (_appPort is null || _sidecar is null || _sidecar.HasExited || _page.CoreWebView2 is null) return;
+
+        e.Cancel = true;
+        _goodbyeStarted = true;
+        HostLog.Write("closing: window closing; the room speaks before the sidecar stops");
+        _ = EndRoomThenCloseAsync();
+    }
+
+    /// <summary>
+    /// T113, ADR-047 ("room end"): unload the room's page while its sidecar is
+    /// still running, so the owner's socket closes, the sidecar broadcasts its one
+    /// <c>roomOver</c> frame to every guest and closes their sockets, and only then
+    /// does the form close (and, in <see cref="OnFormClosed"/>, the sidecar stop).
+    /// The wait is bounded by <see cref="RoomGoodbyeBudgetMs"/>; a goodbye that
+    /// never arrives is a log line, not a hung window.
+    /// </summary>
+    private async Task EndRoomThenCloseAsync()
+    {
+        try
+        {
+            // about:blank is what the app view's navigation lock allows besides the
+            // sidecar's own origin, and the unload is what closes the socket.
+            _page.CoreWebView2?.Navigate("about:blank");
+            await Task.WhenAny(_roomOverSpoken.Task, Task.Delay(RoomGoodbyeBudgetMs));
+            HostLog.Write(_roomOverSpoken.Task.IsCompleted
+                ? "closing: the room said its goodbye"
+                : $"closing: the room said no goodbye inside {RoomGoodbyeBudgetMs} ms");
+        }
+        catch (Exception error)
+        {
+            HostLog.Write($"closing: the room could not say goodbye: {error.Message}");
+        }
+        finally
+        {
+            _goodbyeDone = true;
+            if (!IsDisposed && IsHandleCreated) BeginInvoke(Close);
+        }
     }
 
     private void OnFormClosed(object? sender, FormClosedEventArgs e)
