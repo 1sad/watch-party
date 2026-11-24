@@ -37,8 +37,8 @@ scheme, a headless machine, someone on an OS where registration failed) — the 
 the fallback rather than the instruction.
 
 **Choose the page.** Whoever holds control pastes a page address — or simply browses inside the app: search, pick a
-title, pick an episode. The change is **staged for two seconds** (ADR-032): the initiator sees their new page at
-once with a *"moving everyone in 2… — Cancel"* countdown, and the other apps do not move until it commits. A
+title, pick an episode. The change is **staged for five seconds** (ADR-032): the initiator sees their new page at
+once with a *"moving everyone in 5 s — Cancel"* countdown, and the other apps do not move until it commits. A
 misclick therefore costs nothing and is invisible to everyone else. The room stores the page address, not the video
 address. **Which mirror, which dub, and which subtitles is nobody else's business** (ADR-030): those stay inside
 each member's own window because each app has its own browser.
@@ -112,7 +112,7 @@ unaffected (ADR-024, §4.4).
 | R18 | Chat is available and identical in both front doors (app window and add-on overlay) | send from the app, read in the overlay, and vice versa |
 | R19 | Chat input never triggers the page's keyboard shortcuts, and the overlay stays visible in fullscreen | type a space on a site where space = pause; enter fullscreen |
 | R20 | The app's browser window blocks ad and tracker requests by default | load a page with known ad hosts; no ad-network request completes |
-| R21 | Setting a page in the room navigates every other app to it - by the address bar **or by browsing inside the app** (search, a title, an episode thumbnail), by a member who holds control | the controller sets a page from the bar, then picks an episode inside the app's own window; both apps land on it; a non-controller's pick is put back |
+| R21 | Setting a page in the room navigates every other app to it - by the address bar **or by browsing inside the app** (search, a title, an episode thumbnail), by a member who holds control. The address is stored as pasted, query and fragment included (ADR-052) | the controller sets a page from the bar, then picks an episode inside the app's own window; both apps land on it - a `?ep=2` address lands them on episode 2; a non-controller's pick is put back |
 | R22 | In website mode the room survives the owner leaving, with no interruption to anyone's film | close the owner's app mid-film; others keep playing, and control moves with the room |
 | R23 | A member behind an ordinary home router can host with no settings and no account | fresh install on a home network; the link works from outside |
 | R24 | Anyone granted control may change the page, the film, play/pause/seek — not only the owner | a promoted member pauses, seeks, and changes the page |
@@ -240,7 +240,8 @@ that held a file may take a page (ADR-038, amended 2026-11-22): the page commit 
 4. `rtt` is measured by the client from its own ping every 5 s; the clock `offset` is computed by the client and
    never by the authority. (Earlier drafts claimed the server held each member's offset; a ping alone cannot
    yield it.)
-5. The room never stores a tokenised or private URL; `page` is stored with its query string stripped (§10.3).
+5. The room stores the page address **as pasted** — query string and fragment included (§10.3, ADR-052) — so a link's
+   private part is shared with the room's members, which the owner accepted on 2026-11-24.
 6. Authority-bearing mutations carry the authority `epoch`; a stale epoch is rejected. Two apps can never both
    believe they hold authority.
 7. `timelineOffset` is per member and never mutates room playback (§4.5).
@@ -432,7 +433,7 @@ as **member → authority** and **authority → members** so it survives that ch
 | m→a | `rename` | `{name}` | anyone; null clears back to `anonymous` |
 | m→a | `setPage` | `{page, stageMs, epoch}` | controller only (ADR-030); staged, not applied (ADR-032) |
 | m→a | `cancelPage` | `{epoch}` | cancels the sender's own pending change; nobody else ever hears of it |
-| a→m | `pageCommitted` | `{page, by, at}` | sent when the 2 s window expires; every app navigates now; the room's playback resets to position 0, paused — a new page is a new film |
+| a→m | `pageCommitted` | `{page, by, at}` | sent when the 5 s window expires; every app navigates now; the room's playback resets to position 0, paused — a new page is a new film |
 | m→a | `grantControl` | `{memberId, allow, epoch}` | controller or owner; roster shows the result; survives reconnect (ADR-033) |
 | m→a | `claimControl` | `{}` | allowed only when no online member holds control; first to arrive wins |
 | m→a | `setMedia` | `{media, epoch}` | file mode; owner only, since they serve the bytes |
@@ -665,8 +666,9 @@ problems ADR-022 buys us out of by shipping an app instead.
 ### 10.3 Page following
 
 `room.page` is set by a member who holds control (R21, R33); on join or on change, the add-on navigates the tab if it
-isn't already there. The address is shared with the whole room, so: strip the query string, never store a tokenised
-link, and keep any secret in the fragment. The app does the same thing natively.
+isn't already there. The address is shared with the whole room and is stored **exactly as pasted**, query string and
+fragment included (ADR-052; the owner's answer, 2026-11-24), so an episode link that lives in the query takes everyone
+to that episode - and a tokenised link is therefore copied to the room's members. The app does the same thing natively.
 
 ### 10.5 Chrome and Firefox from one codebase
 

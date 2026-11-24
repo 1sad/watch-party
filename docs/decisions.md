@@ -728,6 +728,10 @@ blocking.
 > until the window ends. On Cancel it navigates back and realigns to the committed room; on commit it becomes the
 > page, and the room's playback resets to position 0, paused (§5, `pageCommitted`).
 
+> **Amended 2026-11-24 (phase 6, R31):** the stage is **five seconds**, not two — the owner found two too short to
+> catch a misclick. The countdown, the Cancel and the commit order are unchanged. The title and the "Why" paragraph
+> keep the original number because that is the argument they were written with.
+
 **Decision.** A room action from a controller (change page, episode, or film) does **not** reach anyone immediately.
 The authority holds it as pending for **5 s** (two seconds until 2026-11-24, phase 6: the owner found two too short to
 catch a misclick; the countdown and Cancel are unchanged), showing the initiator a countdown with **Cancel**. If they cancel
@@ -1436,6 +1440,9 @@ a row on a 640 px-wide window, which is why the bar's controls are one row and c
 > pick a title, pick an episode"), which ADR-038's two views made possible but never wired. It lives beside ADR-032
 > (staged changes) and ADR-030 (personal choices stay in the window).
 
+> **Amended 2026-11-24 (ADR-052):** Rejected (d) below - sharing the query string - is now the decision: the room
+> stores the pasted address's query and fragment. The rest of this ADR stands, including the loop protections.
+
 **Decision.** `room.page` is the address the room is on, and a site's **own** navigation is a page change like one
 typed into the address bar:
 
@@ -1620,5 +1627,33 @@ project already has (ADR-025).
 
 **Cost.** One page, one adapter and one URL parser; the address rule gains one exception; a video whose owner
 forbids embedding cannot be watched. No protocol change, no new dependency.
+
+## ADR-052 - A pasted page keeps its query and its fragment
+
+> **Amends ADR-048's Rejected (d), and `spec.md` §4.3 invariant 5, §10.3 and R21.** The owner answered on 2026-11-24
+> (phase 6, ticket 160): the whole pasted link is shared with the room.
+
+**Decision.** The page the room stores - the address every other window navigates to, and the address ADR-048's
+put-back restores - carries the pasted address's **query string and fragment**, exactly as sent. Scheme, host and path
+still name the page; the query is part of what the sender meant by it. Two addresses that differ only in their query are
+two different pages, and a committed change to one of them is a change.
+
+**Why.** The previous rule (§10.3, invariant 5) stripped the query so a tokenised or private link was never copied into
+the room. Ticket 160 measured what that costs: a pasted `…/probe-2.html?x=1` reached the pasting window, the room's
+stored page, the guest's window and the put-back all as `…/probe-2.html`, and every streaming site whose episode lives
+in the query lands five people on the front page. The owner's judgement is that a link shared with the four friends
+already in the room is a link they were meant to open; the "private" case the old rule guarded is the same case the
+evening's faults came from.
+
+**Rejected.** (a) Keep stripping the query - the fault this phase exists to fix. (b) Keep the query only in the
+initiator's window - the guest and the put-back would still lose it, and ADR-048 compares addresses, so the two halves
+would disagree. (c) Share a whitelist of known episode parameters - a list to maintain forever, wrong for the next
+site.
+
+**Cost.** A tokenised link is now copied into the room's state and shown in the chat's `Moved to …` line to everyone
+present. A site that rewrites its own query in a loop can no longer be told apart from a person choosing an episode
+inside the page, so the loop's two protections stand instead: the put-back is bounded and keyed on origin and path
+(ticket 161, ADR-050) rather than on the whole address, and the one site measured doing it - YouTube - now plays in the
+app's own player (ADR-051) instead of the followed site view.
 
 
