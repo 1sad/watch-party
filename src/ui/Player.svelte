@@ -611,32 +611,63 @@
   </div>
 
   {#if src !== null}
+    <!-- T155 / R49: the row is icons, not commands - play/pause, then the scrub
+         with a clock at its start, the time readout, the volume range and the
+         speaker. The buttons call exactly what the text buttons called, and each
+         keeps its label and a tooltip so the glyph never has to be guessed.
+         Row order: play, scrub, time, volume, mute. -->
     <div class="controls">
-      <button type="button" class="toggle" onclick={togglePlay}>
-        {playback.playing ? 'Pause' : 'Play'}
+      <button
+        type="button"
+        class="glyph toggle"
+        data-play
+        aria-label={playback.playing ? 'Pause' : 'Play'}
+        title={playback.playing ? 'Pause' : 'Play'}
+        onclick={togglePlay}
+      >
+        {#if playback.playing}
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+            <rect x="3.5" y="2.5" width="3.5" height="11" rx="0.5" fill="currentColor" />
+            <rect x="9" y="2.5" width="3.5" height="11" rx="0.5" fill="currentColor" />
+          </svg>
+        {:else}
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+            <path d="M4 2.5 13 8 4 13.5Z" fill="currentColor" />
+          </svg>
+        {/if}
       </button>
-      <input
-        type="range"
-        aria-label="Seek"
-        min="0"
-        max={duration}
-        step="0.01"
-        value={scrub}
-        oninput={onScrubInput}
-        onchange={onScrubChange}
-      />
+      <span class="seek">
+        <svg
+          class="time-glyph"
+          viewBox="0 0 16 16"
+          width="16"
+          height="16"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5" />
+          <path
+            d="M8 4.5V8l2.5 1.5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+          />
+        </svg>
+        <input
+          type="range"
+          aria-label="Seek"
+          min="0"
+          max={duration}
+          step="0.01"
+          value={scrub}
+          oninput={onScrubInput}
+          onchange={onScrubChange}
+        />
+      </span>
       <span class="time">{clockText(scrub)} / {clockText(duration)}</span>
       <!-- T106 / R41: the speaker and the volume slider are this window's own;
            neither sends a frame (ADR-030). -->
-      <button
-        type="button"
-        class="mute"
-        data-mute
-        aria-label={silent ? 'Unmute' : 'Mute'}
-        onclick={toggleMute}
-      >
-        {silent ? 'Unmute' : 'Mute'}
-      </button>
       <input
         type="range"
         class="volume"
@@ -648,6 +679,37 @@
         value={Math.round(volume * 100)}
         oninput={onVolumeInput}
       />
+      <button
+        type="button"
+        class="glyph mute"
+        data-mute
+        aria-label={silent ? 'Unmute' : 'Mute'}
+        title={silent ? 'Unmute' : 'Mute'}
+        onclick={toggleMute}
+      >
+        {#if silent}
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+            <path d="M2 6h2.5L8 3v10L4.5 10H2Z" fill="currentColor" />
+            <path
+              d="M10.5 6 14 9.5M14 6l-3.5 3.5"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+          </svg>
+        {:else}
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+            <path d="M2 6h2.5L8 3v10L4.5 10H2Z" fill="currentColor" />
+            <path
+              d="M10.2 5.6a3.4 3.4 0 0 1 0 4.8M12.2 3.6a6 6 0 0 1 0 8.8"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+            />
+          </svg>
+        {/if}
+      </button>
     </div>
   {/if}
 </section>
@@ -724,8 +786,13 @@
     margin-top: 0.5rem;
   }
 
-  .toggle {
-    min-width: 5rem;
+  /* T155: the scrub owns what the row leaves, and the clock sits at its start. */
+  .seek {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
   }
 
   input[type='range'] {
@@ -734,17 +801,51 @@
     accent-color: #3ec78a;
   }
 
+  .seek input[type='range'] {
+    width: 100%;
+  }
+
+  .time-glyph {
+    flex: 0 0 auto;
+    color: #9a9aab;
+  }
+
+  /* T155 / R49: a glyph button is a 16 px drawing in a small box; the words it
+     replaces were what took the timeline's width in a 380 px column. */
+  .glyph {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    color: #e9e9ef;
+    background: transparent;
+    border: 1px solid #3a3b46;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  .glyph:hover {
+    color: #3ec78a;
+    border-color: #3ec78a;
+  }
+
+  .glyph:focus-visible {
+    outline: 2px solid #3ec78a;
+    outline-offset: 2px;
+  }
+
+  .glyph svg {
+    display: block;
+  }
+
   .time {
     font-family: Consolas, monospace;
     font-size: 0.85rem;
     color: #9a9aab;
     white-space: nowrap;
-  }
-
-  /* T106: the speaker and its slider keep their space, while the seek bar above
-     takes what is left. */
-  .mute {
-    min-width: 4.5rem;
   }
 
   input[type='range'].volume {
