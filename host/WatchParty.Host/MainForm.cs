@@ -134,6 +134,12 @@ public sealed class MainForm : Form
     /// </summary>
     private string? _publishedPanel;
     /// <summary>
+    /// T121: which layout read is the newest. Reading the page's own width is a
+    /// round trip, so a resize can overtake the one before it; a read that is no
+    /// longer the newest publishes nothing and the newer one does the work.
+    /// </summary>
+    private int _layoutRead;
+    /// <summary>
     /// T107: the page-mode dock shape last logged (<c>wide</c> or <c>narrow</c>), so
     /// a resize inside one shape writes no second line and a shape change writes
     /// exactly one. Null when the window is not in page mode.
@@ -1904,6 +1910,15 @@ public sealed class MainForm : Form
     /// in CSS pixels, turned into the page's two layout names. One helper, so the
     /// dock and the published attribute can never disagree about which shape the
     /// window is in.
+    ///
+    /// T121: this is the copy the <em>dock</em> uses, and the fallback the
+    /// published attribute uses while the app view is the docked column. It is
+    /// not exact: the client width times 96/dpi is a whole number with its own
+    /// rounding while the page's viewport is the WebView2 view's width, and at a
+    /// fractional scaling the two are a pixel apart (measured 2026-11-24 on
+    /// 125%: outer 1142 is 900 CSS px on the page and 899 here). The page is
+    /// therefore asked for the number it actually sees - see
+    /// <see cref="ReadPageCssWidth"/> - whenever it fills the window.
     /// </summary>
     private string CurrentLayout()
     {
@@ -1915,6 +1930,33 @@ public sealed class MainForm : Form
         int dpi = DeviceDpi;
         int cssWidth = dpi > 0 ? (int)Math.Round(ClientSize.Width * 96.0 / dpi) : ClientSize.Width;
         return cssWidth >= WideLayoutMinCssWidth ? "wide" : "narrow";
+    }
+
+    /// <summary>
+    /// T121, ADR-047 ("the form's client width in CSS pixels ... which is what the
+    /// page sees as innerWidth"): the width the page actually has, asked from the
+    /// page - <c>window.innerWidth</c>, the same number a check reads. That is the
+    /// measurement ADR-047 names, and at a fractional scaling it is not always
+    /// what <see cref="CurrentLayout"/> derives from the client width. Only
+    /// meaningful while the app view fills the window: in page mode it is the
+    /// docked column, 380 px wide, and says nothing about the window. Null when
+    /// the answer cannot be read, so the caller keeps the client-width formula.
+    /// </summary>
+    private async Task<int?> ReadPageCssWidth()
+    {
+        if (_closing || _page.CoreWebView2 is null) return null;
+        try
+        {
+            // ExecuteScriptAsync hands back the value as JSON; innerWidth is
+            // always a whole number of CSS pixels, so the JSON is that number.
+            string raw = await _page.CoreWebView2.ExecuteScriptAsync("window.innerWidth");
+            return int.TryParse(raw, out int width) && width > 0 ? width : null;
+        }
+        catch (Exception error)
+        {
+            HostLog.Write($"layout: could not read the page's width: {error.Message}");
+            return null;
+        }
     }
 
     /// <summary>
@@ -1980,6 +2022,21 @@ public sealed class MainForm : Form
         if (_closing || _page.CoreWebView2 is null) return;
 
         string layout = CurrentLayout();
+        // T121: while the app view fills the window it *is* the page the threshold
+        // is about, so ask it for its own width instead of deriving one that can
+        // be a pixel low. In page mode the app view is the 380 px column and the
+        // formula stays - the column's width says nothing about the window, and
+        // (ADR-047, "the host's dock wins") the published panel is what the page
+        // draws there anyway.
+        int read = ++_layoutRead;
+        if (!_site.Visible)
+        {
+            int? viewport = await ReadPageCssWidth();
+            // A newer resize is already reading; it owns the attribute.
+            if (read != _layoutRead || _closing) return;
+            if (viewport is int width) layout = width >= WideLayoutMinCssWidth ? "wide" : "narrow";
+        }
+
         // The host's dock, not the width, decides the panel (ADR-047): a page-mode
         // window is the column at every width, so the page must not fall back to
         // its picture-and-chat layout because the window is narrow.
