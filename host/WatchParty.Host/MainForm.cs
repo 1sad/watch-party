@@ -49,6 +49,14 @@ public sealed class MainForm : Form
     private const int WideLayoutMinCssWidth = 900;
 
     /// <summary>
+    /// T151: the two messages Windows brackets a drag with - a frame edge, a
+    /// corner or the title bar, not a maximise, a snap or a programmatic size. A
+    /// pointer drag's size changes all arrive between them.
+    /// </summary>
+    private const int WmEnterSizeMove = 0x0231;
+    private const int WmExitSizeMove = 0x0232;
+
+    /// <summary>
     /// T107, ADR-047 ("window narrower than 900 px"): in page mode the app view is
     /// docked along the bottom rather than the right, and it takes this share of the
     /// form's client height so the picture keeps the rest. The minimum below applies
@@ -156,6 +164,19 @@ public sealed class MainForm : Form
     /// Stopped in the close, so it never runs on a disposing form.
     /// </summary>
     private readonly System.Windows.Forms.Timer _layoutSettle = new() { Interval = 120 };
+    /// <summary>
+    /// T151, ADR-047 ("the host publishes the layout once the drag ends"): the
+    /// window is inside a drag Windows bracketed with <see cref="WmEnterSizeMove"/>,
+    /// so a resize only moves the two views and every page read, dock decision and
+    /// attribute write waits for the drag's end. Without this a drag queued page
+    /// round trips faster than the page answered and the window lagged the pointer.
+    /// </summary>
+    private bool _inSizeMove;
+    /// <summary>
+    /// T151: a drag that actually changed the size. It is what makes the drag's
+    /// exit worth a publish; a drag that only moved the window changed no layout.
+    /// </summary>
+    private bool _dragResized;
     /// <summary>
     /// T107: the page-mode dock shape last logged (<c>wide</c> or <c>narrow</c>), so
     /// a resize inside one shape writes no second line and a shape change writes
@@ -304,18 +325,58 @@ public sealed class MainForm : Form
         // T94, ADR-047: a resize is the form's client size changing, which is
         // also the one event a monitor's DPI change arrives as - and the width in
         // CSS pixels changes only when the client size does.
-        // T107: in page mode the same event moves the app view between the right
-        // dock and the bottom one, so the two views always match the published
-        // layout attribute.
-        // T129: the formula's shape goes on at once, so the views never wait on a
-        // round trip; it is quiet, because the read in PublishLayout names the
-        // settled shape the log reports.
+        // T129: the publish is where the dock's shape is decided, from the page's
+        // own width, so the views and the attribute cannot disagree about which
+        // side of 900 px the window is on.
+        // T151: a drag is the one resize whose pacing a person feels. Inside the
+        // bracket Windows puts round a drag (WndProc below) this touches the two
+        // views and nothing else - no page read, no dock re-computation from the
+        // page, no `data-layout` write - and the drag's exit runs the publish once.
         ClientSizeChanged += (_, _) =>
         {
-            ApplyPageDock(CurrentLayout(), quiet: true);
+            if (_inSizeMove)
+            {
+                _dragResized = true;
+                PerformLayout();
+                return;
+            }
+
             PublishLayout();
             SettleLayout();
         };
+    }
+
+    /// <summary>
+    /// T151, ADR-047 ("the host publishes the layout once the drag ends"): the
+    /// window's own message loop is told when a drag begins and ends, and those two
+    /// messages are the whole fix. A drag's size changes each resize only the views
+    /// (see the handler above), so nothing is asked of the page while the pointer is
+    /// down; the exit runs the same publish a settled resize runs, once, plus its
+    /// settle tick - which is the first moment the views' pages have the viewport
+    /// the dock gave them (T134). A drag that only moved the window publishes
+    /// nothing, because no size changed.
+    /// </summary>
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == WmEnterSizeMove)
+        {
+            _inSizeMove = true;
+            _dragResized = false;
+            // A settle tick that was already started would publish in the middle of
+            // the drag, which is the one thing this bracket exists to prevent.
+            _layoutSettle.Stop();
+        }
+
+        base.WndProc(ref m);
+
+        if (m.Msg == WmExitSizeMove)
+        {
+            _inSizeMove = false;
+            if (!_dragResized) return;
+            _dragResized = false;
+            PublishLayout();
+            SettleLayout();
+        }
     }
 
     private async void OnLoad(object? sender, EventArgs e)
@@ -1795,10 +1856,10 @@ public sealed class MainForm : Form
         // rectangles the dock logs are the ones the window is about to show.
         // T107: which dock that is depends on the window's width - the app view
         // is the right-hand column when wide and the bottom one when narrow.
-        // T129: the formula's guess is quiet and provisional, so the site view is
-        // never left with no room for a frame; the page's own width (T121) lands
-        // through PublishLayout and its shape is the one logged.
-        ApplyPageDock(CurrentLayout(), quiet: true);
+        // T151: the dock is applied once, inside the publish, from the page's own
+        // width (ADR-047's measure); with the app view still filling the window
+        // that read is the window's width, so the shape is right the first time
+        // and no provisional second pass is spent on it (T129's pass is gone).
         PublishLayout();
         SettleLayout();
     }
@@ -2094,25 +2155,24 @@ public sealed class MainForm : Form
     /// shapes. Wide is T99's - the app view is a 380 px column on the right and the
     /// site view takes the rest. Narrow puts the app view along the bottom at
     /// <c>max(240, 40% of the client height)</c> and the site view above it, so the
-    /// picture is never squeezed beside the chat. Called on every resize and when
-    /// page mode starts; one ASCII line per settled shape change carries the
-    /// numbers the views' pages actually have, in CSS pixels - the unit the page
-    /// draws with - so a check can read the log without eyes on the window. The
-    /// line itself is written by <see cref="LogPageDockAsync"/>. Fullscreen does
-    /// not call this: it changes nothing but the window's size.
+    /// picture is never squeezed beside the chat. Called from every publish - a
+    /// settled resize, a drag's end and the start of page mode - and one ASCII line
+    /// per settled shape change carries the numbers the views' pages actually have,
+    /// in CSS pixels, the unit the page draws with, so a check can read the log
+    /// without eyes on the window. The line itself is written by
+    /// <see cref="LogPageDockAsync"/>. Fullscreen does not call this: it changes
+    /// nothing but the window's size.
     ///
-    /// T129: <paramref name="quiet"/> applies the shape without claiming it, for
-    /// the provisional formula pass a resize makes before the page has answered.
-    /// The read that follows names the settled shape and writes the one log line,
-    /// so a pixel's disagreement between the formula and the page cannot leave a
-    /// second, wrong shape in the log.
+    /// T151: it is the publish's one dock pass. It used to be run twice per resize,
+    /// once from the client-width formula before the page answered and once after,
+    /// so every resize did two dock passes and two layouts for one page read.
     ///
     /// T134: true when this call changed the shape, which is the caller's one
     /// signal that the views have not drawn the new dock yet - so the settled line
     /// follows on the settle tick, not here. The change also restarts that tick,
     /// so a shape that only corrects on a settled pass still gets its line.
     /// </summary>
-    private bool ApplyPageDock(string layout, bool quiet = false)
+    private bool ApplyPageDock(string layout)
     {
         // No page mode, no dock to apply; a minimised window has no client area to
         // share and is laid out again when it is restored.
@@ -2136,7 +2196,6 @@ public sealed class MainForm : Form
         // the rectangles below are the ones the window is about to show.
         PerformLayout();
 
-        if (quiet) return false;
         if (layout == _pageDockShape) return false;
         _pageDockShape = layout;
         _pageDockLogged = null;
@@ -2248,6 +2307,11 @@ public sealed class MainForm : Form
     /// the viewport the dock gave them. It writes the dock's line through
     /// <see cref="LogPageDockAsync"/> unless this same pass changed the shape, in
     /// which case a newer tick will carry the line.
+    ///
+    /// T151: one page read and one dock pass per publish. The read is the only
+    /// work a resize does on the page now, and a drag does not publish at all: the
+    /// window only moves its views until the pointer is released, and the release
+    /// runs this once (see <see cref="WndProc"/>).
     /// </summary>
     private async void PublishLayout(bool afterLoad = false, bool fromHostWidth = false, bool settled = false)
     {
@@ -2353,17 +2417,23 @@ public sealed class MainForm : Form
     /// resized in the message, but WebView2 resizes its content afterwards, so a
     /// width read in the same message can still be the old one; this is the read
     /// that gets the last word on both the dock's shape and the attribute.
+    ///
+    /// T151: it waits out a drag. A tick that was already pending when the drag
+    /// began would otherwise publish in the middle of it; the drag's exit publish
+    /// covers the size.
     /// </summary>
     private void OnLayoutSettle(object? sender, EventArgs e)
     {
         _layoutSettle.Stop();
+        if (_inSizeMove) return;
         PublishLayout(settled: true);
     }
 
     /// <summary>
     /// T129: asks again once the views' own contents have caught up with the
-    /// resize that just happened. Restarted on every resize rather than left to
-    /// fire, so a drag makes one settled read at its end and none in between.
+    /// resize that just happened. Restarted on every settled resize rather than
+    /// left to fire, so a drag makes one settled read at its end and none in
+    /// between (T151).
     /// </summary>
     private void SettleLayout()
     {
