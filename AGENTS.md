@@ -7,9 +7,10 @@ own file" mode, which exists mainly to test sync without a website in the way.
 
 **Status: phases 1-5 are closed** — M1, M2a, M7 "portable build", the invite work (0.2.1) and **M2b "the window uses
 its space" (0.3.0)**: two screens, the picture filling the window with a 380 px chat column beside it, the address bar
-and Open a file at every moment, and the room following a page's own navigation. The next phase is **M3 "the room
-obeys"** (`spec.md` §13). 51 and 52 are `blocked` on the M3 plan
-(the phase record the owner keeps on their machine). **0.3.0 is the shipped build** - its portable files are attached
+and Open a file at every moment, and the room following a page's own navigation. The next phase is **M2c "the room
+behaves"** (`spec.md` §13): the evening's faults and the chat's interface, planned as `phase-6-bugfix`; **M3 "the room
+obeys"** follows it. 51 and 52 are `blocked` on the M3 plan (the phase record the owner keeps on their machine).
+**0.3.0 is the shipped build** - its portable files are attached
 to the `v0.3.0` tag in GitHub Releases; nothing is on a store or a server. The only status line kept current is the phase record on the owner's machine (`.scratch/<phase>/spec.md`) → `## Status`;
 read it before believing any claim about what works. **The working record -
 specs, tickets, session notes, costs - is kept on the owner's machine and is not in this public repo**, so a fresh

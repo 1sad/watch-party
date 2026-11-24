@@ -729,7 +729,8 @@ blocking.
 > page, and the room's playback resets to position 0, paused (§5, `pageCommitted`).
 
 **Decision.** A room action from a controller (change page, episode, or film) does **not** reach anyone immediately.
-The authority holds it as pending for **2 s**, showing the initiator a countdown with **Cancel**. If they cancel
+The authority holds it as pending for **5 s** (two seconds until 2026-11-24, phase 6: the owner found two too short to
+catch a misclick; the countdown and Cancel are unchanged), showing the initiator a countdown with **Cancel**. If they cancel
 inside the window, nothing happens and nobody else ever learns it did — not a flicker, not a toast. If they don't,
 the change commits and every app navigates as one.
 
@@ -1350,7 +1351,10 @@ the site view in website mode and our own `<video>` in file mode, and the rule i
 width cannot say whether the window is narrow. The measure is **the app view's own `window.innerWidth`, asked of the page**, while the app view fills the window; the
 client-width formula (`ClientSize.Width * 96 / DeviceDpi`) is the host's dock decision and the fallback for when the
 page cannot answer, because it is a pixel low at a fractional scaling (2026-11-24 amendment). In page mode the measure
-is the window's own width. On every resize the host sets `data-layout="wide|narrow"` on the app view's root
+is the window's own width. **Amended 2026-11-24 (phase 6):** the host publishes the layout once the drag ends, not on
+every `ClientSizeChanged` - during a live resize it resizes the two views and nothing else, because a drag awaited two
+page scripts per pixel and the window lagged behind the mouse. On a settled resize the host sets
+`data-layout="wide|narrow"` on the app view's root
 element and docks its two views to match; the page's CSS reads the attribute for the **threshold** and carries no width
 number of its own for it. A page with no attribute (a browser, a test) is `wide`.
 
@@ -1488,4 +1492,127 @@ bridge now carries one more responsibility, so every existing site test must sti
 new one "when the site changes its own address without a reload (an episode picked inside the site's own page, ADR-048)"
 - and it completes R21, whose second route ("or by browsing inside the app") §1 described but nothing wired. The relay's
 whitelist and the bridge's message kinds gain `pageAddress`; nothing else about the two views changes.
+
+---
+
+## ADR-049 - The chat column is the room's log
+
+> **Amends nothing.** It gives `spec.md` §4.6 its display and its lifetime, and it is the interface half of phase 6
+> (R42, R43). It builds on ADR-038's chat column and ADR-047's layout; neither changes.
+
+**Decision.**
+
+- **A page or file change is announced.** When a page change commits or a file is picked, the authority posts one
+  **system line** in the chat - "Moved to <address>", "Opened <file>" - in the same list as the messages and dimmed.
+  It is posted at the commit, never at the stage: a cancelled two-second preview posts nothing.
+- **Every message carries a small time**, drawn beside the author from the `ts` already on the wire (§4.6). No new
+  field.
+- **A notice has an end.** The room's transient lines (mute for 10 s, "too many messages", "the player has not
+  caught up", "put back") are notices, not chat: each is removed when its end arrives - a timer for the mute, the
+  next accepted message for the flood warning, the picture aligning for the sync line, the room moving for the
+  put-back - and each can be dismissed with one click. No notice survives for the life of the room.
+- **The chat list is the column's only scroller.** The invite bar above it and the roster below stay put; the list
+  scrolls itself, with a thin bar that appears when the pointer is over it, drawn by the app.
+- **The roster is a count, not a list.** One line, "N online", opens the names on a click and closes them on a
+  second. It is below the chat and never pushes the messages.
+- **The name is a chat command.** `/name <text>` in the chat box renames the sender; the always-visible name control
+  goes; the input's placeholder offers `/name` as the hint that the command exists; the "(you)" pill goes.
+- **The owner wears a crown** in the roster. Control may be granted (ADR-033), so the crown marks the room's owner,
+  not whoever currently holds control.
+- **A member keeps one seat.** A reconnect reuses the stored member id (ADR-033 rule 1), and the roster shows only
+  members the authority has heard from: `offline` after 20 s of silence (§4.4). A rejoin replaces a row; it never
+  adds one.
+
+**Why.** The chat is where the evening is remembered, and the roster is a fact ("five of us"), not a list to scroll
+past. The shipped build drew the roster as a permanent vertical list inside the same scroller as the messages, so
+every message pushed the people down; and a notice that never ends reads as a new message every time the eye returns
+to it, which is what happened three times in one evening (`answers.md` 14).
+
+**Rejected.** (a) A separate events panel - a third column for four lines an evening. (b) Notices mixed into the
+chat with no end - what shipped. (c) A name dialog or a permanent button - a standing control for a once-a-week
+action. (d) A crown on the control holder - it moves when control is granted, and the host is the person whose
+computer runs the room.
+
+**Cost.** A shared notice store with an end and a dismiss; one system line per commit; one `/name` parser shared by
+the page and its test; a presence sweep in the sidecar. No protocol field is added: `ts` and `kind: 'system'` already
+exist (§4.6).
+
+---
+
+## ADR-050 - A new film starts at zero, and the app gives up on a page that fights it
+
+> **Amends ADR-048** (the put-back gains a bound) and **ADR-032** (a commit's reset now clears a picked file's
+> position too). It is the behaviour half of phase 6 (R44, R45).
+
+**Decision.**
+
+1. **A committed page change and a picked file both reset the room's playback to position 0, paused.** For a picked
+   file the reset happens in `setMedia` itself, before any frame can seek the new film to the old film's position -
+   the clamp to `duration - 0.25` is what made a file open "at the end" after a longer one.
+2. **The site's player is put to the room's position as soon as it can accept a seek.** A seek issued before the new
+   element has metadata is dropped by the bridge, so the element keeps whatever position its own site remembered
+   (the 50 s episode). The adapter re-issues the room's position when the new element's duration is known, not only
+   when the room's state changes.
+3. **Volume and mute belong to the window** (R41, ADR-030). The bridge remembers the level per site origin and
+   applies it to a site player element whenever one appears or is replaced, and reports it like any other position
+   report. It never travels to the room: a site's episode change no longer resets a viewer to 100%.
+4. **The put-back has a bound.** For one window and one address, at most **three** put-backs; after that the window
+   stops going back and one line says the site keeps leaving the room. A commit clears the bound. A guest who
+   navigates away deliberately is still put back once - the bound is for the site that leaves by itself.
+5. **The put-back line ends** when the room moves or after 30 s (ADR-049's notice rule).
+
+**Why.** Measured on 2026-11-24: one window completed a navigation to the room's `https://www.youtube.com/` **197
+times in 130 s** - the put-back and YouTube's own redirect driving each other, presented to the user as a popup
+jumping around. Two windows on two pages is a fault; 197 is worse. The other two faults are the same mistake: state
+from the last film applied to the new one.
+
+**Rejected.** (a) Put back forever - the measured loop. (b) Drop the put-back - a guest's stray click moves their
+window to an ad. (c) Carry volume on the wire - R41 and ADR-030 say a personal choice stays in the window. (d) Trust
+the site's own position on a new episode - it is the site's memory, not the room's.
+
+**Cost.** Three reset points and one per-window latch; `§4.2` and `§5` gain the "a pick resets playback" line; the
+bridge gains a volume store and a re-seek on metadata; ADR-048 gains its bound.
+
+---
+
+## ADR-051 - YouTube plays in a player the app owns
+
+> **Amends ADR-048** for one host (the put-back does not apply to the embed) and **§10.3** for one host (the video id
+> is kept in the room's address). It is the user's answer on 2026-11-24 to "how do sites like sync-tube.de and
+> watch2gether do it?"; R46.
+
+**Decision.**
+
+- A YouTube address (`youtube.com/watch?v=<id>`, `youtu.be/<id>`, `youtube.com/shorts/<id>`) becomes the room's page
+  like any other, and the room stores it **normalised to `https://www.youtube.com/watch?v=<id>`** - one form for one
+  film, so a share link with a tracking parameter and a typed link are the same page. This is the one exception to
+  §10.3's "never store a tokenised link": on YouTube the query **is** the film, not a session token. The address bar
+  shows what the room is on.
+- The picture for that page is **the sidecar's own embed page** (`/embed/youtube.html?id=<id>`), loaded in the site
+  view and driven through the YouTube IFrame Player API: `playVideo()`, `pauseVideo()`, `seekTo(s, allowSeekAhead)`,
+  `getCurrentTime()`, `getDuration()`, `getPlayerState()` (`1` playing, `2` paused, `3` buffering, `5` cued),
+  `setVolume(0-100)`. The API needs no account and no key; it requires an `http(s)` origin, which the sidecar is.
+- **The room protocol does not change.** The embed is a site-player adapter like any other: commands in, `report`
+  out, echo suppression unchanged.
+- **The put-back does not apply to the embed.** The app knows that room page is served by its own embed, so it never
+  compares the embed's address to `room.page`. A guest's navigation away from the embed is still put back.
+- **One video per address.** Playlists, search and subscriptions are not followed; the address is the film.
+- An owner who forbids embedding (player error `101`/`150`) gets one line saying so, and the room stays on the
+  address.
+- Volume is the window's own (ADR-050 item 3).
+
+**Why.** The three services the user named do not browse youtube.com at all. Watch2Gether, SyncTube and GroupTube
+load the **YouTube IFrame player** by video id and drive it through this API; Watch2Gether's own sync product for
+non-embeddable sites (Netflix and the like) is a browser extension that reads and controls the page's HTML5 video.
+YouTube's own site is a signed-out, consent-and-history-driven application that rewrites its address, which is the
+loop in ADR-048's evidence. The user chose this route on 2026-11-24.
+
+**Rejected.** (a) Keep the site view on youtube.com - measured loop. (b) Require a YouTube account - the user has
+none, and the player API needs none. (c) YouTube Data API search and queue - a key and a network dependency for a
+feature nobody asked for. (d) A generic "detect the video on any page" adapter - the frame election problem this
+project already has (ADR-025).
+
+**Cost.** One page, one adapter and one URL parser; the address rule gains one exception; a video whose owner
+forbids embedding cannot be watched. No protocol change, no new dependency.
+
 
