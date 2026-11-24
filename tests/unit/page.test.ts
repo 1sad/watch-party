@@ -123,20 +123,31 @@ test('T03: a controller’s setPage is held, not applied — the room has not ch
   assert.equal(snapshot(room).page, null, 'no snapshot carries the pending page')
   assert.equal(room.revision, revisionBefore, 'a pending change is not a write (§4.3 invariant 2)')
 
-  // One millisecond short of the window, and still nothing.
-  clock = 11_999
-  assert.equal(commitDuePage(room, now), null)
-  assert.equal(room.page, null, 'the entry expires at 2 s, not before')
+  // The window is the authority's own constant, five seconds since 2026-11-24
+  // (ADR-032's amendment, R31), and not something a sender chose.
+  assert.equal(PAGE_STAGE_MS, 5000, 'the authority’s default stage is five seconds')
 
-  clock = 12_000
+  // One millisecond short of the window, and still nothing.
+  clock = 14_999
+  assert.equal(commitDuePage(room, now), null)
+  assert.equal(room.page, null, 'the entry has not expired at t + 4999, not before')
+
+  // One millisecond past it, and the change is the room's.
+  clock = 15_001
   const commit = commitDuePage(room, now)
-  assert.deepEqual(commit, { page: 'https://example.com/watch', by: owner, at: 12_000 })
+  assert.deepEqual(commit, { page: 'https://example.com/watch', by: owner, at: 15_001 })
   assert.equal(room.page, 'https://example.com/watch')
   assert.equal(room.pendingPage, null, 'a committed entry is gone from the room')
   assert.equal(room.revision, revisionBefore + 1, 'the commit is one write, and one only')
-  // The window is the authority's own constant; the entry above is the proof it
-  // is two seconds and not something a sender chose.
-  assert.equal(PAGE_STAGE_MS, 2000)
+
+  // The exact tick still commits (`at < expiresAt` is the open window), so the
+  // boundary is one rule and not two.
+  clock = 20_000
+  stagePage(room, owner, 'example.com/exact', room.authority.epoch, now)
+  clock = 24_999
+  assert.equal(commitDuePage(room, now), null)
+  clock = 25_000
+  assert.equal(commitDuePage(room, now)?.page, 'https://example.com/exact')
 })
 
 test('T03: the commit clears media and puts playback at 0, paused — a new page is a new film', () => {
@@ -173,11 +184,11 @@ test('T03: a second setPage replaces the first, and the window starts again from
     expiresAt: 1500 + PAGE_STAGE_MS,
   })
 
-  // The first entry's deadline has passed (1000 + 2 s) and must not commit it;
+  // The first entry's deadline has passed (1000 + 5 s) and must not commit it;
   // the replacement's window is still open, because it started when it arrived.
-  clock = 3000
+  clock = 6001
   assert.equal(commitDuePage(room, now), null, 'the window restarted from the second request')
-  clock = 3500
+  clock = 6501
   assert.equal(commitDuePage(room, now)?.page, 'https://example.com/second')
 })
 

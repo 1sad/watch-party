@@ -192,7 +192,7 @@ test('a fragment on the room page is not a change', () => {
   )
 })
 
-test('a controller that lands on a new path stages it for the ordinary two seconds', () => {
+test('a controller that lands on a new path stages it for the ordinary five seconds', () => {
   assert.equal(
     pageFollowOutcome({
       address: 'https://example.com/watch/2',

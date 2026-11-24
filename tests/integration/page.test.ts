@@ -74,7 +74,7 @@ test('T03: a staged page is silent for the whole window, then exactly one pageCo
     const arrival = await guest.next((frame) => frame.type === 'pageCommitted', PAGE_STAGE_MS + 2000)
     assert.ok(
       arrival.at - sentAt >= PAGE_STAGE_MS,
-      `the first pageCommitted arrived ${arrival.at - sentAt} ms after the setPage, before the 2 s window ended`,
+      `the first pageCommitted arrived ${arrival.at - sentAt} ms after the setPage, before the 5 s window ended`,
     )
 
     await settle(400)
