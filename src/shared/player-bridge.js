@@ -27,7 +27,10 @@
  * window either. Since T104 it
  * posts a fourth, `pageAddress`, from the top document only (ADR-048): the only
  * document whose address is the room's page, and the host relays it from there
- * alone. It is plain
+ * alone. Since T157 the same script carries a **second site driver**: a document
+ * that owns `window.__wpYouTube` (the app's own YouTube embed, ADR-051) reports
+ * the IFrame player's numbers and takes the room's commands through the API's
+ * methods, because that player is an iframe this document cannot see past. It is plain
  * ES5-ish JavaScript with no
  * imports because it is injected as text, and it must not depend on anything the
  * page may have broken: every read of an element is defensive.
@@ -82,6 +85,16 @@
   // and would be refused again.
   var OVERLAY_TEXT = 'the site would not start playing - press play'
   var OVERLAY_BUTTON = 'Play'
+  // T157, ADR-051: the room's YouTube page is the app's own embed, whose top
+  // document owns `window.__wpYouTube`. The player is a cross-origin iframe this
+  // document cannot look into, so the API is a candidate in its own right, with
+  // one id no element can have.
+  var YOUTUBE_ID = 1000000
+  // A person seeking inside the YouTube player fires no `seeked` this document
+  // can hear, so the playhead's own jump is the event: backwards past this, or
+  // forwards past a buffer's worth. Between them is the ticking of a player.
+  var YOUTUBE_SEEK_BACK_SECONDS = 1.5
+  var YOUTUBE_SEEK_AHEAD_SECONDS = 5
 
   var host = window.chrome && window.chrome.webview
   if (!host || typeof host.postMessage !== 'function') return
@@ -119,6 +132,15 @@
   // no metadata. Such a write is lost (a busy site's remembered 50 s then wins),
   // so the target is kept and tried once when the element reports its duration.
   var lostSeek = {}
+  // T157: what the YouTube adapter last saw. `state` is the API's own number
+  // (never buffering, which is a layer over it), `t` and `at` are the playhead
+  // and this frame's instant, so the next poll can tell a seek from ticking, and
+  // `volumePercent` is the one level this document has written to the player.
+  var youtubeWatched = false
+  var youtubeState = null
+  var youtubeT = null
+  var youtubeAt = 0
+  var youtubeVolumePercent = null
   var seq = 0
   var lastSentAt = 0
   var lastShape = null
@@ -358,6 +380,236 @@
     }
   }
 
+  /**
+   * T157, ADR-051: the app's embed player API, or `null` when this document is
+   * not that page. It is the top document of the site view and owns
+   * `window.__wpYouTube`; the `<video>` inside YouTube's own iframe is another
+   * origin and is never addressable from here.
+   */
+  function youtubeApi() {
+    var api = null
+    try {
+      api = window.__wpYouTube
+    } catch (error) {
+      return null
+    }
+    if (!api || typeof api.now !== 'function' || typeof api.state !== 'function') return null
+    return api
+  }
+
+  /** The API's own state, or `null` before the player exists (which is not state 0). */
+  function youtubeStates(api) {
+    var state = null
+    try {
+      state = api.state()
+    } catch (error) {
+      return null
+    }
+    return typeof state === 'number' && isFinite(state) ? state : null
+  }
+
+  /**
+   * One candidate from the API's numbers, in the same shape `measure` builds
+   * from an element (T06). The state table is ADR-051's: `1` playing, `2`
+   * paused, `3` buffering, `0` ended, `-1` unstarted. Buffering reports a
+   * `readyState` below 3, so §6.7 holds the ladder's rate off a starved player.
+   */
+  function measureYouTube(api) {
+    var state = youtubeStates(api)
+    if (state === null) return null
+    var t = null
+    try {
+      t = api.now()
+    } catch (error) {
+      return null
+    }
+    if (typeof t !== 'number' || !isFinite(t)) return null
+    var duration = 0
+    try {
+      duration = number(api.duration())
+    } catch (error) {
+      duration = 0
+    }
+    var width = 0
+    var height = 0
+    try {
+      width = number(window.innerWidth)
+      height = number(window.innerHeight)
+    } catch (error) {
+      width = 0
+      height = 0
+    }
+    var rate = 1
+    try {
+      rate = number(api.rate ? api.rate() : 1) || 1
+    } catch (error) {
+      rate = 1
+    }
+    return {
+      id: YOUTUBE_ID,
+      w: Math.max(0, Math.round(width)),
+      h: Math.max(0, Math.round(height)),
+      readyState: state === 3 ? 2 : (duration > 0 ? 4 : 0),
+      hasSrc: duration > 0,
+      playing: state === 1,
+      duration: duration,
+      t: t,
+      paused: state !== 1 && state !== 3,
+      // The API has no buffered range; a player cannot be past what it decoded,
+      // and the room's ready gate is not built yet (M3).
+      buffered: t,
+      rate: rate,
+    }
+  }
+
+  /**
+   * T157, T15: one `play`/`pause` for the adapter, tagged exactly as an
+   * element's event is - `caused` while a write of this frame's own is unspent,
+   * so §6.6 drops it and a person's press is the room's. `wasPlaying` is for a
+   * seek the poll saw: whether the player was moving when the playhead jumped.
+   */
+  function postYouTubePlayback(kind, api, wasPlaying) {
+    var t = 0
+    try {
+      t = number(api.now())
+    } catch (error) {
+      t = 0
+    }
+    var message = {
+      kind: EVENT,
+      event: kind,
+      id: YOUTUBE_ID,
+      t: t,
+      caused: takeCausedId(YOUTUBE_ID, kind),
+    }
+    if (kind === 'seeked' && wasPlaying === true) message.wasPlaying = true
+    post(message)
+  }
+
+  /**
+   * T157: the API's own `onStateChange`. Buffering is a layer over the state it
+   * was in, not a state of its own, so it is remembered as nothing: a player
+   * that buffers between two beats of a playing video is not a second `play`,
+   * and one that buffers after a person's press still ends in that `play`.
+   */
+  function onYouTubeState(state) {
+    if (typeof state !== 'number' || !isFinite(state)) return
+    var previous = youtubeState
+    if (state !== 3) youtubeState = state
+    if (previous === null || state === previous || state === 3) return
+    var api = youtubeApi()
+    if (!api) return
+    if (state === 1) postYouTubePlayback('play', api, false)
+    else if (state === 2 || state === 0) postYouTubePlayback('pause', api, false)
+  }
+
+  /**
+   * T157: the seek the API never fires an event for. The playhead should have
+   * moved by the elapsed time while the player is moving, and a jump past what
+   * that can explain is a person's seek - posted as `seeked`, with this frame's
+   * own writes spent first, so a seek the room asked for stays an echo.
+   */
+  function checkYouTubeSeek(api) {
+    var state = youtubeStates(api)
+    var t = null
+    try {
+      t = api.now()
+    } catch (error) {
+      return
+    }
+    if (state === null || typeof t !== 'number' || !isFinite(t)) return
+    var now = Date.now()
+    if (youtubeT === null) {
+      youtubeT = t
+      youtubeAt = now
+      return
+    }
+    var moving = youtubeState === 1 || youtubeState === 3
+    var elapsed = Math.max(0, now - youtubeAt) / 1000
+    var jump = t - youtubeT - (moving ? elapsed : 0)
+    youtubeT = t
+    youtubeAt = now
+    if (jump > -YOUTUBE_SEEK_BACK_SECONDS && jump < YOUTUBE_SEEK_AHEAD_SECONDS) return
+    postYouTubePlayback('seeked', api, moving)
+  }
+
+  /**
+   * T146b, R41, ADR-030: the window's own level. The player is the only volume
+   * control this document has, so its number is what the store keeps, and it is
+   * written with the API's `setVolume(0-100)`. Nothing about it is posted - the
+   * room never hears a volume, and a player the API builds again gets the level
+   * the person chose rather than the browser's 100%.
+   */
+  function syncYouTubeLevel(api) {
+    var level = levelOf()
+    if (typeof api.volume === 'function') {
+      var volume = null
+      try {
+        volume = api.volume()
+      } catch (error) {
+        volume = null
+      }
+      if (typeof volume === 'number' && isFinite(volume)) {
+        var clamped = Math.min(1, Math.max(0, volume))
+        var muted = typeof api.muted === 'function' && api.muted() === true
+        if (!level.set || Math.abs(level.volume - clamped) > 0.005 || level.muted !== muted) {
+          level.volume = clamped
+          level.muted = muted
+          level.set = true
+        }
+      }
+    }
+    if (!level.set || typeof api.setVolume !== 'function') return
+    var percent = level.muted ? 0 : Math.round(level.volume * 100)
+    if (percent === youtubeVolumePercent) return
+    youtubeVolumePercent = percent
+    try {
+      api.setVolume(percent)
+    } catch (error) {
+      // A player that refuses a level keeps its own; the picture plays.
+    }
+  }
+
+  /**
+   * T157: the adapter's once-a-poll work. The first poll subscribes to the API's
+   * state and takes the level; every later one reads the seek and the level, and
+   * the report itself is `measureYouTube`'s.
+   */
+  function watchYouTube(api) {
+    if (!youtubeWatched) {
+      youtubeWatched = true
+      var first = youtubeStates(api)
+      if (first !== null) youtubeState = first
+      var t = null
+      try {
+        t = api.now()
+      } catch (error) {
+        t = null
+      }
+      youtubeT = typeof t === 'number' && isFinite(t) ? t : null
+      youtubeAt = Date.now()
+      if (typeof api.onStateChange === 'function') {
+        try {
+          api.onStateChange(onYouTubeState)
+        } catch (error) {
+          // A player that will not take a listener still reports; only its
+          // events are lost, and the room corrects it like any other follower.
+        }
+      }
+      syncYouTubeLevel(api)
+      return
+    }
+    // T146, ADR-050: a position the room asked for before the duration was
+    // known is written once the player can take it.
+    if (lostSeek.hasOwnProperty(YOUTUBE_ID) && number(api.duration()) > 0) {
+      var target = lostSeek[YOUTUBE_ID]
+      delete lostSeek[YOUTUBE_ID]
+      seekYouTube(api, target)
+    }
+    checkYouTubeSeek(api)
+    syncYouTubeLevel(api)
+  }
+
   function onReloaded(element, kind) {
     var id = idOf(element)
     // T146: a reload is a new source, so a target remembered for the old one must
@@ -370,17 +622,24 @@
   }
 
   /** Record, before the write, that this frame is about to make the element do `kind`. */
-  function arm(element, kind) {
-    var id = idOf(element)
+  function armId(id, kind) {
     var box = caused[id] || (caused[id] = {})
     var list = box[kind] || (box[kind] = [])
     list.push(Date.now())
   }
 
+  function arm(element, kind) {
+    armId(idOf(element), kind)
+  }
+
   /** Drop one kind's unspent entries: the write they describe is not going to happen. */
-  function disarm(element, kind) {
-    var box = caused[idOf(element)]
+  function disarmId(id, kind) {
+    var box = caused[id]
     if (box && box[kind]) box[kind].length = 0
+  }
+
+  function disarm(element, kind) {
+    disarmId(idOf(element), kind)
   }
 
   /**
@@ -388,8 +647,8 @@
    * This is T15's provenance: the answer comes from this frame's own hands, not
    * from a report the app view holds that may be half a second old.
    */
-  function takeCaused(element, kind) {
-    var box = caused[idOf(element)]
+  function takeCausedId(id, kind) {
+    var box = caused[id]
     if (!box || !box[kind] || box[kind].length === 0) return false
     var now = Date.now()
     var live = []
@@ -400,6 +659,10 @@
     if (live.length === 0) return false
     live.shift()
     return true
+  }
+
+  function takeCaused(element, kind) {
+    return takeCausedId(idOf(element), kind)
   }
 
   function onPlayback(element, kind) {
@@ -495,6 +758,14 @@
       watch(videos[i])
       byId[idOf(videos[i])] = videos[i]
       list.push(measure(videos[i]))
+    }
+    // T157: the app's own embed is a player this document can see only through
+    // the API, and it is a candidate like any other.
+    var api = youtubeApi()
+    if (api) {
+      watchYouTube(api)
+      var one = measureYouTube(api)
+      if (one !== null) list.push(one)
     }
     return list
   }
@@ -765,18 +1036,127 @@
   }
 
   /**
+   * T157: `seekTo(seconds, true)` on the app's player, with T146's rule kept -
+   * a seek asked for before the duration is known is remembered and written
+   * once the API can take it, rather than dropping the room's position.
+   */
+  function seekYouTube(api, target) {
+    if (!(number(api.duration()) > 0)) {
+      lostSeek[YOUTUBE_ID] = target
+      return
+    }
+    delete lostSeek[YOUTUBE_ID]
+    var moved = Math.abs(number(api.now()) - target) > 0.001
+    if (moved) armId(YOUTUBE_ID, 'seeked')
+    try {
+      api.seek(target)
+    } catch (error) {
+      // A seek the player refuses is not coming; the ladder's next look tries again.
+      if (moved) disarmId(YOUTUBE_ID, 'seeked')
+    }
+  }
+
+  /**
+   * T157: one `playerCommand` for the app's embed player. The room asks for
+   * exactly what it asks any site - play, pause, seek, or the ladder's rate -
+   * and only the hands differ: `playVideo`, `pauseVideo`, `seekTo`,
+   * `setPlaybackRate`. Every write is armed before it is made, so the API's own
+   * state event is tagged `caused` and §6.6 drops it (ADR-051: echo
+   * suppression unchanged).
+   */
+  function applyYouTube(payload) {
+    var api = youtubeApi()
+    if (!api) return
+
+    var from = number(api.now())
+    var target = typeof payload.target === 'number' && isFinite(payload.target) ? payload.target : from
+    var lead = typeof payload.leadMs === 'number' && isFinite(payload.leadMs) ? Math.max(0, payload.leadMs) : 0
+    var action = payload.action
+    var scheduled = lead > 0
+
+    if (action === 'rate') {
+      var nextRate = typeof payload.rate === 'number' && isFinite(payload.rate) ? payload.rate : 1
+      if (typeof api.setRate === 'function') {
+        try {
+          api.setRate(nextRate)
+        } catch (error) {
+          // A player that froze its own rate reports its number; the ladder's
+          // deadline still restores, and that restore simply does not take.
+        }
+      }
+      return
+    }
+
+    if (action !== 'pause' && action !== 'play' && action !== 'seek') return
+
+    // T15 item 2: a beat still waiting is older than this command.
+    cancelHoldId(YOUTUBE_ID)
+
+    var state = youtubeStates(api)
+    var playing = state === 1 || state === 3
+
+    if (action === 'pause' || (scheduled && playing)) {
+      if (playing) armId(YOUTUBE_ID, 'pause')
+      try {
+        api.pause()
+      } catch (error) {
+        // A player that will not stop is reported by the room's next look.
+      }
+    }
+
+    if (typeof payload.target === 'number') seekYouTube(api, target)
+
+    if (action === 'pause') {
+      // Nothing more: a paused room's playhead is the ladder's to snap.
+    } else if (action === 'seek' && payload.resume !== true) {
+      // A paused snap: the playhead moved and the player stays paused.
+    } else if (scheduled) {
+      holds[YOUTUBE_ID] = setTimeout(function () {
+        delete holds[YOUTUBE_ID]
+        armId(YOUTUBE_ID, 'play')
+        try {
+          api.play()
+        } catch (error) {
+          // The room's next state asks again; the room is not moved by this.
+        }
+      }, lead)
+    } else {
+      armId(YOUTUBE_ID, 'play')
+      try {
+        api.play()
+      } catch (error) {
+        // As above: a refused play leaves the player where it was.
+      }
+    }
+
+    // T06's one line per applied command, in the same shape an element's is.
+    post({
+      kind: EVENT,
+      event: 'applied',
+      id: YOUTUBE_ID,
+      action: action,
+      reason: typeof payload.reason === 'string' ? payload.reason : '(none)',
+      target: target,
+      from: from,
+    })
+  }
+
+  /**
    * T15 item 2: a hold belongs to the element, and any later command for that
    * element supersedes it. The beat it was waiting for would otherwise start the
    * element behind the command's back - a pause during the lead that plays again
    * 1.5 s later, which is the jump R8 forbids.
    */
-  function cancelHold(element) {
-    var id = idOf(element)
+  function cancelHoldId(id) {
     var hold = holds[id]
     if (hold === undefined) return
     clearTimeout(hold)
     delete holds[id]
-    disarm(element, 'play')
+    disarmId(id, 'play')
+  }
+
+  function cancelHold(element) {
+    cancelHoldId(idOf(element))
   }
 
   /**
@@ -793,9 +1173,14 @@
    */
   function applyCommand(payload) {
     if (!payload || payload.kind !== APPLY) return
+    if (typeof payload.href === 'string' && payload.href !== String(location.href)) return
+    // T157: the app's own embed player, through the API's methods.
+    if (payload.id === YOUTUBE_ID) {
+      applyYouTube(payload)
+      return
+    }
     var element = byId[payload.id]
     if (!element) return
-    if (typeof payload.href === 'string' && payload.href !== String(location.href)) return
 
     var from = number(element.currentTime)
     var target = typeof payload.target === 'number' && isFinite(payload.target) ? payload.target : from

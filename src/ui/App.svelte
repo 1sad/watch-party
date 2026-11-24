@@ -28,7 +28,7 @@
     type LoadRefusal,
   } from '../shared/media.ts'
   import { PAGE_STAGE_MS, canonicalPage, playbackAfterPageCommit, setPageFrame } from '../shared/page.ts'
-  import { siteViewAddress } from '../shared/youtube.ts'
+  import { siteViewAddress, youtubeVideoId, isYouTubeEmbedAddress } from '../shared/youtube.ts'
   import { previewHolds, type PendingPreview } from './preview.ts'
   import {
     closeOutcome,
@@ -1331,9 +1331,16 @@
    * reason comes back because T07 treats a change as "unaligned".
    */
   function electPlayer(): PlayerReason | null {
+    const merged = mergeReports(playerFrames.values(), Date.now(), pageLeftDocs)
+    // T157, ADR-051: a YouTube room page is played by the app's own embed, whose
+    // top document reports the IFrame player. The nested youtube.com frame's own
+    // `<video>` is not the driver, so for that page only the embed is eligible.
+    const candidates = media === null && roomPage !== null && youtubeVideoId(roomPage) !== null
+      ? merged.filter((one) => isYouTubeEmbedAddress(one.source))
+      : merged
     const result = elect(
       elected,
-      mergeReports(playerFrames.values(), Date.now(), pageLeftDocs),
+      candidates,
       playerEvents,
       pageLeftDocs,
     )

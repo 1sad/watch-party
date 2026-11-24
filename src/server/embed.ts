@@ -36,6 +36,12 @@ const SCRIPT = `
   // Defined before the player exists: a caller may read it while the API is
   // still loading, and a method that throws would be a page that looks broken.
   // Before the player exists each answer is null, which is the truth.
+  //
+  // T157: the bridge in this document is the adapter (ADR-051), and the player's
+  // own state changes are its events - the video element they would otherwise be
+  // read from lives in a cross-origin frame this document cannot see. The level
+  // is read back so the window's volume store holds what the person chose.
+  var listeners = []
   window.__wpYouTube = {
     play: function () { if (player) player.playVideo() },
     pause: function () { if (player) player.pauseVideo() },
@@ -43,7 +49,14 @@ const SCRIPT = `
     now: function () { return player ? player.getCurrentTime() : null },
     state: function () { return player ? player.getPlayerState() : null },
     duration: function () { return player ? player.getDuration() : null },
-    setVolume: function (level) { if (player) player.setVolume(Number(level)) }
+    setVolume: function (level) { if (player) player.setVolume(Number(level)) },
+    volume: function () { return player ? player.getVolume() / 100 : null },
+    muted: function () { return player ? player.isMuted() : null },
+    rate: function () { return player ? player.getPlaybackRate() : null },
+    setRate: function (rate) { if (player) player.setPlaybackRate(Number(rate)) },
+    onStateChange: function (listener) {
+      if (typeof listener === 'function') listeners.push(listener)
+    }
   }
 
   if (!videoId) {
@@ -64,6 +77,18 @@ const SCRIPT = `
         rel: 0
       },
       events: {
+        // T157: the bridge's adapter hears the API's own state (1 playing, 2
+        // paused, 3 buffering, 0 ended, -1 unstarted) here, which is the only
+        // place this document can see it.
+        onStateChange: function (event) {
+          for (var i = 0; i < listeners.length; i += 1) {
+            try {
+              listeners[i](event && event.data)
+            } catch (error) {
+              // One listener that breaks is not the page's: the others hear it.
+            }
+          }
+        },
         onError: function (event) {
           // 101 and 150: the owner forbids embedding (ADR-051). One line, and
           // the room stays on the address.
