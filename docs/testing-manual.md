@@ -340,6 +340,16 @@ must be driven by its command line (`"watchparty://join?h=...&p=...&c=..."` afte
 ignores `WATCHPARTY_SPIKE_URL`, and passing `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER` to a Debug copy changes nothing (the
 host picks the engine itself).
 
+**2026-11-24, ticket 146: two packaged Debug copies in one room.** `portable-launch.ps1 -Count 2` launches both copies
+with a closed environment and no invite, so nothing joins. The measured route: run the host copy through the rig as
+above, take the invite link from the host's app view (or its log), then start the guest yourself - the copy-2 exe in the
+rig's `%TEMP%\wp-portable-<stamp>\` folder with `"watchparty://join?..."` as its one argument and
+`WATCHPARTY_CDP_PORT=<n>` in its environment - and point `cdp.mjs` at the guest with `--port <n>`: it defaults to 9222,
+and its `no target with id` names the id, not the wrong port. The packaged front door can put `Start a room` below the
+fold of a short window (y=-300 in 767 px), so scroll it into view before clicking. `portable-launch.ps1 -Close` closes
+only the pids its own invocation started: a hand-started guest reports `closed: 0 copies` and needs its own `WM_CLOSE`.
+`-Restore` afterwards, as always.
+
 A page checked with **no app around it** still goes to a plain Chromium, which is the cheapest way to prove the page
 half alone:
 
