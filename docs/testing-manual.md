@@ -39,7 +39,9 @@ the profile is derived from the port, so the second window must be started with 
 A opens on the **first screen**. Press **Start a room**: the six-character room code and the link appear in the
 **invite bar** - the thin column on the right of the watching screen, and at the top of the chat column when the window
 is narrow. Join B with that link: opening the `watchparty://` link lands it straight on the watching screen, and typing
-the code into B's own front door works too. Both windows now play the same file from A's sidecar.
+the code into B's own front door works too. Both windows now play the same file from A's sidecar - but only if A has one
+open: press **Open a file** in A and choose one before B joins, or the watching screen shows an empty picture and no
+controls (§4 step 3; §7 for a file long enough to time).
 
 A window joined by typing the code keeps no `?join=` in its address, so reloading it lands back on its own front door;
 a window that opened the link reloads straight into the room (measured 2026-11-24, tickets 106b and 120).
@@ -61,21 +63,25 @@ which window.
    top, the film filling the left of the window, and the chat column on the right carrying the invite bar (**Room
    <code>**, the link, **Copy**, **Raw address**) at its top; under the picture sit **Pause**, the seek slider,
    **Mute** and the volume slider. Note the room code and the link from the invite bar.
-3. Open B with `node scripts/run-host.mjs --cdp-port 9223 "<A's invite link>"` (the link in quotes): B lands on
+3. **In A, press Open a file** and choose a file long enough for the run: the 60 s `tests/fixtures/fixture.mp4` for a
+   quick look, §7's 720 s recipe for a timed gate. The picture and the row of controls appear once the host log prints
+   `[media] registered ... duration=<n>`; read that duration before you start the clock. A window started with
+   `WATCHPARTY_PICK_PATHS` pointing at a file skips the dialog and lands with the file already open.
+4. Open B with `node scripts/run-host.mjs --cdp-port 9223 "<A's invite link>"` (the link in quotes): B lands on
    the watching screen, not on a front door of its own. Pasting the same link into B's front door does the same
    thing by hand - it is one more thing to type, and it is the route a person takes (T131).
-4. Press play in A and let both run. Check A's roster shows two people.
-5. Scrub A's player to the middle. B must be at the same position, within a fraction of a second, without a reload.
-6. Stall one window on purpose — the dev switch T7b2 added. On this build the frozen window is pulled back by §6.3's
+5. Press play in A and let both run. Check A's roster shows two people.
+6. Scrub A's player to the middle. B must be at the same position, within a fraction of a second, without a reload.
+7. Stall one window on purpose — the dev switch T7b2 added. On this build the frozen window is pulled back by §6.3's
    four-second hard-seek rule, so the stall lasts about four seconds whatever the switch is set to (measured
    2026-11-22, ticket 49: `drift=-4.203 … action=seek` at the fourth second, the healthy window untouched). Do not
    fight it; the stall's job is the next step.
-7. Watch the other window for the whole stall: **it must not jump.** A small rate change is allowed and intended; a
+8. Watch the other window for the whole stall: **it must not jump.** A small rate change is allowed and intended; a
    jump, a freeze, or a double restart is a failure.
-8. Drag the scrubber several times, quickly, in the **owner's** window: each drag must send one command, not a stream
+9. Drag the scrubber several times, quickly, in the **owner's** window: each drag must send one command, not a stream
    of corrections (R6), and the other window must arrive at that position once. A **guest's** drag sends nothing — one
    write per action (ADR-030) — and is undone locally; its evidence is the absence of a command, not a correction.
-9. Ten minutes of that, with one stall in the middle, is the gate.
+10. Ten minutes of that, with one stall in the middle, is the gate.
 
 What a healthy run looked like on this machine (recorded, not imagined): a pause in one window stopped the other in
 18 ms; a hard scrub sent one command, not a flood; a third window joining 30 s in landed within 118 ms; a reload
