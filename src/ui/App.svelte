@@ -1832,6 +1832,16 @@
     return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}`
   }
 
+  /**
+   * ADR-049 / §4.6: a message's own time, `hh:mm`, from the authority's `ts` -
+   * everyone reads the same number, whatever their own clock says. Not
+   * `formatClock`, which draws a *picture's* position (mm:ss from zero).
+   */
+  function timeOfDay(ts: number): string {
+    const date = new Date(ts)
+    return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  }
+
   async function refresh(): Promise<void> {
     clearTimeout(timer)
     try {
@@ -2206,10 +2216,14 @@
             <div class="messages" bind:this={chatList}>
               {#each chat as message (message.id)}
                 {#if message.kind === 'system'}
-                  <p class="system">{message.text}</p>
+                  <p class="system">
+                    <span class="time">{timeOfDay(message.ts)}</span>
+                    <span class="text">{message.text}</span>
+                  </p>
                 {:else}
                   <p class="message" class:mine={message.memberId === selfId}>
                     <span class="author">{message.name}</span>
+                    <span class="time">{timeOfDay(message.ts)}</span>
                     {#if message.memberId === selfId}<span class="you">you</span>{/if}
                     <span class="text">{message.text}</span>
                   </p>
@@ -2831,12 +2845,11 @@
     color: #7fd0a5;
   }
 
-  /* ADR-047: the chat column - the chat's list and its input, with the roster
-     under them, and the column is the bar's and the body's two rows. The chat
-     keeps its heading and its input at their own height and the list takes what
-     is left, so only the list scrolls; when a window is too short for the whole
-     column, the column itself scrolls rather than squeezing a control out of
-     reach. */
+  /* ADR-047 / ADR-049: the chat column - the chat's list and its input, with the
+     roster under them, and the column is the bar's and the body's two rows. The
+     chat takes the column's spare height with a definite size, so the list below
+     is the only thing that scrolls: the heading and the input keep their height,
+     the invite bar above and the roster below never move. */
   .room-body {
     grid-area: body;
     display: flex;
@@ -2844,15 +2857,20 @@
     gap: 0.75rem;
     min-width: 0;
     min-height: 0;
+    /* A valve only: the column does not grow past the body, so this never fires
+       while the list has room to give. */
     overflow-y: auto;
   }
 
   .chat {
     display: flex;
     flex-direction: column;
-    flex: 1 0 auto;
+    /* ADR-049: `flex-basis: 0` is what makes the list's height *definite* rather
+       than its content's - the roster below cannot be pushed by a message. */
+    flex: 1 1 0;
     min-height: 0;
     min-width: 0;
+    overflow: hidden;
   }
 
   .chat h2,
@@ -2860,22 +2878,36 @@
     margin-top: 0;
   }
 
+  .chat h2,
+  .chat form {
+    flex: 0 0 auto;
+  }
+
   .roster {
     flex: 0 0 auto;
     min-width: 0;
   }
 
-  /* Natural height on the list, so a column too short for everything still
-     shows messages rather than collapsing to nothing, and the room's own
-     scrollbar appears on the column instead. */
+  /* ADR-049: the messages are the column's only scroller. The bar is thin and
+     its thumb is invisible until the pointer is over the list, so a still list
+     is a plain panel and a scrolling one shows a quiet hint. These are the
+     standard properties: WebView2 157 honours `scrollbar-width`/`scrollbar-color`
+     and drops the legacy `::-webkit-scrollbar` rules when they are set. */
   .messages {
-    flex: 1 1 auto;
+    flex: 1 1 0;
     min-height: 0;
     overflow-y: auto;
     padding: 0.5rem 0.75rem;
     border: 1px solid #2c2d36;
     border-radius: 8px;
     background: #1a1b22;
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+
+  .messages:hover,
+  .messages:focus-within {
+    scrollbar-color: #4a4b57 transparent;
   }
 
   .message,
@@ -2890,6 +2922,16 @@
     margin-right: 0.45rem;
     font-weight: 600;
     color: #c8c8d2;
+  }
+
+  /* ADR-049: every line carries its time, small, on the same line as the author;
+     a system line has the time and no author. */
+  .message .time,
+  .system .time {
+    margin-right: 0.45rem;
+    font-size: 0.72rem;
+    color: #6b6b79;
+    font-variant-numeric: tabular-nums;
   }
 
   .message.mine {

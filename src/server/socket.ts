@@ -261,11 +261,19 @@ export function attachRoomSocket(
   // §5's `pageCommitted` goes to everyone, sender included: every app navigates
   // now, and a later joiner reads the same page from its `welcome` snapshot.
   const commitPage = (): void => {
+    const previous = room.page
     const commit = commitDuePage(room, now)
     if (commit === null) return
     const text = JSON.stringify(pageCommittedFrame(commit.page, commit.by, commit.at))
     for (const socket of sockets.keys()) socket.send(text)
     log(`[page] committed page=${commit.page} by=${commit.by} at=${commit.at}`)
+    // ADR-049: the room's log says where it went, once, at the commit and never
+    // at the stage - a cancelled preview posts nothing, because this function is
+    // the only place a page becomes the room's. A re-commit of the page the room
+    // already holds says nothing a second time.
+    if (commit.page !== previous) {
+      broadcastChat(postSystemChat(room, commit.by, () => `Moved to ${commit.page}`, now))
+    }
   }
 
   const startPageTimer = (expiresAt: number): void => {
@@ -558,6 +566,12 @@ export function attachRoomSocket(
           // own pick. It is the wire snapshot, so the path stays in this process.
           const mediaText = JSON.stringify({ type: 'media', media: snapshot(room).media } satisfies ServerFrame)
           for (const socket of sockets.keys()) socket.send(mediaText)
+          // ADR-049: the pick is the room's log's second event - one dimmed line
+          // at the moment the file becomes the room's, naming the file by the
+          // title the picker gave it (never the path, which stays here).
+          if (registered !== null) {
+            broadcastChat(postSystemChat(room, member.id, () => `Opened ${registered.title}`, now))
+          }
           return
         }
         case 'setPage': {
