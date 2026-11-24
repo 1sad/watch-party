@@ -1108,7 +1108,7 @@
    * address.
    *
    * A controller's new address goes through `stagePage` - the ordinary `setPage`
-   * with the two-second preview, its countdown and Cancel (ADR-032) - but the
+   * with the preview, its five-second countdown and Cancel (ADR-032) - but the
    * site view is not navigated again, because the site itself is already there.
    * A guest has no page to offer, so its site view is put back on `roomPage`
    * (or hidden in a room with no page), with one line in the bar saying so.

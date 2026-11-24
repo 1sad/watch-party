@@ -209,7 +209,7 @@ export function setMedia(
   }
   room.page = null
   // §4.2: the two kinds of media never coexist, and a pending page would commit
-  // two seconds from now and wipe the file that was just picked. A pick replaces
+  // five seconds from now and wipe the file that was just picked. A pick replaces
   // the pending change, exactly as a second `setPage` replaces the first.
   room.pendingPage = null
   // ADR-050: a picked file is a new film, so the room resets here, before any
