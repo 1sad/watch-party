@@ -323,6 +323,24 @@ scripts\portable-launch.ps1 -Exe release\WatchParty-0.3.0-portable-debug.exe -Cd
 with `cdp.mjs eval` instead, and `portable-launch.ps1 -Restore` afterwards points the `watchparty://` key back at the
 developer host.
 
+**2026-11-24: the app's window cannot decode a video in this session either.** Three fresh copies of
+`release/WatchParty-0.3.0-portable-debug.exe` loaded `probe.html` and `probe-swap.html`, but no `<video>` ever passed
+`readyState 0`: the page's own element, one the check created with `preload=auto`, and one on a `blob:` URL of the same
+file all read `duration NaN`, while a `fetch()` of that file from the same page answered `206` and the fixture server
+logged one `GET /fixture.mp4`. A page can therefore be proved without the app, and only a page can: start a plain
+Chromium with an endpoint and drive it the same way.
+
+```
+Start-Process "C:\Program Files\Vivaldi\Application\vivaldi.exe" -ArgumentList '--remote-debugging-port=9252','--user-data-dir=%TEMP%\vivaldi-cdp','--no-first-run','--no-default-browser-check'
+node scripts/cdp.mjs targets --port 9252
+node scripts/cdp.mjs eval <id> "location.href = 'http://127.0.0.1:8123/probe-swap.html'"
+```
+
+It opens on its own welcome tab whatever URL is passed, so navigate the target it lists. Measured 2026-11-24 (ticket
+144): there `probe-swap.html` reads `currentTime 50`, `duration 60` and `readyState 4` within 4 s, and a real click on
+`#swap` leaves `currentTime 0`. **Anything the app does to that page cannot be measured this way** - a check that needs
+the app to play, seek or clamp a video waits for a window that decodes (ticket 144c).
+
 The fullscreen button reports what it sends; it does not prove a grant. This window never grants `requestFullscreen()`
 (ADR-028): a real press in the visible site view is heard and logged as `site: fullscreen=enter w=... h=...` while
 `document.fullscreenElement` stays `null`. Quote that intent line, not a fullscreen element.
