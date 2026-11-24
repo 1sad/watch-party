@@ -132,7 +132,7 @@ unaffected (ADR-024, §4.4).
 | R38 | The app ships as one portable executable per variant, with every dependency except the browser engine inside it | copy the file to a folder on a Windows machine where nothing was installed, run it from there, and the room still syncs |
 | R39 | The first screen is invite and join only; Start a room switches to the watching screen at once; a room that ends returns a guest to the first screen with no dead player | start a room (screen changes), a second window joins by the link while the first screen is still up and lands on the watching screen itself, close the host (the guest's window is back on the first screen with one line saying so) |
 | R40 | The watching screen spends the window: the picture takes what is left, the chat is a 380 px column on its right, and under 900 px wide the chat moves below the picture (the picture bounded so the chat always has room); the invite bar stays reachable in fullscreen, and **in the owner's window** the address bar and **Open a file** are both present at every moment (a guest has no file to serve, R11) | in the owner's window, in a file room and in a page room, the address bar and Open a file are both present; pictures at maximised and at 800 px wide, the chat's rectangle right of the picture in the first and below it in the second |
-| R41 | The local file player has a volume control beside its play and scrub controls; the setting is that window's own and never travels to the room | two windows on one file at different volumes stay in sync; reopening the window keeps the volume |
+| R41 | The local file player has a volume control beside its play and scrub controls; the setting is that window's own and never travels to the room | two windows on one file at different volumes stay in sync (met); **reopening the window keeps the volume is not met yet** - the page's address changes on every run, so a stored level belongs to an origin that is gone (ticket 119; ADR-049, not yet written) |
 
 Rows tagged *v2* are requirements that survive the reordering (ADR-027) but are not built in v1. Nothing was
 deleted: R16 is the only one genuinely dropped, because rooms no longer outlive their members.
@@ -768,7 +768,7 @@ Milestones, not modes: each one is demoable. R-numbers are in §2.
 | --- | --- | --- |
 | **M1 A room that syncs** | app shell, room create/join over one direct connection, names/`anonymous`, chat, clock sync, position model, drift ladder, scheduled start, **file mode** | two apps stay within 250 ms for 10 min with one throttled; R1–R9, R11; a file is picked on one machine and plays on the other |
 | **M2 Website mode** | embedded browser, ad filtering, **app-owned fullscreen**, page following with **staged changes**, **control role, promotion and Take control**, **personal-choice isolation**, player discovery, echo suppression, per-viewer offsets | R17, R20, R21, R29, R30, R31, R33, R34, R36, R37; two apps open the same page and stay in step; typing in chat never pauses the film |
-| **M2b The window uses its space** | two screens (invite/join, then watching), the picture filling the window with a 380 px chat column beside it, chat below the picture under 900 px, the invite bar, a remembered window size, both watching routes always present, the local player's volume bar | R39, R40, R41; pictures at maximised and at 800 px, chat beside in one and below in the other, and a room that ends is back on the first screen |
+| **M2b The window uses its space** | two screens (invite/join, then watching), the picture filling the window with a 380 px chat column beside it, chat below the picture under 900 px, the invite bar, a remembered window size, both watching routes always present, the local player's volume bar | R39, R40, and R41's window-local half (its restart half is deferred - ADR-049, ticket 119); pictures at maximised and at 800 px, chat beside in one and below in the other, and a room that ends is back on the first screen |
 | **M3 Gate and resilience** | ready gate, buffering UI, reconnects, source-mismatch badges, quit/join polish, **cinema mode (T29)**, **realign triggers (T35)**, **peer-to-peer block (T37)** | R8, R10, R28, R32, R35; a member on a different mirror is visibly flagged and can fix it in one click |
 | **M4 Peer mesh and takeover** | every app connects to every app, room replication, authority transfer with no interruption | R22, R27; the owner closes their app mid-film and nobody's picture stops, chat keeps working, a new host appears within 2 s |
 | **M5 Add-on** | website-mode extension, Chrome + Firefox manifests, chat overlay | R18, R19; add-on and app share a room; typing "ar" in chat on a site where "a" seeks does not seek |
@@ -778,8 +778,8 @@ Milestones, not modes: each one is demoable. R-numbers are in §2.
 
 **M7 ran before M2b and M3** (closed 2026-11-22). **M2b runs before M3** — the user's order on 2026-11-23: the layout
 first, then "the room obeys". **M2b also pays an M2 debt:** R21's second route, browsing inside the app, is wired here
-(ADR-048), because the address bar and the site view are being reworked anyway; a site's own episode change currently
-leaves the room on the old page.
+(ADR-048), because the address bar and the site view are being reworked anyway. A site's own episode change now takes
+the room with it (ADR-048), a controller's typed like an address and a guest's put back.
 
 ## 14. Failure behaviour
 
