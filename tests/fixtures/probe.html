@@ -9,7 +9,7 @@
   h1 { font-size: 16px; margin: 12px 0 4px; }
   #label { font-family: ui-monospace, monospace; color: #8fd; }
   video { display: block; width: min(640px, 100%); margin-top: 12px; background: #000; }
-  #seekable { font-family: ui-monospace, monospace; color: #aaa; }
+  #seekable, #plays { font-family: ui-monospace, monospace; color: #aaa; }
 </style>
 </head>
 <body>
@@ -22,6 +22,7 @@
 <h1>Watch Party probe page</h1>
 <p id="episode">episode 1</p>
 <p id="seekable">seekable -</p>
+<p id="plays">plays 0 refused 0</p>
 <video id="video" src="fixture.mp4" controls muted playsinline preload="metadata"></video>
 <script>
   // A page a live check can name element by element. Nothing here talks to the
@@ -31,7 +32,41 @@
   const video = document.getElementById('video')
   const label = document.getElementById('label')
   const seekable = document.getElementById('seekable')
+  const plays = document.getElementById('plays')
   let requests = 0
+
+  // ?blockplay=1 refuses the first video.play() with NotAllowedError and allows
+  // the next; ?blockplay=all refuses every play() until a real press has
+  // happened.  It is a browser that refuses a play the page was not pressed for,
+  // on demand (T144).  With no query string nothing is refused: the wrapper
+  // still counts accepted plays into #plays and hands back the element's own
+  // promise, so what this page does is unchanged.
+  const blockplay = new URLSearchParams(location.search).get('blockplay')
+  const realPlay = video.play.bind(video)
+  let accepted = 0
+  let refused = 0
+  let pressed = false
+
+  function showPlays() {
+    plays.textContent = 'plays ' + accepted + ' refused ' + refused
+  }
+
+  document.addEventListener('pointerdown', (event) => {
+    // A press a person made, not one a script sent (ticket 19's rule, reversed).
+    if (event.isTrusted) pressed = true
+  }, true)
+
+  video.play = function () {
+    const refuseNow = blockplay === 'all' ? !pressed : blockplay === '1' && refused === 0
+    if (refuseNow) {
+      refused += 1
+      showPlays()
+      return Promise.reject(new DOMException('play was not pressed for', 'NotAllowedError'))
+    }
+    const attempt = realPlay()
+    attempt.then(() => { accepted += 1; showPlays() }, () => {})
+    return attempt
+  }
 
   document.getElementById('fullscreen').addEventListener('click', () => {
     // Reached by a real press only: the same call from eval is refused.

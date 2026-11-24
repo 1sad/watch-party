@@ -56,24 +56,38 @@ function parseRange(header: string | undefined, size: number): { start: number; 
 
 /**
  * The server for one directory. Exported so a test can bind port 0 and prove
- * the Range answers without a live check.
+ * the Range answers without a live check. `log` is how a live check tells the
+ * page's own navigation (a request for `/probe-loop.html?n=2`) from the app's,
+ * so every answer names the path it served; the default discards it and the
+ * command line prints it.
  */
-export function createProbeServer(root: string = HERE): Server {
+export function createProbeServer(
+  root: string = HERE,
+  log: (line: string) => void = () => {},
+): Server {
   const base = resolve(root)
 
   return createServer((request: IncomingMessage, response: ServerResponse) => {
+    // The path exactly as asked for, query included, because `?n=` is the loop
+    // page's whole point and the app's own requests carry none.
+    let asked = request.url ?? '/'
+    const say = (status: number): void => log(`probe: ${status} ${request.method} ${asked}`)
+
     const notFound = (): void => {
+      say(404)
       response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
       response.end('not found\n')
     }
 
     if (request.method !== 'GET' && request.method !== 'HEAD') {
+      say(405)
       response.writeHead(405, { allow: 'GET, HEAD' })
       response.end()
       return
     }
 
-    const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+    const url = new URL(asked, 'http://127.0.0.1')
+    asked = url.pathname + url.search
     let pathname: string
     try {
       pathname = decodeURIComponent(url.pathname)
@@ -81,7 +95,11 @@ export function createProbeServer(root: string = HERE): Server {
       notFound()
       return
     }
-    if (pathname === '/' || pathname === '') pathname = '/probe.html'
+    if (pathname === '/' || pathname === '') {
+      pathname = '/probe.html'
+      // Log the file that is served, not the shorthand that asked for it.
+      asked = pathname + url.search
+    }
 
     const file = resolve(base, `.${pathname}`)
     if (file !== base && !file.startsWith(base + sep)) {
@@ -107,6 +125,7 @@ export function createProbeServer(root: string = HERE): Server {
     const type = typeOf(file)
 
     if (range === 'unsatisfiable') {
+      say(416)
       response.writeHead(416, {
         'accept-ranges': 'bytes',
         'content-range': `bytes */${size}`,
@@ -116,6 +135,7 @@ export function createProbeServer(root: string = HERE): Server {
     }
 
     if (range === null) {
+      say(200)
       response.writeHead(200, {
         'content-type': type,
         'content-length': size,
@@ -130,6 +150,7 @@ export function createProbeServer(root: string = HERE): Server {
       return
     }
 
+    say(206)
     response.writeHead(206, {
       'content-type': type,
       'content-length': range.end - range.start + 1,
@@ -153,7 +174,7 @@ function main(argv: string[]): void {
     process.exit(1)
   }
 
-  const server = createProbeServer()
+  const server = createProbeServer(HERE, (line) => console.log(line))
   server.on('error', (error: Error) => {
     console.error(`watch-party probe: cannot listen on 127.0.0.1:${port}: ${error.message}`)
     process.exit(1)

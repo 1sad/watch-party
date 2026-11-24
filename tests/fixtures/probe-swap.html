@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Watch Party probe page - the swap</title>
+<style>
+  body { margin: 0; padding: 16px; background: #14151a; color: #e8e8ea; font: 14px/1.4 system-ui, sans-serif; }
+  button { font: inherit; padding: 6px 12px; margin-right: 8px; }
+  h1 { font-size: 16px; margin: 12px 0 4px; }
+  #now { font-family: ui-monospace, monospace; color: #8fd; }
+  video { display: block; width: min(640px, 100%); margin-top: 12px; background: #000; }
+</style>
+</head>
+<body>
+<h1>Watch Party probe page - the swap</h1>
+<p>
+  <button id="swap" type="button">Next episode</button>
+  <span id="now">now -</span>
+</p>
+<div id="stage"></div>
+<script>
+  // A site that changes episode by replacing its player: the first element is
+  // the 60 s tests/fixtures/fixture.mp4 seeked to 50 s once it has metadata, and
+  // #swap replaces it with a fresh element that has had no seek, so it starts at
+  // 0 (T145, T146, ADR-050). #now is this page's own readout and is not inside
+  // the replaced element, so it stays visible and keeps reporting which element
+  // is current.
+  var stage = document.getElementById('stage')
+  var now = document.getElementById('now')
+
+  function makeVideo(seekTo) {
+    var fresh = document.createElement('video')
+    fresh.src = 'fixture.mp4'
+    fresh.controls = true
+    fresh.muted = true
+    fresh.playsInline = true
+    fresh.preload = 'metadata'
+    if (seekTo !== undefined) {
+      fresh.addEventListener('loadedmetadata', function once() {
+        fresh.removeEventListener('loadedmetadata', once)
+        fresh.currentTime = seekTo
+      })
+    }
+    return fresh
+  }
+
+  function readNow() {
+    var video = stage.querySelector('video')
+    now.textContent = 'now ' + (video ? video.currentTime.toFixed(2) : 'none')
+  }
+
+  stage.appendChild(makeVideo(50))
+  setInterval(readNow, 200)
+  readNow()
+
+  document.getElementById('swap').addEventListener('click', function () {
+    var current = stage.querySelector('video')
+    if (current) stage.removeChild(current)
+    stage.appendChild(makeVideo())
+    readNow()
+  })
+</script>
+</body>
+</html>
