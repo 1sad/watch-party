@@ -162,6 +162,14 @@ public sealed class MainForm : Form
     /// exactly one. Null when the window is not in page mode.
     /// </summary>
     private string? _pageDockShape;
+    /// <summary>
+    /// T134: the shape whose line has been written. It is not the same field as
+    /// <see cref="_pageDockShape"/> because the line waits for the settle tick -
+    /// the views' pages will not have the new viewport before then (T129) - so a
+    /// shape can be applied and not yet reported. Cleared when a new shape is
+    /// applied, so each shape is named once.
+    /// </summary>
+    private string? _pageDockLogged;
     private bool _navigated;
     /// <summary>
     /// The port the sidecar reported, which together with <c>127.0.0.1</c> is the
@@ -1815,6 +1823,7 @@ public sealed class MainForm : Form
         _page.Dock = DockStyle.Fill;
         // T107: page mode is over, so the next page mode logs its own shape line.
         _pageDockShape = null;
+        _pageDockLogged = null;
         // Docking follows Visible, but not before the message returns.
         PerformLayout();
         HostLog.Write($"layout: file mode - site view hidden, the {_page.Width} px app view fills the window");
@@ -2028,19 +2037,30 @@ public sealed class MainForm : Form
     /// caller keeps the client-width formula. A failure is one log line, never a
     /// thrown resize.
     /// </summary>
-    private async Task<int?> ReadViewCssWidth(WebView2 view, string name)
+    private Task<int?> ReadViewCssWidth(WebView2 view, string name) =>
+        ReadViewCssPixels(view, "innerWidth", name);
+
+    /// <summary>
+    /// T134: one view's <c>window.innerWidth</c> or <c>window.innerHeight</c> in
+    /// whole CSS pixels - the unit the page draws with, and the number a check
+    /// reads with <c>cdp.mjs eval</c>. The page-mode dock's own line reads both of
+    /// its views through here (<see cref="LogPageDockAsync"/>) instead of quoting
+    /// WinForms' device-pixel rectangle beside a CSS column. Null when it cannot be
+    /// read; the caller decides what to say.
+    /// </summary>
+    private async Task<int?> ReadViewCssPixels(WebView2 view, string property, string name)
     {
         if (_closing || view.CoreWebView2 is null) return null;
         try
         {
-            // ExecuteScriptAsync hands back the value as JSON; innerWidth is
-            // always a whole number of CSS pixels, so the JSON is that number.
-            string raw = await view.CoreWebView2.ExecuteScriptAsync("window.innerWidth");
-            return int.TryParse(raw, out int width) && width > 0 ? width : null;
+            // ExecuteScriptAsync hands back the value as JSON; both are always
+            // whole numbers of CSS pixels, so the JSON is that number.
+            string raw = await view.CoreWebView2.ExecuteScriptAsync($"window.{property}");
+            return int.TryParse(raw, out int value) && value > 0 ? value : null;
         }
         catch (Exception error)
         {
-            HostLog.Write($"layout: could not read the {name}'s width: {error.Message}");
+            HostLog.Write($"layout: could not read the {name}'s {property}: {error.Message}");
             return null;
         }
     }
@@ -2075,22 +2095,28 @@ public sealed class MainForm : Form
     /// site view takes the rest. Narrow puts the app view along the bottom at
     /// <c>max(240, 40% of the client height)</c> and the site view above it, so the
     /// picture is never squeezed beside the chat. Called on every resize and when
-    /// page mode starts; one ASCII line per shape change carries the numbers the
-    /// window actually used, read after <see cref="Control.PerformLayout"/>, so a
-    /// check can read the log without eyes on the window. Fullscreen does not call
-    /// this: it changes nothing but the window's size.
+    /// page mode starts; one ASCII line per settled shape change carries the
+    /// numbers the views' pages actually have, in CSS pixels - the unit the page
+    /// draws with - so a check can read the log without eyes on the window. The
+    /// line itself is written by <see cref="LogPageDockAsync"/>. Fullscreen does
+    /// not call this: it changes nothing but the window's size.
     ///
     /// T129: <paramref name="quiet"/> applies the shape without claiming it, for
     /// the provisional formula pass a resize makes before the page has answered.
     /// The read that follows names the settled shape and writes the one log line,
     /// so a pixel's disagreement between the formula and the page cannot leave a
     /// second, wrong shape in the log.
+    ///
+    /// T134: true when this call changed the shape, which is the caller's one
+    /// signal that the views have not drawn the new dock yet - so the settled line
+    /// follows on the settle tick, not here. The change also restarts that tick,
+    /// so a shape that only corrects on a settled pass still gets its line.
     /// </summary>
-    private void ApplyPageDock(string layout, bool quiet = false)
+    private bool ApplyPageDock(string layout, bool quiet = false)
     {
         // No page mode, no dock to apply; a minimised window has no client area to
         // share and is laid out again when it is restored.
-        if (!_site.Visible || WindowState == FormWindowState.Minimized) return;
+        if (!_site.Visible || WindowState == FormWindowState.Minimized) return false;
 
         if (layout == "narrow")
         {
@@ -2110,12 +2136,12 @@ public sealed class MainForm : Form
         // the rectangles below are the ones the window is about to show.
         PerformLayout();
 
-        if (quiet) return;
-        if (layout == _pageDockShape) return;
+        if (quiet) return false;
+        if (layout == _pageDockShape) return false;
         _pageDockShape = layout;
-        HostLog.Write(layout == "narrow"
-            ? $"layout: page mode narrow - site {_site.Width}x{_site.Height} above a {_page.Height} px app view"
-            : $"layout: page mode - site {_site.Width}x{_site.Height} left of a {SidebarWidth} px app view");
+        _pageDockLogged = null;
+        SettleLayout();
+        return true;
     }
 
     /// <summary>
@@ -2133,6 +2159,61 @@ public sealed class MainForm : Form
     {
         int dpi = DeviceDpi;
         return dpi > 0 ? (int)Math.Round(SidebarWidth * dpi / 96.0) : SidebarWidth;
+    }
+
+    /// <summary>
+    /// T134: the page-mode dock's one line per settled shape, in the unit the page
+    /// draws with. The line used to quote <see cref="Control.Width"/> and
+    /// <see cref="Control.Height"/> - WinForms **device** pixels - beside
+    /// <see cref="SidebarWidth"/>, which is CSS pixels, so its two numbers were in
+    /// two units and did not add to the window's width (measured 2026-11-24 at
+    /// 125%: <c>site 649x653 left of a 380 px app view</c>, while the site view's
+    /// own viewport was 520 CSS px wide, 520 + 380 = the window's 900). Every
+    /// number here is a view's own <c>window.innerWidth</c>/<c>innerHeight</c>, the
+    /// same read a check makes with <c>cdp.mjs eval</c>; the column keeps its one
+    /// constant, which the line names in CSS pixels as the page receives it.
+    ///
+    /// Written on the settle tick and not in the message that docked: WebView2
+    /// resizes the views' content after the control bounds change (T129), so a
+    /// viewport read there is still the old one. Null reads fall back to the
+    /// device rectangle through <see cref="CssFromDevice"/>, so the line still
+    /// carries CSS pixels when a view cannot answer.
+    /// </summary>
+    private async Task LogPageDockAsync(string layout)
+    {
+        if (_closing || !_site.Visible || layout != _pageDockShape) return;
+        if (layout == _pageDockLogged) return;
+        _pageDockLogged = layout;
+
+        int? siteWidth = await ReadViewCssPixels(_site, "innerWidth", "site view");
+        int? siteHeight = await ReadViewCssPixels(_site, "innerHeight", "site view");
+        int? appHeight = layout == "narrow"
+            ? await ReadViewCssPixels(_page, "innerHeight", "app view")
+            : null;
+
+        // A newer dock (or page mode ending) owns the line now; its own settle
+        // tick writes it. Nothing here touches the dock, so a lost line costs the
+        // line and nothing else.
+        if (_closing || !_site.Visible || layout != _pageDockShape) return;
+
+        int siteCssWidth = siteWidth ?? CssFromDevice(_site.Width);
+        int siteCssHeight = siteHeight ?? CssFromDevice(_site.Height);
+        int appCssHeight = appHeight ?? CssFromDevice(_page.Height);
+
+        HostLog.Write(layout == "narrow"
+            ? $"layout: page mode narrow - site {siteCssWidth}x{siteCssHeight} css px above a {appCssHeight} css px app view"
+            : $"layout: page mode - site {siteCssWidth}x{siteCssHeight} css px left of a {SidebarWidth} css px app view");
+    }
+
+    /// <summary>
+    /// T134: a WinForms device-pixel length as whole CSS pixels, for the log's
+    /// fallback when a view cannot answer its own viewport. The dock's column uses
+    /// the same conversion the other way round (<see cref="ColumnDeviceWidth"/>).
+    /// </summary>
+    private int CssFromDevice(int devicePixels)
+    {
+        int dpi = DeviceDpi;
+        return dpi > 0 ? (int)Math.Round(devicePixels * 96.0 / dpi) : devicePixels;
     }
 
     /// <summary>
@@ -2161,8 +2242,14 @@ public sealed class MainForm : Form
     /// cref="ReadWindowCssWidth"/>), and the dock's shape is taken from that same
     /// number here rather than from a second copy of it, so the views and the
     /// attribute cannot disagree about which side of 900 px the window is on.
+    ///
+    /// T134: <paramref name="settled"/> is the settle tick's pass (<see
+    /// cref="OnLayoutSettle"/>), which is the first moment the views' pages have
+    /// the viewport the dock gave them. It writes the dock's line through
+    /// <see cref="LogPageDockAsync"/> unless this same pass changed the shape, in
+    /// which case a newer tick will carry the line.
     /// </summary>
-    private async void PublishLayout(bool afterLoad = false, bool fromHostWidth = false)
+    private async void PublishLayout(bool afterLoad = false, bool fromHostWidth = false, bool settled = false)
     {
         if (_closing || _page.CoreWebView2 is null) return;
 
@@ -2182,7 +2269,8 @@ public sealed class MainForm : Form
 
         // Before the change gate: a shape that corrects inside one published
         // layout must still move the views (T129).
-        ApplyPageDock(layout);
+        bool dockChanged = ApplyPageDock(layout);
+        if (settled && !dockChanged) await LogPageDockAsync(layout);
 
         // The host's dock, not the width, decides the panel (ADR-047): a page-mode
         // window is the column at every width, so the page must not fall back to
@@ -2269,7 +2357,7 @@ public sealed class MainForm : Form
     private void OnLayoutSettle(object? sender, EventArgs e)
     {
         _layoutSettle.Stop();
-        PublishLayout();
+        PublishLayout(settled: true);
     }
 
     /// <summary>
