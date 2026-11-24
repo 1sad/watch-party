@@ -11,6 +11,7 @@
  */
 
 import type { Playback, SetPageFrame } from './protocol.ts'
+import { YOUTUBE_PAGE, youtubeVideoId } from './youtube.ts'
 
 /**
  * ADR-032's window, in milliseconds: how long the authority holds a staged page
@@ -53,6 +54,9 @@ const HOST_AND_PORT = /^[a-z0-9.-]+:\d+/i
  * - trailing `?` and `#` with nothing after them are not kept: the URL parser
  *   reads them as an empty query and fragment, which is the address without
  *   them.
+ * - **a YouTube video address is `https://www.youtube.com/watch?v=<id>` and
+ *   nothing else** (ADR-051): one form for one film, so `youtu.be/<id>`,
+ *   `?t=30` and a tracking parameter all reach the room as the same page.
  *
  * The result is idempotent — canonical in, the same canonical out — so a stored
  * page can be compared with a fresh one by string equality.
@@ -83,6 +87,16 @@ export function canonicalPage(raw: string): string | null {
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
   if (url.hostname.length === 0) return null
+
+  // ADR-051 is the one exception to the rule above: on YouTube the query is the
+  // film, not a session token, so a video address is stored in one form for one
+  // film - `https://www.youtube.com/watch?v=<id>`. Rebuilding it from the id
+  // drops `t=`, a playlist index and every tracking parameter, which is what
+  // "one video per address" means. It is asked last, after every refusal, and
+  // answers null for any other host, so every other page below is byte-identical
+  // to what it was before this exception existed.
+  const videoId = youtubeVideoId(url.href)
+  if (videoId !== null) return `${YOUTUBE_PAGE}${videoId}`
 
   // Built field by field rather than by returning `url.href`: what is not named
   // here cannot travel, so `user:pass@` is dropped by construction and the five

@@ -5,6 +5,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 
 import { parseRange } from '../shared/media.ts'
+import { YOUTUBE_EMBED_PATH, youtubeEmbedPage } from './embed.ts'
 import { ADDRESS_BLOCK_MS, createRefusalBook, type RefusalBook } from './socket.ts'
 
 /** The one file the room registered, as `/media/<id>` needs it. T9a1. */
@@ -303,6 +304,18 @@ async function handle(
     return
   }
 
+  if (url.pathname === YOUTUBE_EMBED_PATH) {
+    if (method !== 'GET' && method !== 'HEAD') {
+      sendMethodNotAllowed(response, 'GET, HEAD')
+      return
+    }
+    // ADR-051: the picture for a YouTube room page is this page, not
+    // youtube.com. It is built here rather than read from dist/, so the
+    // development sidecar and the packaged copy serve the same bytes.
+    sendHtml(response, youtubeEmbedPage(url.searchParams.get('id') ?? ''), method)
+    return
+  }
+
   if (url.pathname.startsWith('/media/')) {
     if (method !== 'GET' && method !== 'HEAD') {
       sendMethodNotAllowed(response, 'GET, HEAD')
@@ -380,6 +393,16 @@ export function resolveStaticFile(distDir: string, pathname: string): string | n
 function sendText(response: ServerResponse, status: number, body: string, method: string): void {
   response.writeHead(status, {
     'content-type': 'text/plain; charset=utf-8',
+    'content-length': Buffer.byteLength(body),
+    'cache-control': 'no-store',
+  })
+  response.end(method === 'HEAD' ? undefined : body)
+}
+
+/** A page this server wrote itself (the embed, ADR-051). */
+function sendHtml(response: ServerResponse, body: string, method: string): void {
+  response.writeHead(200, {
+    'content-type': 'text/html; charset=utf-8',
     'content-length': Buffer.byteLength(body),
     'cache-control': 'no-store',
   })
