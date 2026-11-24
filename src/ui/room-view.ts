@@ -187,3 +187,72 @@ export function pageFollowOutcome(fields: PageFollowFields): PageFollow {
   if (preview !== null && preview === address) return 'ignore'
   return fields.controller ? 'stage' : 'return'
 }
+
+/**
+ * ADR-050's bound on the put-back: one window makes at most this many put-backs
+ * for one stray address and one room page. The fourth try is a `stop`.
+ */
+export const PUT_BACK_LIMIT = 3
+
+/**
+ * What one window remembers about its put-backs (ADR-050). It is the window's
+ * own record and never crosses the wire: the room's state, the authority and
+ * every command are untouched by it.
+ *
+ * The key is the pair the count belongs to - the stray address and the room's
+ * page, both canonical, so a query, a fragment or a case difference is the same
+ * pair as the `ignore` above. A different pair starts from zero; a commit
+ * clears the record entirely (`NO_PUT_BACKS`), so a real page change still puts
+ * the guest back once.
+ */
+export interface PutBackRecord {
+  /** `stray\nroom` of the last pair, or null before the first put-back. */
+  key: string | null
+  /** Put-backs this window has made for that pair. */
+  count: number
+  /** The bound was reached and the line was said; later tries are silent. */
+  stopped: boolean
+}
+
+/** The record of a window that has put nothing back yet. */
+export const NO_PUT_BACKS: PutBackRecord = { key: null, count: 0, stopped: false }
+
+/** The pair a put-back count belongs to, canonical so a reload of it is the same pair. */
+function putBackKey(fields: PageFollowFields): string {
+  const stray = fields.address === null ? '' : (canonicalPage(fields.address) ?? '')
+  const room = fields.roomPage === null ? '' : (canonicalPage(fields.roomPage) ?? '')
+  return `${stray}\n${room}`
+}
+
+/**
+ * One announced address and the bound together (ADR-050). The decision is
+ * `pageFollowOutcome`'s; this only counts the put-backs it asks for:
+ *
+ * - `putBack` — the ordinary return, and the record counts it;
+ * - `stop` — the bound was already reached. `announce` is true on the first
+ *   stop only, so one line says the site keeps leaving the room and a repeat
+ *   of the same stray address says nothing more;
+ * - `ignore` and `stage` leave the record exactly as it was.
+ *
+ * The decision lives here so a unit test can hold it (the same arrangement as
+ * `pageFollowOutcome` above): four announces of one stray address are three
+ * put-backs and a stop, and a cleared record puts the guest back once again.
+ */
+export type PageFollowStep =
+  | { kind: 'ignore'; record: PutBackRecord }
+  | { kind: 'stage'; record: PutBackRecord }
+  | { kind: 'putBack'; record: PutBackRecord }
+  | { kind: 'stop'; record: PutBackRecord; announce: boolean }
+
+export function pageFollowStep(fields: PageFollowFields, record: PutBackRecord): PageFollowStep {
+  const outcome = pageFollowOutcome(fields)
+  if (outcome !== 'return') return { kind: outcome, record }
+
+  const key = putBackKey(fields)
+  const count = record.key === key ? record.count : 0
+  const stopped = record.key === key ? record.stopped : false
+  const kept: PutBackRecord = { key, count, stopped }
+  if (stopped) return { kind: 'stop', record: kept, announce: false }
+  if (count >= PUT_BACK_LIMIT) return { kind: 'stop', record: { ...kept, stopped: true }, announce: true }
+  return { kind: 'putBack', record: { key, count: count + 1, stopped: false } }
+}

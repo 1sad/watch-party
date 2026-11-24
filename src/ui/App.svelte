@@ -31,10 +31,12 @@
     closeOutcome,
     pageSide,
     pageCommitFields,
-    pageFollowOutcome,
+    pageFollowStep,
     screenFor,
     siteAfterPreview,
     HIDE_SITE_MESSAGE,
+    NO_PUT_BACKS,
+    type PutBackRecord,
   } from './room-view.ts'
   import {
     POPUP_NOTICE_MS,
@@ -707,6 +709,9 @@
       roomPage = committed.page
       media = committed.media
       pendingPreview = null
+      // ADR-050: a commit clears the bound, so a real page change still puts
+      // the guest back once however often the previous page left.
+      putBackRecord = NO_PUT_BACKS
       // T14: the old page's player is gone (or about to be); the hold on it goes
       // with the document, whether or not this window navigates here.
       endSiteNudge()
@@ -1004,6 +1009,16 @@
   /** `performance.now()` of the last `player: drift` line; null before the first. */
   let driftLineAt: number | null = null
 
+  /** ADR-050: the put-back line's own end, whichever comes first with "the room moved". */
+  const PUT_BACK_NOTICE_MS = 30_000
+
+  /**
+   * ADR-050: this window's own put-back count for one stray address and one
+   * room page. A `pageCommitted` clears it, so a real page change still puts
+   * the guest back once; nothing of it crosses the wire.
+   */
+  let putBackRecord: PutBackRecord = NO_PUT_BACKS
+
   /**
    * T105 / ADR-048: the top document says where it went, and this window decides
    * what that means. The host already drops a `pageAddress` sent from a player
@@ -1016,6 +1031,7 @@
    * site view is not navigated again, because the site itself is already there.
    * A guest has no page to offer, so its site view is put back on `roomPage`
    * (or hidden in a room with no page), with one line in the bar saying so.
+   * ADR-050 bounds that to three tries for one address and then stops.
    */
   function onPageAddress(body: Record<string, unknown>): void {
     if (body.top !== true) return
@@ -1023,17 +1039,34 @@
     const address = canonicalPage(body.href)
     if (address === null) return
 
-    const outcome = pageFollowOutcome({
-      address,
-      roomPage,
-      previewPage: pendingPreview === null ? null : pendingPreview.page,
-      controller: isController(),
-    })
-    if (outcome === 'ignore') return
+    const step = pageFollowStep(
+      {
+        address,
+        roomPage,
+        previewPage: pendingPreview === null ? null : pendingPreview.page,
+        controller: isController(),
+      },
+      putBackRecord,
+    )
+    putBackRecord = step.record
+    const putBackOn = roomPage
+    if (step.kind === 'ignore') return
 
-    if (outcome === 'stage') {
+    if (step.kind === 'stage') {
       // The site view already shows this address, so only the wire is told.
       if (stagePage(address, false) && dev) console.info(`[page] followed ${address}`)
+      return
+    }
+
+    // ADR-050: the bound is reached, so this window stays where the site took
+    // it and says so once. Nothing more is navigated or logged for the pair.
+    if (step.kind === 'stop') {
+      if (!step.announce) return
+      if (dev) console.info('[page] the site keeps leaving the room - stopped going back')
+      notice('putback', 'The site keeps leaving the room, so this window stopped going back.', {
+        until: performance.now() + PUT_BACK_NOTICE_MS,
+        when: () => roomPage === putBackOn,
+      })
       return
     }
 
@@ -1043,14 +1076,13 @@
     restoreSiteAfterPreview()
     // ADR-049: the put-back line is a notice like the others, and it ends when
     // the room moves - the sentence "the room is on X" is stale the moment the
-    // room's page changes. Ticket 147 adds the bound and the 30 s end.
-    const putBackOn = roomPage
+    // room's page changes - or after 30 s (ADR-050), whichever comes first.
     notice(
       'putback',
       putBackOn === null
         ? 'The room has no page yet, so this window was put back.'
         : `The room is on ${putBackOn}, so this window was put back.`,
-      { when: () => roomPage === putBackOn },
+      { until: performance.now() + PUT_BACK_NOTICE_MS, when: () => roomPage === putBackOn },
     )
   }
 
