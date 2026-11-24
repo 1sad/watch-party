@@ -143,6 +143,23 @@
   let selfId = $state<string | null>(null)
   let roomCode = $state<string | null>(null)
   let members = $state<WireMember[]>([])
+  /**
+   * T154 / ADR-049: the roster is a count, not a list. The people the authority
+   * has heard from - `offline` is 20 s of silence (§4.4), so a closed window's
+   * member leaves the count and the names without leaving the frame. The same
+   * list is the header's number and the rows under it, so the two cannot say
+   * different things.
+   */
+  const present = $derived(members.filter((member) => member.status !== 'offline'))
+  /** ADR-049: the names are closed until a press opens them. */
+  let rosterOpen = $state(false)
+  /**
+   * ADR-033 + ADR-049: the crown marks the room's **owner**, which is the
+   * snapshot's `owner` and never `controllers` - control can be granted, so a
+   * crown read from `controllers` would move to whoever was handed the controls.
+   * The owner never changes hands for the life of a room (ADR-024).
+   */
+  let roomOwner = $state<string | null>(null)
   let sentence = $state<string | null>(null)
 
   // §4.6's chat, in arrival order only. `welcome.chatTail` starts it and every
@@ -634,6 +651,8 @@
       selfId = frame.selfId
       roomCode = frame.room.code
       members = frame.members
+      // T154: the crown comes from the snapshot's owner, never `controllers`.
+      roomOwner = frame.room.owner
       // §4.3 invariant 9: a fresh welcome is a new room view. `realign` tells
       // the player to put the element on it, whatever it had before (a reload,
       // a reconnect, a different room).
@@ -2258,24 +2277,45 @@
             </form>
           </section>
 
-          {#if members.length > 0 && !roomEnded}
+          {#if present.length > 0 && !roomEnded}
+            <!-- T154 / ADR-049: the roster is one line, "N online", and the names
+                 are under it only once a press asks for them. It is a sibling of
+                 the chat section, not a row inside its scroller, so a message
+                 can never move it (ticket 153). The count and the rows read the
+                 same list. -->
             <section class="roster">
-              <h2>In this room</h2>
-              <ul>
-                {#each members as member (member.id)}
-                  <li>
-                    <span class="dot {member.status}" title={member.status}></span>
-                    <span class="name">{member.displayName}</span>
-                    {#if member.id === selfId}<span class="you">you</span>{/if}
-                  </li>
-                {/each}
-              </ul>
+              <button
+                type="button"
+                class="roster-toggle"
+                aria-expanded={rosterOpen}
+                onclick={() => (rosterOpen = !rosterOpen)}
+              >
+                <span class="chevron" aria-hidden="true"></span>
+                <span class="count">{present.length} online</span>
+              </button>
 
-              {#if selfId !== null}
-                <form onsubmit={submitRename}>
-                  <input type="text" aria-label="Your name" placeholder="Your name" bind:value={nameDraft} />
-                  <button type="submit">Set name</button>
-                </form>
+              {#if rosterOpen}
+                <ul>
+                  {#each present as member (member.id)}
+                    <li>
+                      <span class="dot {member.status}" title={member.status}></span>
+                      <span class="name">{member.displayName}</span>
+                      {#if member.id === roomOwner}
+                        <span class="crown" role="img" aria-label="the room's owner" title="the room's owner"
+                          >&#9819;</span
+                        >
+                      {/if}
+                      {#if member.id === selfId}<span class="you">you</span>{/if}
+                    </li>
+                  {/each}
+                </ul>
+
+                {#if selfId !== null}
+                  <form onsubmit={submitRename}>
+                    <input type="text" aria-label="Your name" placeholder="Your name" bind:value={nameDraft} />
+                    <button type="submit">Set name</button>
+                  </form>
+                {/if}
               {/if}
             </section>
           {/if}
@@ -2873,8 +2913,7 @@
     overflow: hidden;
   }
 
-  .chat h2,
-  .roster h2 {
+  .chat h2 {
     margin-top: 0;
   }
 
@@ -2886,6 +2925,70 @@
   .roster {
     flex: 0 0 auto;
     min-width: 0;
+  }
+
+  /* T154 / ADR-049: one line, "N online", where the names used to be, and the
+     names only under it once asked for. A button, so it is keyboard reachable
+     and its state is `aria-expanded`; the chevron turns when it opens. */
+  .roster-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    width: 100%;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid #2c2d36;
+    border-radius: 6px;
+    background: #1a1b22;
+    color: #c8c8d2;
+    font: inherit;
+    font-size: 0.85rem;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .roster-toggle:hover,
+  .roster-toggle:focus-visible {
+    border-color: #4a4b57;
+    color: #e9e9ef;
+  }
+
+  .roster-toggle .count {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* A drawn triangle, not a character: the header's own text is the count, so a
+     quoted `textContent` reads exactly "2 online". */
+  .roster-toggle .chevron {
+    width: 0;
+    height: 0;
+    border-left: 5px solid currentColor;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    transition: transform 120ms ease;
+  }
+
+  .roster-toggle[aria-expanded='true'] .chevron {
+    transform: rotate(90deg);
+  }
+
+  .roster ul {
+    margin: 0.35rem 0 0;
+    padding: 0 0.25rem;
+    list-style: none;
+  }
+
+  .roster li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.45rem;
+    line-height: 1.6;
+  }
+
+  /* ADR-049: the crown is the room's owner, which is the snapshot's `owner`.
+     Control is a different thing and may be granted (ADR-033). */
+  .roster .crown {
+    color: #e0b34a;
+    font-size: 0.95rem;
   }
 
   /* ADR-049: the messages are the column's only scroller. The bar is thin and
