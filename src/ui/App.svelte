@@ -2231,7 +2231,47 @@
       {#if selfId !== null}
         <div class="room-body">
           <section class="chat" aria-label="Chat">
-            <h2>Chat</h2>
+            <!-- T154b / ADR-049: the count sits on the Chat heading's own line,
+                 where the owner asked for it ("on top where it says Chat"). The
+                 names open under that row, above the message list, so the room's
+                 size is read in one place and one set of names is on the screen. -->
+            <div class="chat-head">
+              <h2>Chat</h2>
+              {#if present.length > 0 && !roomEnded}
+                <button
+                  type="button"
+                  class="roster-toggle"
+                  aria-expanded={rosterOpen}
+                  aria-controls="chat-names"
+                  onclick={() => (rosterOpen = !rosterOpen)}
+                >
+                  <span class="chevron" aria-hidden="true"></span>
+                  <span class="count">{present.length} online</span>
+                </button>
+              {/if}
+            </div>
+
+            {#if rosterOpen && present.length > 0 && !roomEnded}
+              <!-- T154b / ADR-049: the same `present` list the count above reads,
+                   so the number and the names cannot disagree; under the heading
+                   row and outside the messages' scroller, so a message never
+                   moves either. -->
+              <ul class="names" id="chat-names">
+                {#each present as member (member.id)}
+                  <li>
+                    <span class="dot {member.status}" title={member.status}></span>
+                    <span class="name">{member.displayName}</span>
+                    {#if member.id === roomOwner}
+                      <span class="crown" role="img" aria-label="the room's owner" title="the room's owner"
+                        >&#9819;</span
+                      >
+                    {/if}
+                    {#if member.id === selfId}<span class="you">you</span>{/if}
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+
             <div class="messages" bind:this={chatList}>
               {#each chat as message (message.id)}
                 {#if message.kind === 'system'}
@@ -2277,46 +2317,15 @@
             </form>
           </section>
 
-          {#if present.length > 0 && !roomEnded}
-            <!-- T154 / ADR-049: the roster is one line, "N online", and the names
-                 are under it only once a press asks for them. It is a sibling of
-                 the chat section, not a row inside its scroller, so a message
-                 can never move it (ticket 153). The count and the rows read the
-                 same list. -->
-            <section class="roster">
-              <button
-                type="button"
-                class="roster-toggle"
-                aria-expanded={rosterOpen}
-                onclick={() => (rosterOpen = !rosterOpen)}
-              >
-                <span class="chevron" aria-hidden="true"></span>
-                <span class="count">{present.length} online</span>
-              </button>
-
-              {#if rosterOpen}
-                <ul>
-                  {#each present as member (member.id)}
-                    <li>
-                      <span class="dot {member.status}" title={member.status}></span>
-                      <span class="name">{member.displayName}</span>
-                      {#if member.id === roomOwner}
-                        <span class="crown" role="img" aria-label="the room's owner" title="the room's owner"
-                          >&#9819;</span
-                        >
-                      {/if}
-                      {#if member.id === selfId}<span class="you">you</span>{/if}
-                    </li>
-                  {/each}
-                </ul>
-
-                {#if selfId !== null}
-                  <form onsubmit={submitRename}>
-                    <input type="text" aria-label="Your name" placeholder="Your name" bind:value={nameDraft} />
-                    <button type="submit">Set name</button>
-                  </form>
-                {/if}
-              {/if}
+          {#if selfId !== null && !roomEnded}
+            <!-- T154b: the count and the names moved to the chat's heading row;
+                 only the name form keeps the roster's old place, under the
+                 message box, until `/name` replaces it (ADR-049, ticket 152). -->
+            <section class="rename" aria-label="Your name">
+              <form onsubmit={submitRename}>
+                <input type="text" aria-label="Your name" placeholder="Your name" bind:value={nameDraft} />
+                <button type="submit">Set name</button>
+              </form>
             </section>
           {/if}
         </div>
@@ -2539,7 +2548,7 @@
 
   /* The chat's heading and input are not the picture's to squeeze: the column
      asks for no width of its own and keeps eight lines' worth, so the picture
-     gives way first and the roster scrolls into view. */
+     gives way first and the name form scrolls into view. */
   :global(html[data-layout='narrow']) .room-body {
     flex: 1 1 0;
     min-height: 8rem;
@@ -2547,7 +2556,7 @@
 
   /* T99 / ADR-047 ("the host's dock wins"): the host has docked this page as the
      chat column, so the picture is the site view's and this page draws one
-     column - the invite bar, then the chat, the roster and the controls. These
+     column - the invite bar, then the chat, its names and the controls. These
      rules sit after the narrow ones on purpose: they have the same specificity,
      so `data-panel="chat"` wins over `data-layout="narrow"` by coming later, and
      a narrow page-mode window draws no second, empty picture. */
@@ -2885,11 +2894,12 @@
     color: #7fd0a5;
   }
 
-  /* ADR-047 / ADR-049: the chat column - the chat's list and its input, with the
-     roster under them, and the column is the bar's and the body's two rows. The
-     chat takes the column's spare height with a definite size, so the list below
-     is the only thing that scrolls: the heading and the input keep their height,
-     the invite bar above and the roster below never move. */
+  /* ADR-047 / ADR-049 / T154b: the chat column - the chat's heading row, its
+     names, its list and its input, with the name form under them, and the column
+     is the bar's and the body's two rows. The chat takes the column's spare height
+     with a definite size, so the list below is the only thing that scrolls: the
+     heading and the input keep their height, the invite bar above and the name
+     form below never move. */
   .room-body {
     grid-area: body;
     display: flex;
@@ -2906,42 +2916,57 @@
     display: flex;
     flex-direction: column;
     /* ADR-049: `flex-basis: 0` is what makes the list's height *definite* rather
-       than its content's - the roster below cannot be pushed by a message. */
+       than its content's - the heading row above cannot be pushed by a message. */
     flex: 1 1 0;
     min-height: 0;
     min-width: 0;
     overflow: hidden;
   }
 
-  .chat h2 {
-    margin-top: 0;
+  /* T154b / ADR-049: the Chat heading and the count are one row - `Chat` and
+     `N online` - and the names open under that row, above the messages. The row
+     and the rows are `flex: 0 0 auto`, so a message can never move them and the
+     count's rectangle is the same before and after one arrives (ticket 153's
+     rule, kept). */
+  .chat-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    flex: 0 0 auto;
+    margin-bottom: 0.5rem;
   }
 
-  .chat h2,
+  .chat-head h2 {
+    margin: 0;
+  }
+
   .chat form {
     flex: 0 0 auto;
   }
 
-  .roster {
+  /* T154b: the name form keeps the place the roster gave it - under the message
+     box - until `/name` replaces it (ADR-049, ticket 152). */
+  .rename {
     flex: 0 0 auto;
     min-width: 0;
   }
 
-  /* T154 / ADR-049: one line, "N online", where the names used to be, and the
-     names only under it once asked for. A button, so it is keyboard reachable
-     and its state is `aria-expanded`; the chevron turns when it opens. */
+  /* T154 / ADR-049: one line, "N online", beside the heading, and the names only
+     under it once asked for. A button, so it is keyboard reachable and its state
+     is `aria-expanded`; the chevron turns when it opens. */
   .roster-toggle {
     display: flex;
     align-items: center;
-    gap: 0.45rem;
-    width: 100%;
-    padding: 0.35rem 0.5rem;
+    gap: 0.4rem;
+    flex: 0 0 auto;
+    padding: 0.15rem 0.5rem;
     border: 1px solid #2c2d36;
     border-radius: 6px;
     background: #1a1b22;
     color: #c8c8d2;
     font: inherit;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
     text-align: left;
     cursor: pointer;
   }
@@ -2971,22 +2996,28 @@
     transform: rotate(90deg);
   }
 
-  .roster ul {
-    margin: 0.35rem 0 0;
+  /* T154b: the rows are the count's own list, opened under the heading row and
+     above the messages; `present` is the same derived list, so the number and the
+     names cannot disagree. */
+  .names {
+    flex: 0 0 auto;
+    margin: 0 0 0.5rem;
     padding: 0 0.25rem;
     list-style: none;
   }
 
-  .roster li {
+  .names li {
     display: flex;
     align-items: baseline;
     gap: 0.45rem;
+    padding: 0;
+    font-size: 0.9rem;
     line-height: 1.6;
   }
 
   /* ADR-049: the crown is the room's owner, which is the snapshot's `owner`.
      Control is a different thing and may be granted (ADR-033). */
-  .roster .crown {
+  .names .crown {
     color: #e0b34a;
     font-size: 0.95rem;
   }
