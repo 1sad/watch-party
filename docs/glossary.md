@@ -154,9 +154,14 @@ screen.
 **Picture** — whatever the room is playing, drawn in the big area: our own `<video>` in file mode, the site's own
 view in website mode. The chat never covers it except in cinema mode, which is not built yet.
 
-**Chat column** - the thin column to the picture's right: invite bar, address bar, chat, roster and the room's
-controls. It is 380 px wide, and that number is the host's (`--chat-column`), not the page's. Under 900 px of window
-width it moves below the picture instead.
+**Chat column** - the thin column to the picture's right: invite bar, chat, roster and the room's controls. It is 380 px
+wide, and that number is the host's (`--chat-column`), not the page's. Under 900 px of window width it moves below the
+picture instead. The address bar is not one of its rows when the page lays out the window itself - see **Address bar**.
+
+**Address bar** - the page's own top row on the watching screen: one bar across the top holding the field, its **Paste**
+button inside the field, and **Open a file** beside it (R29, R40). It sits above the picture and the chat column, which
+makes the invite bar the column's first row under it. When the host docks the app view as the chat column - a website
+room - the same row is that 380 px column's top row, and the invite bar follows it (ADR-047).
 
 **Invite bar** — the chat column's first row: the room code, the invite link and one Copy button, with the raw address
 and code one click inside. Always reachable while watching, including in fullscreen.

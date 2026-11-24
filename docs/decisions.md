@@ -1335,9 +1335,9 @@ when the room ends. The page never invents a second room, and a window that join
 invite payload of its own while it is in it.
 
 **The watching screen's layout.** The picture takes whatever is left; the chat is a **380 px column on its right**
-(the width the app-view dock already uses), with the invite bar as that column's top row and the controls under the
-picture. The picture is the site view in website mode and our own `<video>` in file mode, and the rule is the same in
-both:
+(the width the app-view dock already uses), with the address bar as the page's own top row **above both** (2026-11-24,
+ticket 125), the invite bar as the column's first row under that bar, and the controls under the picture. The picture is
+the site view in website mode and our own `<video>` in file mode, and the rule is the same in both:
 
 - **Window 900 px wide or more** (the page's own width in CSS pixels, 2026-11-24 amendment): picture left, chat column right, invite bar
   on top of the column.
@@ -1360,7 +1360,10 @@ the layout attribute, and the page's CSS uses `var(--chat-column, 380px)` — th
 not a second source of truth.
 
 **What can be watched is chosen on the watching screen.** The address bar and the file picker live there; an empty room
-shows an empty picture area, and the bar under it carries both routes (paste a page address, Open a file). Nothing picks
+shows an empty picture area, and **the bar above it** carries both routes (paste a page address, Open a file). The bar is
+the page's own top row, a `<header>` above `<main>`: it spans the window whenever the page lays out the picture and the
+column itself (file mode, and the empty screen), and when the host docks the app view as the chat column it is that
+column's top row, above the invite bar (2026-11-24, ticket 125 - the shipped markup decides this, not a second panel). Nothing picks
 media from the first screen. Both routes are present at **every** moment on the watching screen **in the owner's window** (a guest has no
 file to serve, R11): a room playing a page still offers **Open a file**, and a room playing a file still offers the
 address bar (ADR-038's 2026-11-22 amendment already lets a file room take a page). The address bar's **Paste** button both fills the field
@@ -1370,7 +1373,7 @@ menu keep working as R29 says.
 
 **The host's dock wins.** When the host docks the app view as a column - website mode, and the staged-preview second
 while a file room previews a page - it also sets `data-panel="chat"` on the app view's root element, and the page then
-renders the chat column alone (invite bar, address bar, chat, roster, controls) with no picture. `data-panel="chat"`
+renders the chat column alone (address bar, invite bar, chat, roster, controls) with no picture. `data-panel="chat"`
 **wins over** `data-layout`: the app view is the chat column at every window width, so a narrow page-mode window must
 not draw a second, empty picture. Otherwise the page owns the picture-and-chat layout. The staged preview therefore
 keeps its two seconds (ADR-038, R31) without squeezing a picture into a 380 px column.

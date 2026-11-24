@@ -68,11 +68,12 @@ else converges.
 **Two screens, and the window used.** The first screen is the room's front door: the room code, the invite link and
 Copy, the raw fallback, the router's state and its failure card when there is no public link, and the box to paste
 someone else's link into - and no picture, chat, address bar or picker (ADR-047). Pressing Start a room switches at
-once to the watching screen. There the picture takes whatever is left and the chat is a **380 px column on its right** - member
-count, message list, input, with the align/offset controls beside it - and the invite bar (room code, link, Copy) as
-that column's top row, the address bar with its Paste button inside the field and **Open a file** beside it, and the
-player's own controls (play, scrub, volume) plus subtitle selection under the picture in file mode. Under **900 px** of
-window width (the page's own width, measured by the host) the chat column moves below the picture, never beside it, and the picture is
+once to the watching screen. There the picture takes whatever is left and the chat is a **380 px column on its
+right** - member count, message list, input, with the align/offset controls beside it - with the address bar as the
+page's own top row above the picture and the column (its Paste button inside the field, **Open a file** beside it), the
+invite bar (room code, link, Copy) as the column's first row under it, and the player's own controls (play, scrub,
+volume) plus subtitle selection under the picture in file mode. Under **900 px** of window width (the page's own width,
+measured by the host) the chat column moves below the picture, never beside it, and the picture is
 bounded so the chat always has room. Nothing else: the product is the picture, the chat, and the controls.
 
 **Two ways to watch (R28).** The **chat column** keeps chat beside the picture, always visible; when the page's own
