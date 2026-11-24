@@ -1656,7 +1656,11 @@ public sealed class MainForm : Form
             if (line.Data is null) return;
             HostLog.Write($"sidecar: {line.Data}");
             // T113: the room said its own last word; the window may now close.
-            if (line.Data.Contains("[room] over", StringComparison.Ordinal))
+            // T130: the sidecar's line is `[room] over reason=owner_left id=...`
+            // (src/server/socket.ts:683), so the match is its prefix, not a substring:
+            // a picked file named "[room] over ..." logs a [media] line that merely
+            // contains those words, and that must not stand in for the goodbye.
+            if (RoomOverLine.Is(line.Data))
             {
                 _roomOverSpoken.TrySetResult(true);
             }

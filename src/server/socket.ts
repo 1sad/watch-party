@@ -676,6 +676,10 @@ export function attachRoomSocket(
         // endpoint closes, so a window that tries to rejoin finds no room at all.
         discardRoom(room, now)
         wss.close()
+        // T130: this line is the host's whole "the room is over" signal, and its
+        // prefix `[room] over ` (trailing space included) is the token the host
+        // matches - host/WatchParty.Host/RoomOverLine.cs, read by MainForm.cs'
+        // sidecar-stdout arm. Change the wording here and change it there.
         log(`[room] over reason=owner_left id=${member.id}`)
         return
       }
