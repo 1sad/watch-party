@@ -320,13 +320,63 @@ test('one stray address is put back three times, then stopped, and a commit clea
   // The clear a `pageCommitted` makes: the same pair is put back once more.
   assert.equal(pageFollowStep(fields, NO_PUT_BACKS).kind, 'putBack')
 
-  // Another stray address is another pair and starts its own count.
-  const other = { ...fields, address: 'https://example.com/other' }
+  // Another origin is another pair and starts its own count (T161: the key is
+  // the stray address's origin, so a path or a query is the same count).
+  const other = { ...fields, address: 'https://other.example/redirect' }
   assert.equal(pageFollowStep(other, record).kind, 'putBack')
 
   // An ignored address and a staged one leave the record exactly as it was.
   assert.equal(pageFollowStep({ ...fields, address: followedRoom }, record).record, record)
   assert.equal(pageFollowStep({ ...fields, controller: true }, record).record, record)
+})
+
+/**
+ * T161 / ADR-052's cost: after ticket 160 the room keeps the query, so a site
+ * whose own redirect adds or changes a parameter announces a different address
+ * on every load and each address used to start its own count - the measured
+ * 197-navigation loop was back. The bound belongs to the **stray address's
+ * origin** with the room page, so an origin's redirects that vary only their
+ * query are one count: three put-backs and a stop, and a different origin gets
+ * its own three. A genuine one-off stray address is unchanged.
+ */
+test('a query that changes on every load shares the put-back count, and another origin starts its own', () => {
+  const fields = {
+    address: '',
+    roomPage: followedRoom,
+    previewPage: null,
+    controller: false,
+  }
+  const kinds: string[] = []
+  const announces: boolean[] = []
+  let record = NO_PUT_BACKS
+  for (let load = 1; load <= 4; load += 1) {
+    const step = pageFollowStep({ ...fields, address: `https://example.com/redirect?n=${load}` }, record)
+    record = step.record
+    kinds.push(step.kind)
+    if (step.kind === 'stop') announces.push(step.announce)
+  }
+  // Four loads, four addresses, one origin: the fourth is the stop, said once.
+  assert.deepEqual(kinds, ['putBack', 'putBack', 'putBack', 'stop'])
+  assert.deepEqual(announces, [true])
+
+  // A second origin has its own three, and its own fourth is its own stop.
+  const otherKinds: string[] = []
+  let otherRecord = record
+  for (let load = 1; load <= 3; load += 1) {
+    const step = pageFollowStep({ ...fields, address: `https://other.example/redirect?n=${load}` }, otherRecord)
+    otherRecord = step.record
+    otherKinds.push(step.kind)
+  }
+  assert.deepEqual(otherKinds, ['putBack', 'putBack', 'putBack'])
+  const otherStop = pageFollowStep({ ...fields, address: 'https://other.example/redirect?n=4' }, otherRecord)
+  assert.equal(otherStop.kind, 'stop')
+  assert.equal(otherStop.kind === 'stop' ? otherStop.announce : null, true)
+
+  // A commit still clears the whole record: the same origin is put back once more.
+  assert.equal(
+    pageFollowStep({ ...fields, address: 'https://example.com/redirect?n=5' }, NO_PUT_BACKS).kind,
+    'putBack',
+  )
 })
 
 test('no address, or one that cannot be shared, is ignored rather than staged', () => {

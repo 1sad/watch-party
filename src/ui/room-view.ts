@@ -206,15 +206,19 @@ export const PUT_BACK_LIMIT = 3
  * own record and never crosses the wire: the room's state, the authority and
  * every command are untouched by it.
  *
- * The key is the pair the count belongs to - the stray address and the room's
- * page, both canonical, so a case difference is the same pair as the `ignore`
- * above while a query or a fragment is a pair of its own (ADR-052; narrowing
- * this key to origin and path is ticket 161's job). A different pair starts
- * from zero; a commit clears the record entirely (`NO_PUT_BACKS`), so a real
- * page change still puts the guest back once.
+ * The key is the pair the count belongs to - the **origin of the stray address**
+ * and the room's page, both canonical. Since ticket 160 a room page keeps its
+ * query (ADR-052), so a site whose own redirect adds or changes a parameter
+ * announces a different address on every load; keyed on the whole address each
+ * one started a fresh count and the measured loop came back (ticket 161). The
+ * origin is the part a site does not rewrite, so an origin's redirects that vary
+ * their query, fragment or path share one count, while the room page keeps two
+ * rooms on the same site apart. A different pair starts from zero; a commit
+ * clears the record entirely (`NO_PUT_BACKS`), so a real page change still puts
+ * the guest back once.
  */
 export interface PutBackRecord {
-  /** `stray\nroom` of the last pair, or null before the first put-back. */
+  /** `strayOrigin\nroom` of the last pair, or null before the first put-back. */
   key: string | null
   /** Put-backs this window has made for that pair. */
   count: number
@@ -225,11 +229,27 @@ export interface PutBackRecord {
 /** The record of a window that has put nothing back yet. */
 export const NO_PUT_BACKS: PutBackRecord = { key: null, count: 0, stopped: false }
 
-/** The pair a put-back count belongs to, canonical so a reload of it is the same pair. */
+/**
+ * The origin an address belongs to (`https://example.com:8443`), or `''` when it
+ * cannot be shared. It is taken from the canonical form, so a case difference or
+ * a dropped credential cannot make one origin look like two.
+ */
+function originOf(raw: string | null): string {
+  if (raw === null) return ''
+  const canonical = canonicalPage(raw)
+  if (canonical === null) return ''
+  return new URL(canonical).origin
+}
+
+/**
+ * The pair a put-back count belongs to: the stray address's origin and the
+ * room's page (canonical). Keyed on the origin rather than the whole address,
+ * because a redirect that varies the query is the site leaving again, not a
+ * person choosing another episode (ticket 161, ADR-052's cost).
+ */
 function putBackKey(fields: PageFollowFields): string {
-  const stray = fields.address === null ? '' : (canonicalPage(fields.address) ?? '')
   const room = fields.roomPage === null ? '' : (canonicalPage(fields.roomPage) ?? '')
-  return `${stray}\n${room}`
+  return `${originOf(fields.address)}\n${room}`
 }
 
 /**
