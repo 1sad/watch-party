@@ -14,6 +14,9 @@
  * `playerEvent`, for everything the element does: `emptied`/`loadstart` (a
  * reload), `play`/`pause`/`seeked` (a state the room may have to hear about),
  * and `applied` (a command this frame just carried out, for the `player:` line).
+ * Since T145 two more: `refused` (a `play()` the page answered with a rejection,
+ * named) and `retry` (the one more try that refusal earns). Neither is a room
+ * event - nothing played - so the app view only writes them into the log.
  * The host's relay drops every other kind - a page can run this script too, so
  * the frame is not trusted with more. Since T08 it posts a third, `fullscreen`:
  * the page's fullscreen *intent* (`wrapFullscreen` below). The host keeps that
@@ -64,6 +67,18 @@
   // browser refused, or a value it did not change, must not tag a person's
   // event a moment later.
   var CAUSED_EXPIRY_MS = 1000
+  // T145: a `play()` the page refused is one more try, not a loop. The window
+  // this frame watches in is this long - the ticket's 10 s - and the first try
+  // goes out on this beat, because a page whose element is already loaded never
+  // fires `canplay` again and the room would wait for a press that never comes.
+  var RETRY_WINDOW_MS = 10000
+  var RETRY_BEAT_MS = 500
+  // T145 item 2: the picture area's one line, and the button beside it. A press
+  // here is a real gesture *in this document*, which is the only kind a browser's
+  // autoplay rule counts - a press in the app view's column is another document
+  // and would be refused again.
+  var OVERLAY_TEXT = 'the site would not start playing - press play'
+  var OVERLAY_BUTTON = 'Play'
 
   var host = window.chrome && window.chrome.webview
   if (!host || typeof host.postMessage !== 'function') return
@@ -91,6 +106,12 @@
   // T15: id -> the pending `setTimeout` of a scheduled start, so a later command
   // can cancel the beat instead of being undone by it.
   var holds = {}
+  // T145: id -> the re-arm a refused play opened (its two timers), id -> that the
+  // window closed unanswered, and id -> the line the picture then shows. Kept
+  // apart because the line outlives the window: it waits for the person.
+  var retries = {}
+  var gaveUp = {}
+  var overlays = {}
   var seq = 0
   var lastSentAt = 0
   var lastShape = null
@@ -312,6 +333,9 @@
   }
 
   function onPlayback(element, kind) {
+    // T145: it plays. Whatever a refusal left waiting here is over - including
+    // the line, which a page's own control can satisfy as well as ours.
+    if (kind === 'play' && element.paused === false) closeRetry(element)
     var message = {
       kind: EVENT,
       event: kind,
@@ -347,6 +371,14 @@
     })
     element.addEventListener('pause', function () {
       onPlayback(element, 'pause')
+    })
+    // T145: an element that only now has enough data is the one more try a
+    // refused play asked for; one that starts ends the wait however it started.
+    element.addEventListener('canplay', function () {
+      if (retries[idOf(element)]) retryPlay(element, 'canplay')
+    })
+    element.addEventListener('playing', function () {
+      closeRetry(element)
     })
     element.addEventListener('seeking', function () {
       seeking[idOf(element)] = element.paused === false
@@ -430,6 +462,171 @@
     if (now - lastSentAt >= (busy ? PLAYBACK_POLL_MS : POLL_MS)) send(list, now)
   }
 
+  /**
+   * T145: a `play()` the page answered with a rejection. Before this ticket the
+   * bridge disarmed and said nothing, so nobody - not the room, not the person in
+   * front of it - ever learned the picture had not started. The event carries the
+   * element (`id`) and the error's own name, which is the difference between the
+   * browser's autoplay rule and a site's own refusal.
+   */
+  function onRefused(element, error) {
+    var name = 'Error'
+    try {
+      if (error && typeof error.name === 'string' && error.name) name = error.name
+    } catch (problem) {
+      // A page that broke its own error objects still gets a refusal reported.
+    }
+    var id = idOf(element)
+    post({ kind: EVENT, event: 'refused', id: id, name: name, t: number(element.currentTime) })
+    // A window already open owns the next attempt; a refused retry does not open
+    // a second one, which is what keeps this from becoming a loop.
+    if (gaveUp[id] === true) return
+    armRetry(element)
+  }
+
+  /** One more `play` on this element, said out loud first so the log names it. */
+  function retryPlay(element, why) {
+    var arm = retries[idOf(element)]
+    if (!arm) return
+    if (element.paused === false) {
+      closeRetry(element)
+      return
+    }
+    // One automatic attempt, whichever of its two triggers came first - the
+    // element's own `canplay` or the beat - so a page that refuses both is
+    // refused twice and not once per report. A person's gesture always buys
+    // one, because that is the only route the browser's rule answers.
+    if (why !== 'gesture' && arm.tried === true) return
+    if (why !== 'gesture') arm.tried = true
+    if (arm.beat !== undefined) {
+      clearTimeout(arm.beat)
+      arm.beat = undefined
+    }
+    post({ kind: EVENT, event: 'retry', id: idOf(element), why: why, t: number(element.currentTime) })
+    startPlay(element)
+  }
+
+  /** End the re-arm for this element: the picture plays, moved, or stopped being asked. */
+  function closeRetry(element) {
+    var id = idOf(element)
+    var arm = retries[id]
+    if (arm) {
+      if (arm.beat !== undefined) clearTimeout(arm.beat)
+      if (arm.deadline !== undefined) clearTimeout(arm.deadline)
+      delete retries[id]
+    }
+    delete gaveUp[id]
+    hideOverlay(element)
+  }
+
+  /**
+   * T145 item 1: the re-arm a refused play earns. One more try goes out on the
+   * beat - a page whose element is already loaded fires no `canplay` after the
+   * refusal, so waiting for one would wait forever - and any real gesture in this
+   * document buys another try. After the window the picture offers the person the
+   * button instead of trying again: a refusal the browser means does not expire.
+   */
+  function armRetry(element) {
+    var id = idOf(element)
+    if (retries[id]) return
+    var arm = { beat: undefined, deadline: undefined }
+    retries[id] = arm
+    arm.beat = setTimeout(function () {
+      arm.beat = undefined
+      if (retries[id] !== arm) return
+      retryPlay(element, 'beat')
+    }, RETRY_BEAT_MS)
+    arm.deadline = setTimeout(function () {
+      arm.deadline = undefined
+      if (retries[id] !== arm) return
+      delete retries[id]
+      if (element.paused === false) return
+      gaveUp[id] = true
+      showOverlay(element)
+    }, RETRY_WINDOW_MS)
+  }
+
+  /** A gesture a person made in this document: the one thing the browser's rule hears. */
+  function onGesture() {
+    for (var id in retries) {
+      if (!retries.hasOwnProperty(id)) continue
+      var element = byId[id]
+      if (element && element.paused !== false) retryPlay(element, 'gesture')
+    }
+  }
+
+  /**
+   * T145 item 2: the picture area's one line and its Play button. This is the
+   * first half of M3's T19. The press that starts the picture has to be made in
+   * this document: the app view's chat column is a different one, and a press
+   * there is not the gesture a refusal is waiting for.
+   */
+  function showOverlay(element) {
+    var id = idOf(element)
+    if (overlays[id]) return
+    try {
+      if (!document.createElement || !document.body || !document.body.appendChild) return
+      var box = document.createElement('div')
+      box.setAttribute('data-watchparty', 'refused-play')
+      var place = element.getBoundingClientRect ? element.getBoundingClientRect() : null
+      var centre = place && place.width > 0 ? place.left + place.width / 2 : 0
+      if (!centre || centre < 8) {
+        centre = typeof window.innerWidth === 'number' ? window.innerWidth / 2 : 8
+      }
+      var top = place && place.height > 0 ? place.top + 12 : 12
+      box.style.cssText = 'position:fixed;z-index:2147483647;transform:translateX(-50%);'
+        + 'left:' + Math.max(8, Math.round(centre)) + 'px;top:' + Math.max(8, Math.round(top)) + 'px;'
+        + 'display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:8px;'
+        + 'background:rgba(20,21,26,0.94);color:#e8e8ea;border:1px solid rgba(255,255,255,0.18);'
+        + 'font:14px/1.3 system-ui,sans-serif;box-shadow:0 4px 18px rgba(0,0,0,0.5);'
+      var line = document.createElement('p')
+      line.textContent = OVERLAY_TEXT
+      line.style.cssText = 'margin:0'
+      var button = document.createElement('button')
+      button.type = 'button'
+      button.textContent = OVERLAY_BUTTON
+      button.style.cssText = 'font:inherit;padding:4px 12px;cursor:pointer'
+      button.addEventListener('click', function () {
+        pressOverlay(element)
+      })
+      box.appendChild(line)
+      box.appendChild(button)
+      document.body.appendChild(box)
+      overlays[id] = box
+    } catch (error) {
+      // A page that froze its own DOM loses the line; the room still reports the
+      // refusal and the person can still press the page's own control.
+    }
+  }
+
+  /** The overlay's press: the element plays, and the line goes when it does. */
+  function pressOverlay(element) {
+    try {
+      var playing = element.play()
+      if (playing && typeof playing.catch === 'function') {
+        playing.then(function () {
+          hideOverlay(element)
+        }, function (error) {
+          onRefused(element, error)
+        })
+      }
+    } catch (error) {
+      onRefused(element, error)
+    }
+  }
+
+  function hideOverlay(element) {
+    var id = idOf(element)
+    var box = overlays[id]
+    if (!box) return
+    delete overlays[id]
+    try {
+      if (box.parentNode && box.parentNode.removeChild) box.parentNode.removeChild(box)
+    } catch (error) {
+      // The page removed it, or its own DOM is gone with the document.
+    }
+  }
+
   function startPlay(element) {
     // Arm before the write; a refusal disarms, so the entry cannot tag a
     // person's play a moment later.
@@ -437,15 +634,18 @@
     if (armed) arm(element, 'play')
     try {
       var playing = element.play()
-      // A refused autoplay is the site's own business, not a reason to throw here.
+      // T145: a refused autoplay is reported, not swallowed, and earns one more
+      // try in this frame - the room has nothing to add to a policy answer.
       if (playing && typeof playing.catch === 'function') {
-        playing.catch(function () {
+        playing.catch(function (error) {
           if (armed) disarm(element, 'play')
+          onRefused(element, error)
         })
       }
     } catch (error) {
-      // Same: the element not starting is reported by the next report.
+      // Same: a synchronous refusal is the same answer as a rejected promise.
       if (armed) disarm(element, 'play')
+      onRefused(element, error)
     }
   }
 
@@ -516,6 +716,13 @@
 
     if (action !== 'pause' && action !== 'play' && action !== 'seek') return
 
+    // T145: a room that stops this element is not waiting for a retry any more,
+    // and the line the picture shows ("press play") would then be a lie. A play
+    // or a seek is the very ask that was just refused, so the wait it armed
+    // stands: the ladder correcting a stalled picture every few seconds must not
+    // push the button further away for ever.
+    if (action === 'pause') closeRetry(element)
+
     // T15 item 2: this command is newer than any beat still waiting, so the
     // waiting beat is cancelled before this one is carried out.
     cancelHold(element)
@@ -574,6 +781,16 @@
     // T104: a document load is a new bridge, so this is where a load's address
     // is said - the same announcement a pushState earns.
     if (isTop) announcePageAddress()
+    // T145: a press made on this page while a refusal waits is the gesture the
+    // browser's rule is looking for, so the retry is heard before it is spent.
+    try {
+      if (typeof document.addEventListener === 'function') {
+        document.addEventListener('pointerdown', onGesture, true)
+        document.addEventListener('keydown', onGesture, true)
+      }
+    } catch (error) {
+      // A page that broke its own events keeps the beat and loses the gesture.
+    }
     tick()
     setInterval(tick, PLAYBACK_POLL_MS)
   }

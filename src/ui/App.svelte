@@ -1087,6 +1087,20 @@
       const event = body.event
       if (typeof id !== 'number') return
 
+      // T145: a play the page refused, and the one more try that refusal earns.
+      // Neither is a room event - nothing played, so nothing is sent anywhere -
+      // and the retry is the bridge's own, so no `player: applied` line names it.
+      // These two lines are that record in the host's log (the measuring build
+      // forwards this page's console: `page: [player] refused ...`).
+      if (event === 'refused' || event === 'retry') {
+        if (dev) {
+          console.info(event === 'refused'
+            ? `[player] refused id=${id} name=${typeof body.name === 'string' ? body.name : '(none)'}`
+            : `[player] retry id=${id} why=${typeof body.why === 'string' ? body.why : '(none)'}`)
+        }
+        return
+      }
+
       if (event === 'emptied' || event === 'loadstart') {
         playerEvents.push({ source, id, event, t: typeof body.t === 'number' ? body.t : 0 })
         followSite(electPlayer())
