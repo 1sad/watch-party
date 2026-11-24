@@ -1572,6 +1572,12 @@ exist (§4.6).
 4. **The put-back has a bound.** For one window and one address, at most **three** put-backs; after that the window
    stops going back and one line says the site keeps leaving the room. A commit clears the bound. A guest who
    navigates away deliberately is still put back once - the bound is for the site that leaves by itself.
+   > **Amended 2026-11-25 (ticket 161, after ADR-052):** "one address" is **the stray address's origin together with the
+   > room's page**, not the whole address. ADR-052 keeps a pasted query, so a site whose own redirect adds or changes a
+   > parameter presents a different address on every load and would start the count again each time - the measured 197
+   > navigations would come back. Origin, not origin and path: a redirect that also rewrites its path would escape an
+   > origin-and-path key the same way. Measured in two packaged windows: three put-backs at three different addresses on
+   > one origin, then one `stopped going back` line and no fourth (ticket 161).
 5. **The put-back line ends** when the room moves or after 30 s (ADR-049's notice rule).
 
 **Why.** Measured on 2026-11-24: one window completed a navigation to the room's `https://www.youtube.com/` **197
@@ -1652,8 +1658,40 @@ site.
 
 **Cost.** A tokenised link is now copied into the room's state and shown in the chat's `Moved to …` line to everyone
 present. A site that rewrites its own query in a loop can no longer be told apart from a person choosing an episode
-inside the page, so the loop's two protections stand instead: the put-back is bounded and keyed on origin and path
-(ticket 161, ADR-050) rather than on the whole address, and the one site measured doing it - YouTube - now plays in the
+inside the page, so the loop's two protections stand instead: the put-back is bounded and keyed on **origin** (ticket 161,
+ADR-050) rather than on the whole address, and the one site measured doing it - YouTube - now plays in the
 app's own player (ADR-051) instead of the followed site view.
+
+> **Amended 2026-11-25 (ticket 161):** this paragraph said "origin and path". The implemented key is the stray
+> address's **origin** alone, with the room's page; a path-changing redirect would otherwise escape it. ADR-050 item 4
+> carries the dated line.
+
+## ADR-053 - A person's identity lives in a cookie the app sets on its own host
+
+> **Amends ADR-033 rule 1** (a returning member keeps their id). It is the first implementation of that rule (phase 6,
+> ticket 148) and the record R42 owes.
+
+**Decision.** A member's identity is **one id, minted once by the page and kept in a cookie the app sets on its own
+host** (`wp_member`, holding `{id, name}`). The id is what the room counts, what a control grant names and what a
+reconnect restores; the name is a label beside it, not the identity. The cookie belongs to the app's host, whatever
+port it listens on that evening.
+
+**Why.** The app's page is served by the sidecar on `127.0.0.1:<port>`, and the sidecar asks the operating system for a
+free port each run (measured: a new session's copies listen on a different port almost every time). A store scoped to
+that origin - `localStorage`, a session-scoped value, anything the page keeps for one origin - is gone at the next
+start, and a guest who comes back after a drop appears twice: the room's count says three for two people, and one of
+them holds a control the other does not. The cookie is the one store a page can set that is keyed on host rather than
+host and port.
+
+**Rejected.** (a) `localStorage` - dies with the port, measured. (b) A name-only cookie - a name is a label two people
+can share; the room needs a value nobody else can quote. (c) An id the host hands out - the host moves (ADR-024), so
+the id would move or fork with it, and a returning guest would be a stranger to the new host.
+
+**Cost.** The cookie is plain text on that host, readable by anything running there - the same trust the room's plain
+HTTP already assumes (ADR-023), not a new exposure. Two people sharing one Windows account share one identity, which is
+the correct answer for a program two people do not share. A copy moved to another folder keeps its `runtime` folder and
+therefore its cookie; a fresh copy is a fresh guest.
+
+---
 
 

@@ -7,16 +7,17 @@ own file" mode, which exists mainly to test sync without a website in the way.
 
 **Status: phases 1-5 are closed** — M1, M2a, M7 "portable build", the invite work (0.2.1) and **M2b "the window uses
 its space" (0.3.0)**: two screens, the picture filling the window with a 380 px chat column beside it, the address bar
-and Open a file at every moment, and the room following a page's own navigation. The next phase is **M2c "the room
-behaves"** (`spec.md` §13): the evening's faults and the chat's interface, planned as `phase-6-bugfix`; **M3 "the room
-obeys"** follows it. 51 and 52 are `blocked` on the M3 plan (the phase record the owner keeps on their machine).
+and Open a file at every moment, and the room following a page's own navigation. **M2c "the room behaves"**
+(`spec.md` §13) is in its last tickets: the evening's faults are fixed and YouTube now plays in the app's own player;
+**M3 "the room obeys"** follows it. 51 and 52 are `blocked` on the M3 plan (the phase record the owner keeps on their
+machine).
 **0.3.0 is the shipped build** - its portable files are attached
 to the `v0.3.0` tag in GitHub Releases; nothing is on a store or a server. The only status line kept current is the phase record on the owner's machine (`.scratch/<phase>/spec.md`) → `## Status`;
 read it before believing any claim about what works. **The working record -
 specs, tickets, session notes, costs - is kept on the owner's machine and is not in this public repo**, so a fresh
 clone has the code and `docs/` only.
 
-**Rebuilt on 2026-11-16** around ADR-022 … ADR-027. **ADR-048** (the room follows a page's own navigation, not only the address bar) is the newest; before it **ADR-047** (two screens; the picture fills the window with the chat beside it) amends ADR-038, and before it **ADR-046** (a joined guest's media URL carries the room code), **ADR-045** (the UPnP search leaves
+**Rebuilt on 2026-11-16** around ADR-022 … ADR-027. **ADR-053** (a person's identity lives in a cookie the app sets on its own host) is the newest; phase 6's **ADR-049** to **ADR-052** sit beside it (the chat column is the room's log; a new film starts at zero and the put-back has a bound; YouTube plays in a player the app owns; a pasted page keeps its query and its fragment). Before them **ADR-048** (the room follows a page's own navigation, not only the address bar) amends ADR-047 (two screens; the picture fills the window with the chat beside it) amends ADR-038, and before it **ADR-046** (a joined guest's media URL carries the room code), **ADR-045** (the UPnP search leaves
 UDP 1900) and **ADR-044** (every request is gated on the code); **ADR-043** (the portable copy is its folder, and nothing leaves
 it) amends ADR-042; ADR-041 (one portable executable; the browser is the only dependency outside
 it), ADR-040 (the ad list is share-alike data), ADR-038 (two views), ADR-039 (a quarter-second deadband) and ADR-034

@@ -265,6 +265,9 @@ Two roles, and the difference matters (ADR-025):
 
 Presence states, driven by heartbeats every 5 s: `online` → `suspect` at 10 s → `offline` at 20 s.
 
+A member's identity is one id minted once and kept in a cookie the app sets on its own host, beside the name
+(ADR-053) - not in `localStorage`, because the sidecar's port changes every run.
+
 Transfer, when the host reaches `offline` (or leaves cleanly):
 
 1. Candidate = the online member with the smallest `joinedAt` (tie-break by id). Deterministic on every replica,
