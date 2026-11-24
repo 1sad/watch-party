@@ -78,6 +78,12 @@
   let volume = $state(1)
   /** Whether the speaker has silenced the picture, read back from the element. */
   let muted = $state(false)
+  /**
+   * T135: silence has two shapes here - the speaker's own `muted`, and a
+   * slider at 0, which leaves `muted` false while nothing is heard. Both read
+   * "Unmute", because a control labelled Mute must never unmute the film.
+   */
+  const silent = $derived(muted || volume === 0)
   /** The level to return to on unmute; not stored, so a reload comes back audible. */
   let lastVolume = 1
 
@@ -618,10 +624,10 @@
         type="button"
         class="mute"
         data-mute
-        aria-label={muted ? 'Unmute' : 'Mute'}
+        aria-label={silent ? 'Unmute' : 'Mute'}
         onclick={toggleMute}
       >
-        {muted ? 'Unmute' : 'Mute'}
+        {silent ? 'Unmute' : 'Mute'}
       </button>
       <input
         type="range"
