@@ -2063,8 +2063,10 @@ public sealed class MainForm : Form
             if (layout != previous)
             {
                 // The window's own size, which is what the camera asks for and
-                // prints; the threshold above reads the client width, a little
-                // smaller by the border. One line per change, never per pixel.
+                // prints; the threshold above reads the page's viewport whenever
+                // the app view fills the window and takes the client-width
+                // formula in page mode, where that formula also picks the dock
+                // (T121). One line per change, never per pixel.
                 HostLog.Write($"layout: window {Width}x{Height} {layout}");
             }
         }

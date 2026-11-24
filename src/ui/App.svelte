@@ -1813,10 +1813,10 @@
 </script>
 
 {#if showAddressBar}
-  <!-- T03b: R29's address bar, inside the 48 px the host reserves across the
-       top. HTML, drawn by this page (ADR-038), so the right-click menu, Ctrl+V
-       and a visible Paste button are the engine's own behaviour. The host owns
-       the strip's height and nothing else. -->
+  <!-- T03b: R29's address bar, the page's own element drawn inside the app view
+       (ADR-047). The host reserves no strip above the site view and owns no
+       height for this bar. HTML, drawn by this page, so the right-click menu,
+       Ctrl+V and a visible Paste button are the engine's own behaviour. -->
   <header class="address-bar" data-address-bar>
     <!-- T95b / ADR-047: one row carries both routes at every moment. The Paste
          press acts on its own (fill and send, the same `sendPage` Enter uses),
@@ -2353,8 +2353,10 @@
     min-height: 0;
   }
 
-  /* T03b: the 48 px the host reserves across the top, drawn inside the app
-     view. Sticky so the address stays reachable while the room scrolls. */
+  /* T03b: the page's own bar at the top of the app view; the host reserves no
+     strip above it and gives it no height. Sticky inside the page's own box -
+     on the watching screen the page itself does not scroll, only the chat's
+     list does (T96), so the bar stays at the top. */
   .address-bar {
     position: sticky;
     top: 0;
