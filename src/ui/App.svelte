@@ -28,6 +28,7 @@
     type LoadRefusal,
   } from '../shared/media.ts'
   import { PAGE_STAGE_MS, canonicalPage, playbackAfterPageCommit, setPageFrame } from '../shared/page.ts'
+  import { siteViewAddress } from '../shared/youtube.ts'
   import { previewHolds, type PendingPreview } from './preview.ts'
   import {
     closeOutcome,
@@ -1733,8 +1734,12 @@
     // T18: a preview and a Cancel move the site view no less than a commit does,
     // so the documents held here are the page being left in every case.
     notePageLeft()
-    postToHost({ kind: 'siteCommand', payload: { kind: 'navigate', url: page } })
-    if (dev) console.info(`[page] site view -> ${page}`)
+    // ADR-051, T156b: a YouTube page's picture is the app's own embed, while
+    // the room's page and the address bar stay the one watch form. Every other
+    // page is loaded exactly as it is.
+    const address = siteViewAddress(page, location.origin)
+    postToHost({ kind: 'siteCommand', payload: { kind: 'navigate', url: address } })
+    if (dev) console.info(`[page] site view -> ${address}`)
   }
 
   /**

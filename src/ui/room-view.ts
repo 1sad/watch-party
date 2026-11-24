@@ -17,6 +17,7 @@
  */
 
 import { canonicalPage } from '../shared/page.ts'
+import { isYouTubeEmbedAddress } from '../shared/youtube.ts'
 import type { Media } from '../shared/protocol.ts'
 
 /** The two fields of a room snapshot that decide what the window shows (§4.1, §4.2). */
@@ -181,6 +182,12 @@ export type PageFollow = 'ignore' | 'stage' | 'return'
 export function pageFollowOutcome(fields: PageFollowFields): PageFollow {
   const address = fields.address === null ? null : canonicalPage(fields.address)
   if (address === null) return 'ignore'
+  // ADR-051, ticket 156b: the app's own embed is the picture for the room's
+  // YouTube page, not a page of its own. It is ignored by the stage and never
+  // put back, or the first press of play (which changes the embed's own address
+  // or loads it) would stage the embed and move the whole room five seconds
+  // later.
+  if (isYouTubeEmbedAddress(address)) return 'ignore'
   const room = fields.roomPage === null ? null : canonicalPage(fields.roomPage)
   if (room !== null && room === address) return 'ignore'
   const preview = fields.previewPage === null ? null : canonicalPage(fields.previewPage)

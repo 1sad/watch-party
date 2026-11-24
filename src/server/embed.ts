@@ -14,10 +14,12 @@
  * page with a message and no player rather than a broken one.
  */
 
-import { isYouTubeVideoId } from '../shared/youtube.ts'
+import { YOUTUBE_EMBED_PATH, isYouTubeVideoId } from '../shared/youtube.ts'
 
-/** The one path the session view loads for a YouTube page (ADR-051). */
-export const YOUTUBE_EMBED_PATH = '/embed/youtube.html'
+/** The one path the sidecar serves the app's embed on (ADR-051), re-exported for
+ *  the server's own routing; the page imports the same line to point the site
+ *  view at it (T156b), so the path is written once. */
+export { YOUTUBE_EMBED_PATH }
 
 /** The page's own `<script>`, inline: one page, and nothing to fetch from us. */
 const SCRIPT = `

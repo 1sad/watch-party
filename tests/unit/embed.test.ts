@@ -74,3 +74,23 @@ test('a non-GET method on the embed path is refused, not served', async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
 })
+
+/**
+ * T156b / ADR-051: a video whose owner forbids embedding reports player error
+ * `101` or `150`. The page says so in one line in the picture area - the
+ * message element sits over the player - and the room stays on its address,
+ * because the page never navigates and never reports a different one.
+ */
+test('a forbidden video (101/150) shows one line over the picture and keeps the address', async () => {
+  const page = await fetchEmbed(`/embed/youtube.html?id=${ID}`)
+  // The two error codes are the ones the API uses for "not embeddable".
+  assert.match(page.body, /event\.data === 101 \|\| event\.data === 150/)
+  assert.match(page.body, /This video does not allow embedding\. The room stays on its page\./)
+  // The line is the page's own message element, hidden until it has something
+  // to say, and shown over the player rather than beside it.
+  assert.match(page.body, /<p id="message"><\/p>/)
+  assert.match(page.body, /#message \{[^}]*position: absolute;[^}]*inset: 0;[^}]*display: none;/)
+  assert.match(page.body, /message\.style\.display = 'block'/)
+  // The page does not navigate on the error: the room's address is untouched.
+  assert.equal(/location\.(href|assign|replace)/.test(page.body), false)
+})

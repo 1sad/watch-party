@@ -349,3 +349,38 @@ test('no address, or one that cannot be shared, is ignored rather than staged', 
     'ignore',
   )
 })
+
+/**
+ * T156b / ADR-051: the app's own embed is the picture for the room's YouTube
+ * page, not a page of its own. Its top document announces its own address like
+ * any other page, so without this rule the first press of play would stage the
+ * embed and move the room to it five seconds later - and a guest's window would
+ * be put back against the very view it is meant to show. Both outcomes are the
+ * one `ignore`: no `setPage`, no countdown, no put-back.
+ */
+test("a navigation to the app's own embed stages nothing and is never put back", () => {
+  const embed = 'http://127.0.0.1:51234/embed/youtube.html?id=aqz-KE-bpKQ'
+  const fields = {
+    address: embed,
+    roomPage: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ',
+    previewPage: null,
+    controller: true,
+  }
+  // The controller's own site view announces the embed it just loaded.
+  assert.equal(pageFollowOutcome(fields), 'ignore')
+  // A guest's does the same, and is not sent back to the embed it is on.
+  assert.equal(pageFollowOutcome({ ...fields, controller: false }), 'ignore')
+})
+
+test("the ignored embed leaves the put-back's bound exactly as it was", () => {
+  const fields = {
+    address: 'http://127.0.0.1:51234/embed/youtube.html?id=aqz-KE-bpKQ',
+    roomPage: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ',
+    previewPage: null,
+    controller: false,
+  }
+  const record = { key: 'https://example.com/stray\nhttps://example.com/room', count: 2, stopped: false }
+  const step = pageFollowStep(fields, record)
+  assert.equal(step.kind, 'ignore')
+  assert.equal(step.record, record)
+})

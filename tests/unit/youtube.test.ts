@@ -14,7 +14,14 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { canonicalPage } from '../../src/shared/page.ts'
-import { YOUTUBE_PAGE, isYouTubeVideoId, youtubeVideoId } from '../../src/shared/youtube.ts'
+import {
+  YOUTUBE_EMBED_PATH,
+  YOUTUBE_PAGE,
+  isYouTubeEmbedAddress,
+  isYouTubeVideoId,
+  siteViewAddress,
+  youtubeVideoId,
+} from '../../src/shared/youtube.ts'
 import type { Member } from '../../src/shared/protocol.ts'
 import { createRoom, joinRoom, stagePage } from '../../src/server/room.ts'
 
@@ -122,4 +129,43 @@ test('stagePage stores a youtu.be link as the one watch form', () => {
   const outcome = stagePage(room, 'sam', `https://youtu.be/${ID}?t=30`, room.authority.epoch)
   assert.equal(outcome.ok, true)
   assert.equal(outcome.ok ? outcome.pending.page : null, `https://www.youtube.com/watch?v=${ID}`)
+})
+
+// Ticket 156b, ADR-051: the room keeps the one watch form, and the site view is
+// pointed at the app's own embed for that film. The origin is the window's own,
+// so the sidecar that serves the embed is the one that served the page.
+const ORIGIN = 'http://127.0.0.1:51234'
+
+test('a room on the normalised YouTube address loads the app embed in the site view', () => {
+  const embed = `${ORIGIN}${YOUTUBE_EMBED_PATH}?id=${ID}`
+  assert.equal(YOUTUBE_EMBED_PATH, '/embed/youtube.html')
+  assert.equal(siteViewAddress(`https://www.youtube.com/watch?v=${ID}`, ORIGIN), embed)
+  // Whatever YouTube form reached the room, the picture is the same film's embed.
+  for (const address of [
+    `https://youtu.be/${ID}`,
+    `https://www.youtube.com/shorts/${ID}`,
+    `https://www.youtube.com/embed/${ID}`,
+    `youtube.com/watch?v=${ID}&t=30`,
+  ]) {
+    assert.equal(siteViewAddress(address, ORIGIN), embed, address)
+  }
+  // An origin written with its trailing slash is the same origin.
+  assert.equal(siteViewAddress(`https://www.youtube.com/watch?v=${ID}`, `${ORIGIN}/`), embed)
+})
+
+test('every other page is loaded in the site view exactly as the room stores it', () => {
+  const address = 'https://example.com/watch/1?ep=2#t=90'
+  assert.equal(siteViewAddress(address, ORIGIN), address)
+  // YouTube's front page is not a film, so it keeps its own address too.
+  const front = 'https://www.youtube.com/@someone'
+  assert.equal(siteViewAddress(front, ORIGIN), front)
+})
+
+test("the app's own embed is recognised by its path, whatever the id or origin", () => {
+  assert.equal(isYouTubeEmbedAddress(`${ORIGIN}${YOUTUBE_EMBED_PATH}?id=${ID}`), true)
+  assert.equal(isYouTubeEmbedAddress(`${ORIGIN}${YOUTUBE_EMBED_PATH}`), true)
+  // The room's page and YouTube's own embed page are not the app's embed.
+  assert.equal(isYouTubeEmbedAddress(`https://www.youtube.com/watch?v=${ID}`), false)
+  assert.equal(isYouTubeEmbedAddress(`https://www.youtube.com/embed/${ID}`), false)
+  assert.equal(isYouTubeEmbedAddress('not an address'), false)
 })

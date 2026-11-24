@@ -28,6 +28,13 @@ const PATH_ID = /^\/(?:shorts|embed)\/([A-Za-z0-9_-]{11})(?:\/|$)/
 /** The one form the room stores, and the address bar shows (ADR-051). */
 export const YOUTUBE_PAGE = 'https://www.youtube.com/watch?v='
 
+/**
+ * The one path the sidecar serves the app's own player page on (ADR-051). The
+ * sidecar serves it (`server/embed.ts`) and the page points the site view at it,
+ * so both halves import this line rather than writing the path twice.
+ */
+export const YOUTUBE_EMBED_PATH = '/embed/youtube.html'
+
 /** Is `value` a video id and nothing else? The sidecar refuses `/embed` without one. */
 export function isYouTubeVideoId(value: string): boolean {
   return VIDEO_ID.test(value)
@@ -70,4 +77,36 @@ export function youtubeVideoId(address: string): string | null {
 
   const match = PATH_ID.exec(url.pathname)
   return match === null ? null : (match[1] as string)
+}
+
+/**
+ * The address the site view loads for a room page (ADR-051, ticket 156b).
+ *
+ * A YouTube video page is played by the app's own embed - the sidecar serves
+ * `/embed/youtube.html?id=<id>` - while the room's page and the address bar stay
+ * the one watch form. Every other page is loaded exactly as it is.
+ */
+export function siteViewAddress(page: string, origin: string): string {
+  const id = youtubeVideoId(page)
+  if (id === null) return page
+  return `${origin.replace(/\/+$/, '')}${YOUTUBE_EMBED_PATH}?id=${id}`
+}
+
+/**
+ * Is this address the app's own embed page (`/embed/youtube.html…`, ADR-051)?
+ *
+ * The embed is the picture for the room's YouTube page, not a page of its own,
+ * so a navigation that names it is ignored by the stage and never put back
+ * (ticket 156b). Only the path is compared: the embed is served by whichever
+ * sidecar origin the window itself loaded from, so the caller's own origin is
+ * not needed to recognise it.
+ */
+export function isYouTubeEmbedAddress(address: string): boolean {
+  let url: URL
+  try {
+    url = new URL(address)
+  } catch {
+    return false
+  }
+  return url.pathname === YOUTUBE_EMBED_PATH
 }
