@@ -65,8 +65,9 @@ which window.
    **Mute** and the volume slider. Note the room code and the link from the invite bar.
 3. **In A, press Open a file** and choose a file long enough for the run: the 60 s `tests/fixtures/fixture.mp4` for a
    quick look, §7's 720 s recipe for a timed gate. The picture and the row of controls appear once the host log prints
-   `[media] registered ... duration=<n>`; read that duration before you start the clock. A window started with
-   `WATCHPARTY_PICK_PATHS` pointing at a file skips the dialog and lands with the file already open.
+   `[media] registered ... duration=<n>`; read that duration before you start the clock. Pressing **Open a file** is
+   still the step: with `WATCHPARTY_PICK_PATHS` set, that press answers the dialog itself and takes the seeded path (a
+   Debug-only switch - it does not open a file on its own at launch).
 4. Open B with `node scripts/run-host.mjs --cdp-port 9223 "<A's invite link>"` (the link in quotes): B lands on
    the watching screen, not on a front door of its own. Pasting the same link into B's front door does the same
    thing by hand - it is one more thing to type, and it is the route a person takes (T131).
@@ -108,13 +109,13 @@ If `logs/` holds a file per window but one of them lacks its own `PORT` line, or
 names, the two are sharing a sidecar — that is the failure this log split exists to catch.
 
 The window and its layout say what they decided, in both builds. Timestamps shortened; every shape below appeared in
-this phase's runs (tickets 89, 93, 94, 99, 104, 107):
+this phase's runs (tickets 89, 93, 94, 99, 104, 107, 134):
 
 ```
 [host 00:41:06.242] window: restored 1400x900 maximised=false
 [host 00:41:07.302] layout: window 1400x900 wide
-[host hh:mm:ss.mmm] layout: page mode - site 1002x853 left of a 380 px app view
-[host hh:mm:ss.mmm] layout: page mode narrow - site 782x392 above a 261 px app view
+[host hh:mm:ss.mmm] layout: page mode - site 520x523 css px left of a 380 css px app view
+[host hh:mm:ss.mmm] layout: page mode narrow - site 899x314 css px above a 210 css px app view
 [host hh:mm:ss.mmm] layout: file mode - site view hidden, the 1382 px app view fills the window
 [host 00:28:28.706] relay: pageAddress http://127.0.0.1:8123/probe-2.html
 [host hh:mm:ss.mmm] watchparty:// registered for this user: "C:\dev\Code\misc\watch-party\host\WatchParty.Host\bin\Debug\net10.0-windows\WatchParty.Host.exe" "%1"
@@ -123,7 +124,12 @@ this phase's runs (tickets 89, 93, 94, 99, 104, 107):
 `window: first run maximised` replaces `window: restored ...` on a machine's very first launch, and a size the user
 set is written as `window: saved <w>x<h> maximised=<bool> at <path>` when the window closes (ticket 93). `layout:
 window <w>x<h> wide|narrow` is the 900 px decision (94); one `layout: page mode`, `layout: page mode narrow` or
-`layout: file mode` line follows each change of shape (99, 107); `relay: pageAddress <url>` is the site view's top
+`layout: file mode` line follows each change of shape (99, 107) - for the page-mode lines, once the shape has
+**settled**, on the settle tick, so a read taken in the same message as the dock is still the old one. **The two
+page-mode lines name their unit:** their numbers are each view's own `window.innerWidth`/`window.innerHeight` in
+**CSS px**, which is what `cdp.mjs eval ... innerWidth` prints, and the site's number plus the app view's is the
+window's own width (T134). The **file-mode** line and `layout: window` are WinForms **device** pixels - on a 125%
+screen they are 1.25x the CSS number, so never add one to a CSS px figure. `relay: pageAddress <url>` is the site view's top
 document reporting where it went, and it is the line a page room follows, with `pageCommitted` when the room takes it
 (104, 105). `watchparty:// registered ...` is written at every start, because every start rewrites the key (89).
 
