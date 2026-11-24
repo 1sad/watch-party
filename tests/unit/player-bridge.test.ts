@@ -279,6 +279,33 @@ test('a frame with one playing video posts one report, with the fields the scori
   ])
 })
 
+test('T146: a position written before metadata is re-applied when the duration is known', () => {
+  const element = video({ readyState: 0, duration: NaN, currentTime: 0, paused: true })
+  const bridge = harness([element])
+  bridge.command({
+    kind: 'playerCommand',
+    source: HREF,
+    href: HREF,
+    id: 1,
+    reason: 'pageCommitted',
+    revision: 3,
+    action: 'pause',
+    target: 0,
+  })
+  assert.equal(element.currentTime, 0)
+
+  // The site's own player puts its remembered 50 s on the element as soon as
+  // metadata arrives; the room's write above could not be taken before that.
+  element.readyState = 1
+  element.duration = 60
+  element.currentTime = 50
+  const metadata = element.listeners.get('loadedmetadata')
+  assert.ok(metadata && metadata.length > 0, 'the bridge watches for the duration')
+  metadata[0]?.({ type: 'loadedmetadata' })
+
+  assert.equal(element.currentTime, 0, 'the room’s position is applied once the element can take it')
+})
+
 test('a frame with no videos still reports: an empty candidate list', () => {
   const bridge = harness([])
   assert.equal(bridge.posted.length, 1)

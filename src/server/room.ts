@@ -167,6 +167,7 @@ export function setMedia(
   memberId: string,
   file: MediaRegistration,
   pathExists: (path: string) => boolean,
+  now: () => number = Date.now,
 ): SetMediaResult {
   if (!room.controllers.includes(memberId)) return { ok: false, code: 'not_controller' }
 
@@ -195,6 +196,11 @@ export function setMedia(
   // two seconds from now and wipe the file that was just picked. A pick replaces
   // the pending change, exactly as a second `setPage` replaces the first.
   room.pendingPage = null
+  // ADR-050: a picked file is a new film, so the room resets here, before any
+  // frame can seek the new film to the old film's position — the clamp to
+  // `duration - 0.25` is what made a file open "at the end" after a longer one.
+  // The same reset a page commit makes, from the one function that defines it.
+  room.playback = playbackAfterPageCommit(now())
   room.revision += 1
   return { ok: true }
 }

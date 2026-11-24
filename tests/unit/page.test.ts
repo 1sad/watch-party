@@ -258,6 +258,38 @@ test('T03: a file pick replaces a pending page instead of being wiped by it', ()
   assert.notEqual(room.media, null, 'the file the owner picked is still the room’s')
 })
 
+test('T146: a pick of a new film resets the room to 0, paused — ADR-050', () => {
+  const { room, owner } = roomWithTwo()
+  let clock = 1
+  const now = (): number => clock
+  const first = setMedia(
+    room,
+    owner,
+    { id: 'f1', title: 'Long film', duration: 720, path: FIXTURE, epoch: room.authority.epoch },
+    (path) => path === FIXTURE,
+    now,
+  )
+  assert.equal(first.ok, true)
+  // The room played the first film to 50 s, as the owner's report had it.
+  room.playback = { playing: true, position: 50, updatedAt: clock, rate: 1 }
+  const revisionBefore = room.revision
+
+  clock = 5000
+  const picked = setMedia(
+    room,
+    owner,
+    { id: 'f2', title: 'Next film', duration: 60, path: FIXTURE, epoch: room.authority.epoch },
+    (path) => path === FIXTURE,
+    now,
+  )
+  assert.equal(picked.ok, true)
+  assert.equal(room.playback.position, 0, 'the old film’s 50 s is not the new film’s position')
+  assert.equal(room.playback.playing, false, 'a picked file starts paused')
+  assert.deepEqual(room.playback, { playing: false, position: 0, updatedAt: 5000, rate: 1 })
+  assert.equal(room.revision, revisionBefore + 1, 'the reset is part of the one pick write')
+  assert.equal(room.media?.id, 'f2')
+})
+
 // ---- 03b: what Enter in the address bar may send -------------------------------
 
 test('T03b: an unusable address sends no setPage', () => {

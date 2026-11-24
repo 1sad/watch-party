@@ -112,6 +112,10 @@
   var retries = {}
   var gaveUp = {}
   var overlays = {}
+  // T146, ADR-050: id -> the position a command asked for while the element had
+  // no metadata. Such a write is lost (a busy site's remembered 50 s then wins),
+  // so the target is kept and tried once when the element reports its duration.
+  var lostSeek = {}
   var seq = 0
   var lastSentAt = 0
   var lastShape = null
@@ -293,6 +297,9 @@
 
   function onReloaded(element, kind) {
     var id = idOf(element)
+    // T146: a reload is a new source, so a target remembered for the old one must
+    // not be applied to this one; the app view's next command is the room's word.
+    delete lostSeek[id]
     var now = Date.now()
     if (eventAt[id] !== undefined && now - eventAt[id] < EVENT_GAP_MS) return
     eventAt[id] = now
@@ -382,6 +389,11 @@
     })
     element.addEventListener('seeking', function () {
       seeking[idOf(element)] = element.paused === false
+    })
+    // T146, ADR-050: the element's duration is known from here on, so a position
+    // the room asked for before it existed can be written for real.
+    element.addEventListener('loadedmetadata', function () {
+      reapplyLostSeek(element)
     })
     element.addEventListener('seeked', function () {
       var id = idOf(element)
@@ -650,6 +662,12 @@
   }
 
   function setTime(element, target) {
+    var id = idOf(element)
+    // T146: a target asked for before metadata may be dropped by the element, so
+    // it is remembered and tried once when the duration is known. A later command
+    // replaces the entry; at metadata or after it, there is nothing to retry.
+    if (number(element.readyState) < 1) lostSeek[id] = target
+    else delete lostSeek[id]
     var moved = Math.abs(number(element.currentTime) - target) > 0.001
     if (moved) arm(element, 'seeked')
     try {
@@ -658,6 +676,21 @@
       // An element with no duration yet refuses the write; the next state tries again.
       if (moved) disarm(element, 'seeked')
     }
+  }
+
+  /**
+   * T146, ADR-050: the element can take a seek now. A command whose position was
+   * written before metadata was lost, and the page's own player then kept whatever
+   * its site remembered (the 50 s episode). Applying the room's position here is
+   * the adapter's, not a new room frame: the room has not changed.
+   */
+  function reapplyLostSeek(element) {
+    var id = idOf(element)
+    if (!lostSeek.hasOwnProperty(id)) return
+    var target = lostSeek[id]
+    delete lostSeek[id]
+    if (!isFinite(number(element.duration))) return
+    setTime(element, target)
   }
 
   /**
