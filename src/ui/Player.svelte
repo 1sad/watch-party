@@ -46,9 +46,17 @@
     src: string | null
     /** Dev-only disturbance from `dev-drift.ts`; null in a shipped page. */
     devPlay: DevPlay | null
+    /**
+     * T150: what the empty picture says while the room has no file. The page
+     * owns the words, because which line is right depends on whether this
+     * window is the room's owner - the guest waits for the host, the owner is
+     * the one who picks.
+     */
+    emptyLine: string
   }
 
-  let { playback, revision, clock, send, rtt, realign, nudge, media, src, devPlay }: Props = $props()
+  let { playback, revision, clock, send, rtt, realign, nudge, media, src, devPlay, emptyLine }: Props =
+    $props()
 
   // §6.6's set: the events this component's own play/pause/seek calls cause.
   const echoes = createEchoSet()
@@ -591,7 +599,7 @@
         onvolumechange={onVolumeChange}
       ></video>
     {:else}
-      <p class="empty">No file in this room yet. The owner picks one.</p>
+      <p class="empty">{emptyLine}</p>
     {/if}
 
     {#if blocked}

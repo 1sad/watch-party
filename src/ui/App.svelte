@@ -373,6 +373,15 @@
   )
 
   /**
+   * T150: the empty picture's one line, in the role's terms. A guest waits for
+   * the host to pick; the owner is the one who picks, so it is never told to
+   * wait for itself. The page and `Player` both draw this one string.
+   */
+  const emptyPictureLine = $derived(
+    inOwnRoom ? 'Pick a page or a file to start.' : 'Waiting for the host to pick something.',
+  )
+
+  /**
    * T127 / ADR-047 ("room end"): only the window whose own sidecar owns the room
    * hears a goodbye when its page unloads, so the host waits for one only there.
    * That is a window-local fact like `data-layout`, never room state the host
@@ -2014,6 +2023,13 @@
     {#if inOwnRoom}
       <section class="invite" data-invite>
         <button type="button" class="start" onclick={enterRoom}>Start a room</button>
+        <!-- T150 / ADR-047: the owner inferred a bug from the truth - the room is
+             live before the first press. The card says so beside its action, in
+             the owner's terms, so the invite can be shared right away. -->
+        <p class="already-open">
+          The room is already open, so share the invite link below whenever you like -
+          <strong>Start a room</strong> only enters it.
+        </p>
         <p class="room">Room code <strong data-invite-code>{roomCode ?? payload.roomCode}</strong></p>
 
       {#if payload.status === 'pending'}
@@ -2111,10 +2127,15 @@
               {media}
               src={playerSrc}
               {devPlay}
+              emptyLine={emptyPictureLine}
               clock={authorityClock}
               rtt={() => estimate.rtt}
               send={sendCommand}
             />
+          {:else}
+            <!-- T150: the picture area is never blank, and it never tells the
+                 owner to wait for themselves. One line, in the role's terms. -->
+            <p class="empty-picture">{emptyPictureLine}</p>
           {/if}
         </div>
       {/if}
@@ -2277,9 +2298,21 @@
     font-family: 'Segoe UI', system-ui, sans-serif;
   }
 
+  /* T150: the card is centred in whatever window it is in. `margin-inline: auto`
+     splits the leftover width equally, and on a narrow window `main` is the
+     window less its padding, so the card never leaves it. */
   main {
     padding: 2.5rem 3rem;
     max-width: 52rem;
+    margin-inline: auto;
+  }
+
+  /* T150: the window's scrollbar sits inside the right edge, so a centred block
+     would read 15 px left of centre against `innerWidth`. Reserving the same
+     gutter on both edges keeps the two gaps equal at every width. The watching
+     screen never scrolls (ADR-047), so it is spared the gutter. */
+  :global(html:not([data-screen='watching'])) {
+    scrollbar-gutter: stable both-edges;
   }
 
   /* T96 / ADR-047: on the watching screen the page is the window, not a column
@@ -2631,6 +2664,29 @@
     margin: 0 0 1.5rem;
     font-size: 1.1rem;
     line-height: 1.5;
+  }
+
+  /* T150: the line beside the front door's action - ordinary size, not small
+     print, because it answers what the button does. */
+  .already-open {
+    margin: 0.75rem 0 1.5rem;
+    font-size: 1rem;
+    line-height: 1.5;
+    color: #c8c8d2;
+  }
+
+  /* T150: the empty picture is a sentence in the area, not a dead rectangle. */
+  .empty-picture {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+    min-height: 10rem;
+    margin: 0;
+    border: 1px dashed #2c2d36;
+    border-radius: 8px;
+    color: #9a9aab;
+    font-size: 1.1rem;
   }
 
   .sentence.error {
