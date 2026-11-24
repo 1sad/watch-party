@@ -148,6 +148,15 @@ public sealed class MainForm : Form
     /// </summary>
     private int _layoutRead;
     /// <summary>
+    /// T128: the layout published once the app view has the whole window and its
+    /// resize has landed. The WebView2 content resize is asynchronous, so the
+    /// viewport read right after <c>HideSiteView</c> can still be the docked
+    /// column (380 px, or a pixel short of the width that decides the 900 px
+    /// threshold); this one-shot tick asks again once the page has settled.
+    /// Stopped in the close, so it never runs on a disposing form.
+    /// </summary>
+    private readonly System.Windows.Forms.Timer _layoutSettle = new() { Interval = 120 };
+    /// <summary>
     /// T107: the page-mode dock shape last logged (<c>wide</c> or <c>narrow</c>), so
     /// a resize inside one shape writes no second line and a shape change writes
     /// exactly one. Null when the window is not in page mode.
@@ -283,6 +292,7 @@ public sealed class MainForm : Form
         FormClosing += OnFormClosing;
         FormClosed += OnFormClosed;
         _portTimeout.Tick += OnPortTimeout;
+        _layoutSettle.Tick += OnLayoutSettle;
         // T94, ADR-047: a resize is the form's client size changing, which is
         // also the one event a monitor's DPI change arrives as - and the width in
         // CSS pixels changes only when the client size does.
@@ -1794,7 +1804,16 @@ public sealed class MainForm : Form
         PerformLayout();
         HostLog.Write($"layout: file mode - site view hidden, the {_page.Width} px app view fills the window");
         // T99: the dock changed, so the page stops being the column.
-        PublishLayout();
+        // T128: publish the host's own post-layout width now, because the page
+        // is still the 380 px column for at least one frame after this message
+        // returns (the WebView2 content resize is asynchronous) and a read then
+        // would publish the column's `narrow` and keep it - nothing changes the
+        // form's client size afterwards, so no resize would correct it. The
+        // page's own width is ADR-047's measure while the app view fills the
+        // window; it gets the last word on the settle tick below.
+        PublishLayout(fromHostWidth: true);
+        _layoutSettle.Stop();
+        _layoutSettle.Start();
 
         // T26: the player goes with the pane. A hidden engine keeps running its
         // page - its timers, its reports and, if it was playing, its sound - so
@@ -2056,8 +2075,14 @@ public sealed class MainForm : Form
     /// change (<see cref="ShowSiteView"/>, <see cref="HideSiteView"/>) and once
     /// after the app view loads, so a fresh document never paints the wrong
     /// column for a frame.
+    ///
+    /// T128: <paramref name="fromHostWidth"/> publishes the host's own
+    /// post-layout width instead of asking the page. <see cref="HideSiteView"/>
+    /// uses it because the app view has just grown from the 380 px column to the
+    /// whole window and the page's viewport has not been resized yet; its settle
+    /// tick then publishes ADR-047's measure, the page's own width.
     /// </summary>
-    private async void PublishLayout(bool afterLoad = false)
+    private async void PublishLayout(bool afterLoad = false, bool fromHostWidth = false)
     {
         if (_closing || _page.CoreWebView2 is null) return;
 
@@ -2069,7 +2094,7 @@ public sealed class MainForm : Form
         // (ADR-047, "the host's dock wins") the published panel is what the page
         // draws there anyway.
         int read = ++_layoutRead;
-        if (!_site.Visible)
+        if (!_site.Visible && !fromHostWidth)
         {
             int? viewport = await ReadPageCssWidth();
             // A newer resize is already reading; it owns the attribute.
@@ -2145,6 +2170,18 @@ public sealed class MainForm : Form
         _portTimeout.Stop();
         HostLog.Write("sidecar did not report a port within 20 s");
         ShowFailure("Watch Party's room process did not report a port, so there is no page to show.");
+    }
+
+    /// <summary>
+    /// T128: the app view has had the whole window for a moment now, so the page
+    /// has been resized and <c>window.innerWidth</c> is the width ADR-047 says to
+    /// measure. One publish; the change gate keeps it to one line and to nothing
+    /// at all when the host's width already gave the same answer.
+    /// </summary>
+    private void OnLayoutSettle(object? sender, EventArgs e)
+    {
+        _layoutSettle.Stop();
+        PublishLayout();
     }
 
     /// <summary>
@@ -2360,6 +2397,7 @@ public sealed class MainForm : Form
     {
         _closing = true;
         _portTimeout.Stop();
+        _layoutSettle.Stop();
         StopSidecar();
     }
 
