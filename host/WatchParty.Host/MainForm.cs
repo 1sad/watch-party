@@ -120,6 +120,14 @@ public sealed class MainForm : Form
     private bool _goodbyeStarted;
     /// <summary>The goodbye finished and the close this class asked for is the next one.</summary>
     private bool _goodbyeDone;
+    /// <summary>
+    /// T127, ADR-047 ("room end"): the page has said this window entered **its
+    /// own** room, the only window whose sidecar prints <c>[room] over</c> when it
+    /// closes. It is a window-local UI fact, exactly like <c>data-layout</c>, and
+    /// never room state the host reads (ADR-034). False until the page says so -
+    /// and false for a guest, whose own sidecar has no owner to lose.
+    /// </summary>
+    private bool _ownRoomOpen;
 
     /// <summary>
     /// T94: the layout last published to the page (<c>wide</c> or <c>narrow</c>),
@@ -1295,6 +1303,9 @@ public sealed class MainForm : Form
             case "hideSite":
                 HideSiteView();
                 break;
+            case "ownRoom":
+                ReadOwnRoom(e.WebMessageAsJson);
+                break;
             case "playerElected":
                 LogPlayerElection(e.WebMessageAsJson);
                 break;
@@ -1305,6 +1316,35 @@ public sealed class MainForm : Form
                 LogPlayerDrift(e.WebMessageAsJson);
                 break;
         }
+    }
+
+    /// <summary>
+    /// T127, ADR-047 ("room end"): the page's <c>ownRoom</c> message says whether
+    /// this window has entered its own room. The close waits for the sidecar's
+    /// goodbye only then; a guest's window, and a window still on its own first
+    /// screen, has none to hear and closes at once. One line per change, ASCII only
+    /// (AGENTS.md rule 10).
+    /// </summary>
+    private void ReadOwnRoom(string json)
+    {
+        bool own;
+        try
+        {
+            using JsonDocument message = JsonDocument.Parse(json);
+            own = message.RootElement.ValueKind == JsonValueKind.Object
+                && message.RootElement.TryGetProperty("own", out JsonElement value)
+                && value.ValueKind == JsonValueKind.True;
+        }
+        catch (JsonException)
+        {
+            return;
+        }
+
+        if (own == _ownRoomOpen) return;
+        _ownRoomOpen = own;
+        HostLog.Write(own
+            ? "room: this window is in its own room - the close waits for the room's goodbye"
+            : "room: this window is not in its own room - the close waits for no goodbye");
     }
 
     /// <summary>
@@ -2224,7 +2264,8 @@ public sealed class MainForm : Form
     /// come back from - and the fact it was maximised. One ASCII log line says
     /// what was saved; nothing here can refuse the close. T113: when the window
     /// holds a room, the close is held back by one bounded goodbye instead, so the
-    /// sidecar can say the room ended before it stops (ADR-047).
+    /// sidecar can say the room ended before it stops (ADR-047). T127: that wait
+    /// belongs to the window in its **own** room; a guest's close is immediate.
     /// </summary>
     private void OnFormClosing(object? sender, FormClosingEventArgs e)
     {
@@ -2265,6 +2306,18 @@ public sealed class MainForm : Form
             + $"engine={(_page.CoreWebView2 is not null).ToString().ToLowerInvariant()}");
         if (e.CloseReason is CloseReason.WindowsShutDown or CloseReason.None) return;
         if (_appPort is null || _sidecar is null || _sidecar.HasExited || _page.CoreWebView2 is null) return;
+
+        // T127: only the room's owner's window hears `[room] over` when its page
+        // unloads; a guest's own sidecar never says it (`src/server/room.ts` has no
+        // owner), so waiting there is 1,500 ms spent on a line that cannot come.
+        // The page says which window this is - a window-local fact like
+        // `data-layout`, never room state (ADR-034). The sidecar still stops in
+        // OnFormClosed either way.
+        if (!_ownRoomOpen)
+        {
+            HostLog.Write("closing: no room of this window's own to end; the close does not wait");
+            return;
+        }
 
         e.Cancel = true;
         _goodbyeStarted = true;

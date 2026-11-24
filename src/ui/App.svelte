@@ -358,6 +358,18 @@
     !fromLink && (roomCode === null || payload === null || roomCode === payload.roomCode),
   )
 
+  /**
+   * T127 / ADR-047 ("room end"): only the window whose own sidecar owns the room
+   * hears a goodbye when its page unloads, so the host waits for one only there.
+   * That is a window-local fact like `data-layout`, never room state the host
+   * reads (ADR-034): this page says which way it goes, on a change and once on
+   * load, because a fresh document has to say it again. A guest's own sidecar has
+   * no owner to lose, so its window closing at once is right.
+   */
+  $effect(() => {
+    postToHost({ kind: 'ownRoom', own: entered && inOwnRoom })
+  })
+
   function stopPing(): void {
     if (pingTimer !== undefined) clearTimeout(pingTimer)
     pingTimer = undefined
