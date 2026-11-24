@@ -21,7 +21,10 @@
  * the frame is not trusted with more. Since T08 it posts a third, `fullscreen`:
  * the page's fullscreen *intent* (`wrapFullscreen` below). The host keeps that
  * one for itself and relays none of it, because the layout is the window's and
- * the room has no business with the shape of anyone's window. Since T104 it
+ * the room has no business with the shape of anyone's window. Since T146b it
+ * also keeps the window's own volume and mute per site origin and writes them
+ * onto each player element as it appears (R41, ADR-030) - that never leaves the
+ * window either. Since T104 it
  * posts a fourth, `pageAddress`, from the top document only (ADR-048): the only
  * document whose address is the room's page, and the host relays it from there
  * alone. It is plain
@@ -167,6 +170,66 @@
 
   function number(value) {
     return typeof value === 'number' && isFinite(value) ? value : 0
+  }
+
+  /**
+   * T146b, ADR-050 item 3 (R41, ADR-030): the window's own volume and mute.
+   * A site that changes episode by replacing its `<video>` starts the new
+   * element at the browser's 100%, so the level the person chose is kept here
+   * and written to each element as this frame first sees it. It is this
+   * window's alone: no command carries it, no report mentions it, and it is
+   * never a room event.
+   */
+  var levels = {}
+
+  /** This document's own origin, the key a level is kept under. */
+  function originOf() {
+    try {
+      return String(location.origin)
+    } catch (error) {
+      // A page that broke `location` keeps its own level; the picture plays.
+      return ''
+    }
+  }
+
+  /** The level kept for this origin; `set` says whether a person has chosen one. */
+  function levelOf() {
+    var key = originOf()
+    var level = levels[key]
+    if (!level) {
+      level = { set: false, volume: 1, muted: false }
+      levels[key] = level
+    }
+    return level
+  }
+
+  /**
+   * T146b: the element the person adjusted is the window's level from now on.
+   * A browser fires `volumechange` for `volume` and for `muted` alike, so this
+   * one event keeps both. Nothing is posted: the level never joins a report.
+   */
+  function rememberLevel(element) {
+    var level = levelOf()
+    var volume = element.volume
+    level.volume = typeof volume === 'number' && isFinite(volume) ? Math.min(1, Math.max(0, volume)) : 1
+    level.muted = element.muted === true
+    level.set = true
+  }
+
+  /**
+   * T146b: a newly seen element - the first one, or the site's replacement for
+   * it - is given the window's level. An origin with no level yet is left as
+   * the site made it, which is what a first visit should be.
+   */
+  function applyLevel(element) {
+    var level = levelOf()
+    if (!level.set) return
+    try {
+      element.volume = level.volume
+      element.muted = level.muted
+    } catch (error) {
+      // A page that froze the property keeps its own level; the picture plays.
+    }
   }
 
   /**
@@ -414,6 +477,14 @@
     element.addEventListener('ratechange', function () {
       onPlayback(element, 'rate')
     })
+    // T146b: the person's own level (R41, ADR-030). One `volumechange` covers
+    // both `volume` and `muted`, and none of it is posted.
+    element.addEventListener('volumechange', function () {
+      rememberLevel(element)
+    })
+    // T146b: a site that replaced its player handed this element the browser's
+    // default; the window's level is written back onto it as it first appears.
+    applyLevel(element)
   }
 
   /** What the frame can see right now: every `<video>` in this document, in DOM order. */

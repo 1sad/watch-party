@@ -35,6 +35,9 @@ interface FakeVideo {
   duration: number
   currentTime: number
   playbackRate: number
+  /** T146b: the window's own level, which a site's new player resets to the default. */
+  volume: number
+  muted: boolean
   buffered: { length: number; end(index: number): number }
   played: number
   pausedCalls: number
@@ -58,6 +61,8 @@ function video(over: Partial<FakeVideo> = {}): FakeVideo {
     duration: 1420.0436,
     currentTime: 80.2,
     playbackRate: 1,
+    volume: 1,
+    muted: false,
     buffered: { length: 1, end: () => 1400.5 },
     played: 0,
     pausedCalls: 0,
@@ -100,7 +105,14 @@ function harness(videos: FakeVideo[], options: { top?: boolean } = {}) {
   // change it without a load. The fake methods write the address the browser
   // would show and return their own value, so the wrapper's pass-through and
   // its dedupe are both visible here.
-  const location = { href: HREF }
+  // T146b: the origin the volume store is keyed by, read from the address the
+  // browser shows, so `moveTo` reaches an origin as a navigation would.
+  const location = {
+    href: HREF,
+    get origin() {
+      return new URL(this.href).origin
+    },
+  }
   const historyCalls: Array<{ name: string; url: string }> = []
   const historyAnswer = { kept: 'the page\'s own return value' }
   const history = {
@@ -310,6 +322,52 @@ test('a frame with no videos still reports: an empty candidate list', () => {
   const bridge = harness([])
   assert.equal(bridge.posted.length, 1)
   assert.deepEqual(bridge.posted[0]?.candidates, [])
+})
+
+test('T146b: the window keeps its volume and mute per origin and gives them to a replaced player', () => {
+  const videos: FakeVideo[] = [video()]
+  const bridge = harness(videos)
+
+  // The person sets their own level on the player they have (R41, ADR-030):
+  // a browser fires the one `volumechange` event for both properties.
+  const first = videos[0] as FakeVideo
+  first.volume = 0.4
+  first.muted = true
+  first.listeners.get('volumechange')?.[0]?.({ type: 'volumechange' })
+
+  // The site changes episode by replacing its player: a fresh element at the
+  // browser's default, appearing only after the level above was chosen.
+  const replaced = video()
+  videos.length = 0
+  videos.push(replaced)
+  bridge.tick()
+  assert.equal(replaced.volume, 0.4, 'the replaced player gets the window’s level')
+  assert.equal(replaced.muted, true, 'and its mute')
+
+  // Another origin is somebody else's page: none of this level is applied to its
+  // element, and coming back to the first origin still finds it kept. (A real
+  // navigation builds a new document and so a new realm; the key is what keeps
+  // the rule true of the store itself.)
+  bridge.moveTo('https://other.example/watch')
+  const other = video()
+  videos.length = 0
+  videos.push(other)
+  bridge.tick()
+  assert.equal(other.volume, 1, 'another origin’s player keeps its own default')
+  assert.equal(other.muted, false, 'and stays unmuted')
+
+  bridge.moveTo(HREF)
+  const back = video()
+  videos.length = 0
+  videos.push(back)
+  bridge.tick()
+  assert.equal(back.volume, 0.4, 'the first origin’s level was never overwritten')
+  assert.equal(back.muted, true)
+
+  // Nothing about it goes on the wire: not one message names the level.
+  for (const message of bridge.posted) {
+    assert.equal(JSON.stringify(message).includes('volume'), false, 'a message carried a volume')
+  }
 })
 
 test('a playing candidate is reported twice a second; a paused, unfocused one once', () => {
