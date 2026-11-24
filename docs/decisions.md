@@ -1515,6 +1515,12 @@ whitelist and the bridge's message kinds gain `pageAddress`; nothing else about 
   scrolls itself, with a thin bar that appears when the pointer is over it, drawn by the app.
 - **The roster is a count, not a list.** One line, "N online", opens the names on a click and closes them on a
   second. It is below the chat and never pushes the messages.
+  > **Amended 2026-11-24 (ticket 154b):** it sits **beside the chat's heading, not below the chat** - the count and its
+  > chevron at the right end of the `Chat` heading row, the names opening under that row and above the message list,
+  > which keeps its own scroller and gives up the rows' height. The owner asked for it "on top where it says Chat"; the
+  > first build followed the sentence above and put it where the old list was, and the owner's words are the decision.
+  > The count still pushes nothing: its row's rectangle is identical before and after three arriving messages
+  > (measured, 154b, `evidence/154b-count-closed.png`).
 - **The name is a chat command.** `/name <text>` in the chat box renames the sender; the always-visible name control
   goes; the input's placeholder offers `/name` as the hint that the command exists; the "(you)" pill goes.
 - **The owner wears a crown** in the roster. Control may be granted (ADR-033), so the crown marks the room's owner,
