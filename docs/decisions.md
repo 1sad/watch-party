@@ -1305,6 +1305,13 @@ owner's page also requests `/media/<id>?c=<code>` now - one URL shape for the ro
 > size is per profile. A bare connection loss is **not** a room end: it keeps the watching screen with a lost-connection
 > line, and rejoining is M3's business.
 
+> **Amended 2026-11-24 (ticket 121, on the measurement ticket 112 found):** the client-width formula below is **not**
+> what the page sees as `innerWidth`. Measured at 125% scaling: a 1142 px outer window is a 900 CSS px page while
+> `ClientSize.Width * 96 / DeviceDpi` reads 899, so the flip sat one physical pixel low. While the app view fills the
+> window the measure is therefore **`window.innerWidth`, read from the page**; the client-width formula stays the
+> host's dock decision and the fallback for when the page cannot answer. The 900 constant, and the host's ownership of
+> it, are unchanged.
+
 **Decision.** The page shows exactly one of two screens, chosen by one predicate over room state and one flag the
 window owns:
 
@@ -1332,7 +1339,7 @@ invite payload of its own while it is in it.
 picture. The picture is the site view in website mode and our own `<video>` in file mode, and the rule is the same in
 both:
 
-- **Window 900 px wide or more** (the form's client width, in CSS pixels): picture left, chat column right, invite bar
+- **Window 900 px wide or more** (the page's own width in CSS pixels, 2026-11-24 amendment): picture left, chat column right, invite bar
   on top of the column.
 - **Window narrower than 900 px:** the chat column moves **below** the picture (in website mode the host docks the app
   view along the bottom; in file mode the page stacks them). It is never squeezed beside the picture. The picture is
@@ -1340,9 +1347,10 @@ both:
   bound, and the page itself never scrolls: only the chat's own list does.
 
 **One threshold, owned by the host.** The app view is 380 px wide in website mode whatever the window is, so its own
-width cannot say whether the window is narrow. The measure is **the form's client width in CSS pixels**
-(`ClientSize.Width * 96 / DeviceDpi`), which is what the page sees as `innerWidth` when it fills the window, and the
-window's own width in page mode. On every resize the host sets `data-layout="wide|narrow"` on the app view's root
+width cannot say whether the window is narrow. The measure is **the app view's own `window.innerWidth`, asked of the page**, while the app view fills the window; the
+client-width formula (`ClientSize.Width * 96 / DeviceDpi`) is the host's dock decision and the fallback for when the
+page cannot answer, because it is a pixel low at a fractional scaling (2026-11-24 amendment). In page mode the measure
+is the window's own width. On every resize the host sets `data-layout="wide|narrow"` on the app view's root
 element and docks its two views to match; the page's CSS reads the attribute for the **threshold** and carries no width
 number of its own for it. A page with no attribute (a browser, a test) is `wide`.
 
