@@ -299,10 +299,14 @@ public sealed class MainForm : Form
         // T107: in page mode the same event moves the app view between the right
         // dock and the bottom one, so the two views always match the published
         // layout attribute.
+        // T129: the formula's shape goes on at once, so the views never wait on a
+        // round trip; it is quiet, because the read in PublishLayout names the
+        // settled shape the log reports.
         ClientSizeChanged += (_, _) =>
         {
-            ApplyPageDock(CurrentLayout());
+            ApplyPageDock(CurrentLayout(), quiet: true);
             PublishLayout();
+            SettleLayout();
         };
     }
 
@@ -1761,11 +1765,12 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
-    /// ADR-038's page mode, as ADR-047 amends it: the app view becomes a fixed
-    /// sidebar on the right and the site view takes the rest, from the form's own
-    /// client top - the empty band above it is gone. Called only when the room has
-    /// a page, and on every dock change it tells the page it is the column
-    /// (`data-panel="chat"`, ADR-047's "the host's dock wins").
+    /// ADR-038's page mode, as ADR-047 amends it: the site view appears and the
+    /// app view becomes the docked column - on the right, or along the bottom when
+    /// the window is narrow (T107) - from the form's own client top; the empty
+    /// band above it is gone. Called only when the room has a page, and on every
+    /// dock change it tells the page it is the column (`data-panel="chat"`,
+    /// ADR-047's "the host's dock wins").
     /// </summary>
     private void ShowSiteView()
     {
@@ -1776,8 +1781,12 @@ public sealed class MainForm : Form
         // rectangles the dock logs are the ones the window is about to show.
         // T107: which dock that is depends on the window's width - the app view
         // is the right-hand column when wide and the bottom one when narrow.
-        ApplyPageDock(CurrentLayout());
+        // T129: the formula's guess is quiet and provisional, so the site view is
+        // never left with no room for a frame; the page's own width (T121) lands
+        // through PublishLayout and its shape is the one logged.
+        ApplyPageDock(CurrentLayout(), quiet: true);
         PublishLayout();
+        SettleLayout();
     }
 
     /// <summary>
@@ -1812,8 +1821,7 @@ public sealed class MainForm : Form
         // page's own width is ADR-047's measure while the app view fills the
         // window; it gets the last word on the settle tick below.
         PublishLayout(fromHostWidth: true);
-        _layoutSettle.Stop();
-        _layoutSettle.Start();
+        SettleLayout();
 
         // T26: the player goes with the pane. A hidden engine keeps running its
         // page - its timers, its reports and, if it was playing, its sound - so
@@ -1966,18 +1974,18 @@ public sealed class MainForm : Form
 
     /// <summary>
     /// T94, ADR-047 ("one threshold, owned by the host"): the form's client width
-    /// in CSS pixels, turned into the page's two layout names. One helper, so the
-    /// dock and the published attribute can never disagree about which shape the
-    /// window is in.
+    /// in CSS pixels, turned into the page's two layout names.
     ///
-    /// T121: this is the copy the <em>dock</em> uses, and the fallback the
-    /// published attribute uses while the app view is the docked column. It is
-    /// not exact: the client width times 96/dpi is a whole number with its own
-    /// rounding while the page's viewport is the WebView2 view's width, and at a
-    /// fractional scaling the two are a pixel apart (measured 2026-11-24 on
-    /// 125%: outer 1142 is 900 CSS px on the page and 899 here). The page is
-    /// therefore asked for the number it actually sees - see
-    /// <see cref="ReadPageCssWidth"/> - whenever it fills the window.
+    /// T121: it is not exact. The client width times 96/dpi is a whole number with
+    /// its own rounding while the page's viewport is the WebView2 view's width, and
+    /// at a fractional scaling the two are a pixel apart (measured 2026-11-24 on
+    /// 125%: outer 1142 is 900 CSS px on the page and 899 here).
+    ///
+    /// T129: so this is the **provisional** shape and the fallback - the dock the
+    /// window puts on while the page's own width is being read, and the one it
+    /// keeps when the page cannot answer. The settled shape comes from
+    /// <see cref="ReadWindowCssWidth"/> in both modes, page mode included; the
+    /// formula is never the answer when the page can speak.
     /// </summary>
     private string CurrentLayout()
     {
@@ -1988,34 +1996,71 @@ public sealed class MainForm : Form
         // keep apart from it.
         int dpi = DeviceDpi;
         int cssWidth = dpi > 0 ? (int)Math.Round(ClientSize.Width * 96.0 / dpi) : ClientSize.Width;
-        return cssWidth >= WideLayoutMinCssWidth ? "wide" : "narrow";
+        return LayoutFor(cssWidth);
     }
+
+    /// <summary>
+    /// T94, ADR-047 ("one threshold, owned by the host"): a width in CSS pixels
+    /// turned into the page's two layout names. The one comparison, shared by the
+    /// formula's provisional answer and the page's own width, so the fallback and
+    /// the measure can never disagree about where 900 px is.
+    /// </summary>
+    private static string LayoutFor(int cssWidth) =>
+        cssWidth >= WideLayoutMinCssWidth ? "wide" : "narrow";
 
     /// <summary>
     /// T121, ADR-047 ("the form's client width in CSS pixels ... which is what the
     /// page sees as innerWidth"): the width the page actually has, asked from the
-    /// page - <c>window.innerWidth</c>, the same number a check reads. That is the
-    /// measurement ADR-047 names, and at a fractional scaling it is not always
-    /// what <see cref="CurrentLayout"/> derives from the client width. Only
-    /// meaningful while the app view fills the window: in page mode it is the
-    /// docked column, 380 px wide, and says nothing about the window. Null when
-    /// the answer cannot be read, so the caller keeps the client-width formula.
+    /// page - <c>window.innerWidth</c>, the same number a check reads. Only
+    /// meaningful for a view that fills the window; <see cref="ReadWindowCssWidth"/>
+    /// is what callers want in page mode, where this view is the docked column.
     /// </summary>
-    private async Task<int?> ReadPageCssWidth()
+    private Task<int?> ReadPageCssWidth() => ReadViewCssWidth(_page, "page");
+
+    /// <summary>
+    /// One view's <c>window.innerWidth</c>, or null when it cannot be read so the
+    /// caller keeps the client-width formula. A failure is one log line, never a
+    /// thrown resize.
+    /// </summary>
+    private async Task<int?> ReadViewCssWidth(WebView2 view, string name)
     {
-        if (_closing || _page.CoreWebView2 is null) return null;
+        if (_closing || view.CoreWebView2 is null) return null;
         try
         {
             // ExecuteScriptAsync hands back the value as JSON; innerWidth is
             // always a whole number of CSS pixels, so the JSON is that number.
-            string raw = await _page.CoreWebView2.ExecuteScriptAsync("window.innerWidth");
+            string raw = await view.CoreWebView2.ExecuteScriptAsync("window.innerWidth");
             return int.TryParse(raw, out int width) && width > 0 ? width : null;
         }
         catch (Exception error)
         {
-            HostLog.Write($"layout: could not read the page's width: {error.Message}");
+            HostLog.Write($"layout: could not read the {name}'s width: {error.Message}");
             return null;
         }
+    }
+
+    /// <summary>
+    /// T129, ADR-047 ("One threshold, owned by the host ... In page mode the
+    /// measure is the window's own width"): the window's width in CSS pixels,
+    /// asked of the page and the same number the published attribute uses - in
+    /// page mode as well as file mode. In file mode the app view fills the window,
+    /// so it is that view's own viewport (T121). In page mode the two views tile
+    /// the client area with nothing beside them: the site view takes the whole
+    /// width when the app view is docked along the bottom (T107's narrow shape),
+    /// and the width less the column when it is docked on the right, so adding the
+    /// app view's viewport to the site's is the window's width in either shape.
+    /// Null when the views cannot answer, and the caller keeps the formula.
+    /// </summary>
+    private async Task<int?> ReadWindowCssWidth()
+    {
+        if (!_site.Visible) return await ReadPageCssWidth();
+
+        int? site = await ReadViewCssWidth(_site, "site view");
+        if (site is null) return null;
+        if (_page.Dock != DockStyle.Right) return site;
+
+        int? column = await ReadViewCssWidth(_page, "app view");
+        return column is null ? null : site + column;
     }
 
     /// <summary>
@@ -2028,8 +2073,14 @@ public sealed class MainForm : Form
     /// window actually used, read after <see cref="Control.PerformLayout"/>, so a
     /// check can read the log without eyes on the window. Fullscreen does not call
     /// this: it changes nothing but the window's size.
+    ///
+    /// T129: <paramref name="quiet"/> applies the shape without claiming it, for
+    /// the provisional formula pass a resize makes before the page has answered.
+    /// The read that follows names the settled shape and writes the one log line,
+    /// so a pixel's disagreement between the formula and the page cannot leave a
+    /// second, wrong shape in the log.
     /// </summary>
-    private void ApplyPageDock(string layout)
+    private void ApplyPageDock(string layout, bool quiet = false)
     {
         // No page mode, no dock to apply; a minimised window has no client area to
         // share and is laid out again when it is restored.
@@ -2053,6 +2104,7 @@ public sealed class MainForm : Form
         // the rectangles below are the ones the window is about to show.
         PerformLayout();
 
+        if (quiet) return;
         if (layout == _pageDockShape) return;
         _pageDockShape = layout;
         HostLog.Write(layout == "narrow"
@@ -2081,26 +2133,33 @@ public sealed class MainForm : Form
     /// uses it because the app view has just grown from the 380 px column to the
     /// whole window and the page's viewport has not been resized yet; its settle
     /// tick then publishes ADR-047's measure, the page's own width.
+    ///
+    /// T129: the width is the window's in **both** modes (<see
+    /// cref="ReadWindowCssWidth"/>), and the dock's shape is taken from that same
+    /// number here rather than from a second copy of it, so the views and the
+    /// attribute cannot disagree about which side of 900 px the window is on.
     /// </summary>
     private async void PublishLayout(bool afterLoad = false, bool fromHostWidth = false)
     {
         if (_closing || _page.CoreWebView2 is null) return;
 
         string layout = CurrentLayout();
-        // T121: while the app view fills the window it *is* the page the threshold
-        // is about, so ask it for its own width instead of deriving one that can
-        // be a pixel low. In page mode the app view is the 380 px column and the
-        // formula stays - the column's width says nothing about the window, and
-        // (ADR-047, "the host's dock wins") the published panel is what the page
-        // draws there anyway.
+        // T121: the page is the measure ADR-047 names, not a width derived from
+        // the client size that can be a pixel low. T129: in page mode that is the
+        // site view plus the column, because the app view on its own is the
+        // column and says nothing about the window.
         int read = ++_layoutRead;
-        if (!_site.Visible && !fromHostWidth)
+        if (!fromHostWidth)
         {
-            int? viewport = await ReadPageCssWidth();
-            // A newer resize is already reading; it owns the attribute.
+            int? width = await ReadWindowCssWidth();
+            // A newer resize is already reading; it owns the attribute and the dock.
             if (read != _layoutRead || _closing) return;
-            if (viewport is int width) layout = width >= WideLayoutMinCssWidth ? "wide" : "narrow";
+            if (width is int cssWidth) layout = LayoutFor(cssWidth);
         }
+
+        // Before the change gate: a shape that corrects inside one published
+        // layout must still move the views (T129).
+        ApplyPageDock(layout);
 
         // The host's dock, not the width, decides the panel (ADR-047): a page-mode
         // window is the column at every width, so the page must not fall back to
@@ -2128,10 +2187,11 @@ public sealed class MainForm : Form
             if (layout != previous)
             {
                 // The window's own size, which is what the camera asks for and
-                // prints; the threshold above reads the page's viewport whenever
-                // the app view fills the window and takes the client-width
-                // formula in page mode, where that formula also picks the dock
-                // (T121). One line per change, never per pixel.
+                // prints; the threshold above reads the window's width from the
+                // page in both modes - the app view's own viewport when it fills
+                // the window, the site view plus the column when it is docked
+                // (T121, T129) - and takes the client-width formula only when the
+                // page cannot answer. One line per change, never per pixel.
                 HostLog.Write($"layout: window {Width}x{Height} {layout}");
             }
         }
@@ -2177,11 +2237,27 @@ public sealed class MainForm : Form
     /// has been resized and <c>window.innerWidth</c> is the width ADR-047 says to
     /// measure. One publish; the change gate keeps it to one line and to nothing
     /// at all when the host's width already gave the same answer.
+    ///
+    /// T129: the same tick is how a resize settles in page mode. The views are
+    /// resized in the message, but WebView2 resizes its content afterwards, so a
+    /// width read in the same message can still be the old one; this is the read
+    /// that gets the last word on both the dock's shape and the attribute.
     /// </summary>
     private void OnLayoutSettle(object? sender, EventArgs e)
     {
         _layoutSettle.Stop();
         PublishLayout();
+    }
+
+    /// <summary>
+    /// T129: asks again once the views' own contents have caught up with the
+    /// resize that just happened. Restarted on every resize rather than left to
+    /// fire, so a drag makes one settled read at its end and none in between.
+    /// </summary>
+    private void SettleLayout()
+    {
+        _layoutSettle.Stop();
+        _layoutSettle.Start();
     }
 
     /// <summary>
