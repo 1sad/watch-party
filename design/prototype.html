@@ -1,0 +1,651 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>watch-party - interface prototype</title>
+<style>
+  :root{
+    --bg:#0d1015;
+    --panel:#151b23;
+    --panel2:#1b222c;
+    --line:#26303c;
+    --ink:#e8eef6;
+    --dim:#8d9aab;
+    --accent:#4ea1ff;
+    --warm:#ffcf70;
+    --radius:10px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font:14px/1.45 "Segoe UI",system-ui,-apple-system,sans-serif;
+    overflow:hidden;
+    user-select:none;
+  }
+  body.dragging{cursor:col-resize}
+  button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+
+  /* ---------- the top bar: the switch, the sentence, the two buttons ---------- */
+  #bar{
+    padding:8px 12px 10px;
+    background:linear-gradient(#161d26,#111720);
+    border-bottom:1px solid var(--line);
+  }
+  #bar .row{display:flex;align-items:center;gap:12px;min-height:30px}
+  .brand{display:flex;align-items:center;gap:7px;font-weight:600;letter-spacing:.2px}
+  .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent)}
+  .switch{display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:#0f151c}
+  .switch .tab{padding:5px 12px;font-size:12.5px;color:var(--dim)}
+  .switch .tab.on{background:#22303f;color:var(--ink)}
+  .howto{margin:0 0 0 4px;font-size:13px;color:var(--dim);flex:1}
+  .howto b{color:var(--warm);font-weight:600}
+  .tools{display:flex;gap:8px}
+  .tools button{border:1px solid var(--line);background:#1a2230;border-radius:8px;padding:6px 11px;font-size:13px}
+  .tools button:hover{background:#212b3a}
+  .tools #copy{border-color:#2b6cb0;background:#1d4e86}
+  .tools #copy:hover{background:#24609f}
+  .tools .copied{color:#7ee0a1}
+  #bar .row2{display:flex;align-items:center;gap:8px;margin-top:8px}
+  #bar .row2 label{font-size:11.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--dim)}
+  #arrangement{
+    flex:1;height:26px;resize:none;overflow:hidden;white-space:pre;
+    background:#0b1017;border:1px solid var(--line);border-radius:7px;
+    color:#9fd0ff;font:12px/24px Consolas,"Cascadia Mono",monospace;padding:0 8px;
+  }
+
+  /* ---------- screens ---------- */
+  .screen{display:none;height:calc(100vh - 84px)}
+  .screen.on{display:block}
+
+  /* ---------- front door ---------- */
+  #screen-front{overflow:hidden;background:
+    radial-gradient(90% 70% at 50% 0%,#182335 0%,#0b0e13 65%)}
+  .door{height:100%;display:grid;place-items:center;padding:24px}
+  .card{
+    width:520px;background:var(--panel);border:1px solid var(--line);
+    border-radius:16px;padding:26px 26px 22px;box-shadow:0 30px 80px rgba(0,0,0,.55)
+  }
+  .card h1{margin:0 0 6px;font-size:26px;letter-spacing:.2px}
+  .card .lead{margin:0 0 18px;color:var(--dim);font-size:14.5px}
+  .card-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px}
+  .field{background:#0f151d;border:1px solid var(--line);border-radius:var(--radius);padding:9px 11px}
+  .field label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--dim);margin-bottom:3px}
+  .field .code{font:600 15px Consolas,monospace;letter-spacing:2px}
+  .field .url{font-size:13px;color:#c8d4e2}
+  .card .start{
+    width:100%;padding:11px;border-radius:var(--radius);font-weight:600;font-size:15px;
+    background:linear-gradient(#3f8ee8,#2e6fc0);color:#fff;
+    box-shadow:0 8px 22px rgba(46,111,192,.35)
+  }
+  .card .fine{margin:12px 0 0;text-align:center;font-size:12px;color:var(--dim)}
+
+  /* ---------- the watching screen ---------- */
+  #room{display:flex;height:100%;min-height:0}
+
+  #left{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
+
+  /* the picture, with the fake film drawn in CSS */
+  #picture{position:relative;flex:1 1 auto;min-height:0;background:#05070a;overflow:hidden}
+  .film{position:absolute;inset:0;
+    background:
+      radial-gradient(75% 55% at 74% 16%,#24365a 0%,rgba(20,30,50,0) 60%),
+      linear-gradient(#0b1424 0%,#0a1018 55%,#070b10 100%)}
+  .film .moon{position:absolute;left:72%;top:13%;width:64px;height:64px;border-radius:50%;
+    background:#e8eef6;box-shadow:0 0 40px 12px rgba(200,220,255,.35)}
+  .film .ridge{position:absolute;left:-5%;right:-5%;bottom:0;height:38%;
+    background:linear-gradient(#0a1420,#060a0f);border-radius:46% 54% 0 0/24% 100% 0 0}
+  .film .ridge.b{height:26%;left:-20%;right:auto;width:90%;background:#08121c;
+    border-radius:50% 50% 0 0/28% 100% 0 0}
+  .film .grain{position:absolute;inset:0;opacity:.05;
+    background:repeating-linear-gradient(0deg,rgba(255,255,255,.5) 0 1px,rgba(255,255,255,0) 1px 5px)}
+  .film .bars{position:absolute;left:0;right:0;height:7%;background:#000;opacity:.85}
+  .film .bars.t{top:0}.film .bars.b{bottom:0}
+  .film .flag{position:absolute;left:26px;top:26px;font-size:12px;letter-spacing:2.4px;
+    text-transform:uppercase;color:rgba(232,238,246,.6)}
+  .film .play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:74px;height:74px;border-radius:50%;background:rgba(10,16,24,.55);
+    border:1px solid rgba(255,255,255,.22);display:grid;place-items:center}
+  .film .play::after{content:"";border-style:solid;border-width:13px 0 13px 21px;
+    border-color:transparent transparent transparent rgba(255,255,255,.86);margin-left:5px}
+  .film .stamp{position:absolute;right:26px;top:26px;font:12px Consolas,monospace;color:rgba(232,238,246,.72)}
+
+  /* the slots: where a piece can sit */
+  .slot{position:relative;display:flex;flex-direction:column;gap:8px}
+  body.watching .slot{pointer-events:none}
+  body.dragging .slot{pointer-events:auto;outline:1px dashed #38506a;outline-offset:-3px;border-radius:var(--radius);
+    min-height:34px;background:rgba(78,161,255,.05)}
+  .slot.over-picture{position:absolute;left:14px;right:14px;top:14px;z-index:3;align-items:flex-start}
+  .slot.over-picture .piece{max-width:320px}
+  .slot.over-bottom{position:absolute;left:14px;right:14px;bottom:26px;z-index:3}
+  .slot.under-picture{flex:0 0 auto;padding:8px 12px;background:#0b1017;border-top:1px solid var(--line)}
+  .slot.under-picture:empty{padding:0;border:0}
+  .slot.above-chat{flex:0 0 auto;padding:8px 10px 0}
+  .slot.above-chat:empty{padding:0}
+  .slot.below-chat{flex:0 0 auto;padding:0 10px 8px}
+  .slot.below-chat:empty{padding:0}
+
+  /* ---------- a movable piece ---------- */
+  .piece{
+    position:relative;pointer-events:auto;
+    background:rgba(21,27,35,.96);border:1px solid var(--line);
+    border-radius:var(--radius);padding:8px 10px 8px 26px;
+    box-shadow:0 6px 18px rgba(0,0,0,.35)
+  }
+  .piece.lifted{opacity:.9;z-index:20;box-shadow:0 18px 40px rgba(0,0,0,.6);pointer-events:none;border-color:#3f74a8}
+  .piece .grip{
+    position:absolute;left:0;top:0;bottom:0;width:22px;border-radius:var(--radius) 0 0 var(--radius);
+    cursor:grab;display:grid;place-items:center;color:#5f7186;
+    background:linear-gradient(90deg,rgba(255,255,255,.05),rgba(255,255,255,0))
+  }
+  .piece .grip::before{content:"";width:4px;height:16px;border-radius:2px;
+    background:repeating-linear-gradient(0deg,#46586c 0 2px,transparent 2px 4px)}
+  .body.dragging .piece .grip{cursor:grabbing}
+  .choices{display:flex;gap:6px;margin-top:7px;flex-wrap:wrap}
+  .choices button{
+    font-size:11.5px;padding:3px 8px;border-radius:999px;
+    border:1px solid var(--line);background:#111823;color:var(--dim)
+  }
+  .choices button.on{border-color:#3f74a8;background:#16324f;color:#cfe4ff}
+
+  /* invite bar */
+  .invite{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .invite .plabel{font-size:11.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--dim)}
+  .invite code{font:12.5px Consolas,monospace;color:#a9d4ff;background:#0d141d;
+    border:1px solid var(--line);border-radius:6px;padding:3px 8px}
+  .invite .mini{font-size:12px;border:1px solid #2b6cb0;background:#1d4e86;border-radius:6px;padding:3px 9px}
+
+  /* controls row */
+  .controls .crow{display:flex;align-items:center;gap:10px}
+  .controls .crow .btn{width:22px;height:22px;position:relative;flex:0 0 auto;opacity:.85}
+  .controls .btn.play::after{content:"";position:absolute;left:6px;top:4px;
+    border-style:solid;border-width:7px 0 7px 11px;border-color:transparent transparent transparent #e8eef6}
+  .controls .btn.back::after,.controls .btn.fwd::after{content:"";position:absolute;top:4px;
+    border-style:solid;border-width:7px 0 7px 9px;border-color:transparent transparent transparent #9fb0c4}
+  .controls .btn.back::after{left:2px;transform:rotate(180deg)}
+  .controls .btn.fwd::after{left:7px}
+  .controls .btn.vol::after{content:"";position:absolute;left:5px;top:6px;
+    border-style:solid;border-width:5px 7px 5px 0;border-color:transparent #9fb0c4 transparent transparent}
+  .controls .btn.vol::before{content:"";position:absolute;left:12px;top:5px;width:7px;height:12px;
+    border:1px solid #9fb0c4;border-left:0;border-radius:0 8px 8px 0}
+  .controls .btn.full::after{content:"";position:absolute;inset:4px;border:1.5px solid #9fb0c4;border-radius:2px}
+  .controls .time{font:12px Consolas,monospace;color:var(--dim);flex:0 0 auto}
+  .controls .seek{position:relative;flex:1 1 auto;height:5px;border-radius:3px;background:#26303c;min-width:60px}
+  .controls .seek i{position:absolute;left:0;top:0;bottom:0;width:63%;border-radius:3px;
+    background:linear-gradient(90deg,#3f8ee8,#6fb6ff)}
+  .controls .seek i::after{content:"";position:absolute;right:-5px;top:-3px;width:11px;height:11px;
+    border-radius:50%;background:#e8eef6}
+
+  /* roster */
+  .roster .rhead{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px}
+  .roster .rhead .pip{width:7px;height:7px;border-radius:50%;background:#5ad18a;box-shadow:0 0 8px #5ad18a}
+  .roster .rhead .dim{font-weight:400;color:var(--dim);font-size:12px}
+  .roster ul{list-style:none;margin:7px 0 0;padding:0;display:flex;flex-direction:column;gap:4px}
+  .roster li{display:flex;align-items:center;gap:7px;font-size:13px;color:#cdd8e6}
+  .roster li .swatch{width:16px;height:16px;border-radius:50%;flex:0 0 auto}
+  .roster li .tag{font-size:10.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--warm)}
+  .roster li .crown{width:13px;height:11px}
+  .roster.closed ul{display:none}
+
+  /* ---------- the chat column ---------- */
+  #chat{
+    position:relative;flex:0 0 auto;width:380px;min-width:280px;max-width:520px;
+    display:flex;flex-direction:column;min-height:0;
+    background:var(--panel);border-left:1px solid var(--line);
+  }
+  #handle{
+    position:absolute;left:-5px;top:0;bottom:0;width:10px;z-index:9;cursor:col-resize;
+    display:flex;justify-content:center
+  }
+  #handle::before{content:"";width:3px;height:44px;margin-top:44px;border-radius:2px;
+    background:repeating-linear-gradient(0deg,#3a4a5c 0 3px,transparent 3px 6px)}
+  #handle:hover::before,#handle.hot::before{background:repeating-linear-gradient(0deg,var(--accent) 0 3px,transparent 3px 6px)}
+  .chat-head{display:flex;align-items:center;gap:8px;padding:9px 10px 7px;border-bottom:1px solid var(--line)}
+  .chat-head .title{font-weight:600;font-size:13px}
+  .chat-head #widthtag{font:11px Consolas,monospace;color:var(--dim);border:1px solid var(--line);
+    border-radius:999px;padding:1px 7px}
+  .chat-head .styles{margin-left:auto;display:flex;gap:5px}
+  .chat-head .styles button{font-size:11px;padding:2px 7px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}
+  .chat-head .styles button.on{border-color:#3f74a8;background:#16324f;color:#cfe4ff}
+
+  .messages{flex:1 1 auto;min-height:0;overflow-y:auto;padding:10px 10px 4px;
+    display:flex;flex-direction:column;gap:10px;scrollbar-width:thin}
+  .messages::-webkit-scrollbar{width:6px}
+  .messages::-webkit-scrollbar-thumb{background:#2c3a4a;border-radius:3px}
+  .msg{display:flex;flex-direction:column;gap:1px}
+  .msg .meta{display:flex;align-items:baseline;gap:6px}
+  .msg .who{font-weight:600;font-size:12.5px}
+  .msg .at{font:11px Consolas,monospace;color:var(--dim)}
+  .msg .body{font-size:13.5px;color:#dbe5f1;overflow-wrap:anywhere}
+  .msg.sys .body{color:var(--dim);font-style:italic;font-size:12.5px}
+  .msg.sys .who,.msg.sys .at{color:#6f7f92}
+
+  /* the four message styles */
+  .messages[data-style="name"] .at{display:none}
+  .messages[data-style="name-time"] .meta{justify-content:space-between}
+  .messages[data-style="time-beside"] .at{order:-1;color:#7f8ea1}
+  .messages[data-style="time-beside"] .who{font-weight:600}
+  .messages[data-style="bubble"] .msg{align-self:flex-start;max-width:88%;
+    background:#1d2733;border:1px solid #253242;border-radius:14px 14px 14px 4px;padding:6px 10px 7px}
+  .messages[data-style="bubble"] .meta{gap:8px}
+  .messages[data-style="bubble"] .at{font-size:10.5px}
+
+  .notice{display:flex;align-items:center;gap:8px;margin:0 10px 8px;padding:6px 8px;
+    background:#221c10;border:1px solid #4a3a1c;border-radius:8px;font-size:12.5px;color:#e7d3a8}
+  .notice .ndot{width:7px;height:7px;border-radius:50%;background:var(--warm);flex:0 0 auto}
+  .notice .grow{flex:1}
+  .notice button{color:#c6ad7c;font-size:13px;padding:0 2px}
+  .notice.gone{display:none}
+
+  .composer{display:flex;gap:7px;padding:0 10px 9px}
+  .composer input{flex:1;background:#0e151d;border:1px solid var(--line);border-radius:8px;
+    color:var(--ink);font:13px inherit;padding:7px 9px}
+  .composer input::placeholder{color:#61707f}
+  .composer button{border:1px solid #2b6cb0;background:#1d4e86;border-radius:8px;padding:0 11px;font-size:13px}
+</style>
+</head>
+<body class="watching">
+
+<header id="bar">
+  <div class="row">
+    <span class="brand"><span class="dot"></span>watch-party prototype</span>
+    <div class="switch">
+      <button class="tab" data-screen="front">Front door</button>
+      <button class="tab on" data-screen="watching">Watching</button>
+    </div>
+    <p class="howto">drag the pieces, then press <b>Copy arrangement</b> and send me the text.</p>
+    <div class="tools">
+      <button id="copy">Copy arrangement</button>
+      <button id="reset">Reset</button>
+    </div>
+  </div>
+  <div class="row2">
+    <label for="arrangement">arrangement</label>
+    <textarea id="arrangement" rows="1" readonly spellcheck="false"></textarea>
+  </div>
+</header>
+
+<!-- ================= front door ================= -->
+<section id="screen-front" class="screen">
+  <div class="door">
+    <div class="card">
+      <h1>watch-party</h1>
+      <p class="lead">One room, five friends, one window. The room is live before Start - friends who arrive early
+        wait here until you begin.</p>
+      <div class="card-row">
+        <div class="field">
+          <label>room code</label>
+          <div class="code">WQ4T-9K</div>
+        </div>
+        <div class="field">
+          <label>page</label>
+          <div class="url">a site's page, or a file you pick</div>
+        </div>
+      </div>
+      <button class="start">Start the room</button>
+      <p class="fine">No account, no server. The link is the room.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= watching ================= -->
+<section id="screen-watching" class="screen on">
+  <div id="room">
+    <div id="left">
+      <div id="picture">
+        <div class="film">
+          <div class="moon"></div>
+          <div class="ridge b"></div>
+          <div class="ridge"></div>
+          <div class="grain"></div>
+          <div class="bars t"></div>
+          <div class="bars b"></div>
+          <div class="flag">the long night &middot; a fake film</div>
+          <div class="play"></div>
+          <div class="stamp">1:24:06 / 1:52:40</div>
+        </div>
+
+        <div class="slot over-picture" data-slot="over-picture" data-accepts="roster inviteBar"></div>
+        <div class="slot over-bottom" data-slot="over-picture-bottom" data-accepts="controls"></div>
+      </div>
+
+      <div class="slot under-picture" data-slot="under-picture" data-accepts="controls">
+
+        <!-- controls row: under the picture, or inside it -->
+        <div class="piece controls" id="controls" data-key="controls">
+          <div class="grip" data-grip title="drag me"></div>
+          <div class="crow">
+            <span class="btn back"></span>
+            <span class="btn play"></span>
+            <span class="btn fwd"></span>
+            <span class="time">1:24:06</span>
+            <span class="seek"><i></i></span>
+            <span class="time">1:52:40</span>
+            <span class="btn vol"></span>
+            <span class="btn full"></span>
+          </div>
+          <div class="choices">
+            <button data-set="controls:under">under the picture</button>
+            <button data-set="controls:inside">inside the picture</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside id="chat" style="width:380px">
+      <div id="handle" title="drag left or right to resize the chat"></div>
+
+      <div class="slot above-chat" data-slot="above-chat" data-accepts="inviteBar">
+
+        <!-- invite bar: above the chat, or on the picture -->
+        <div class="piece invite" id="invitebar" data-key="inviteBar">
+          <div class="grip" data-grip title="drag me"></div>
+          <div class="invite">
+            <span class="plabel">invite link</span>
+            <code>watchparty://join?room=WQ4T-9K</code>
+            <button class="mini">Copy link</button>
+            <span class="choices">
+              <button data-set="inviteBar:above">above the chat</button>
+              <button data-set="inviteBar:on">on the picture</button>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="chat-head">
+        <span class="title">Chat</span>
+        <span id="widthtag">380 px</span>
+        <span class="styles" id="styles">
+          <button data-style="name">name</button>
+          <button data-style="name-time">name + time</button>
+          <button data-style="time-beside">time beside</button>
+          <button data-style="bubble">bubble</button>
+        </span>
+      </div>
+
+      <div class="messages" id="messages" data-style="name-time">
+        <div class="msg"><div class="meta"><span class="who">Ana</span><span class="at">8:42</span></div>
+          <div class="body">has anyone seen the first ten minutes</div></div>
+        <div class="msg"><div class="meta"><span class="who">Bert</span><span class="at">8:42</span></div>
+          <div class="body">no but i will not pretend to be sad about it</div></div>
+        <div class="msg sys"><div class="meta"><span class="who">the room</span><span class="at">8:43</span></div>
+          <div class="body">the page changed to the-long-night.example/watch</div></div>
+        <div class="msg"><div class="meta"><span class="who">Ce</span><span class="at">8:44</span></div>
+          <div class="body">someone paused - we are 12 seconds behind now, fixing</div></div>
+        <div class="msg"><div class="meta"><span class="who">Dee</span><span class="at">8:44</span></div>
+          <div class="body">/name Dee</div></div>
+      </div>
+
+      <div class="notice" id="notice">
+        <span class="ndot"></span>
+        <span class="grow">Bert dropped out and came back - one seat, not two.</span>
+        <button id="ndismiss" title="dismiss">&#10005;</button>
+      </div>
+
+      <div class="composer">
+        <input id="say" placeholder="say something - or /name Ana" autocomplete="off">
+        <button>Send</button>
+      </div>
+
+      <div class="slot below-chat" data-slot="below-chat" data-accepts="roster">
+
+        <!-- roster: below the chat, or on top of the picture -->
+        <div class="piece roster" id="roster" data-key="roster">
+          <div class="grip" data-grip title="drag me"></div>
+          <button class="rhead" id="rtoggle">
+            <span class="pip"></span><span class="rcount">5 online</span>
+            <span class="dim">one seat each</span>
+          </button>
+          <ul>
+            <li><span class="swatch" style="background:#4ea1ff"></span>Ana
+              <span class="tag">host</span>
+              <svg class="crown" viewBox="0 0 13 11" aria-hidden="true">
+                <path d="M1 10h11L11 3 8.2 5.4 6.5 1 4.8 5.4 2 3z" fill="#ffcf70"/>
+              </svg>
+            </li>
+            <li><span class="swatch" style="background:#e8778a"></span>Bert</li>
+            <li><span class="swatch" style="background:#7ad0a0"></span>Ce</li>
+            <li><span class="swatch" style="background:#c79cf0"></span>Dee</li>
+            <li><span class="swatch" style="background:#f0b878"></span>Eli <span class="dim">(quiet)</span></li>
+          </ul>
+          <div class="choices">
+            <button data-set="roster:below">below the chat</button>
+            <button data-set="roster:top">on top of the picture</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+
+  var START = { chatWidth: 380, roster: 'below', inviteBar: 'above', controls: 'under', messages: 'name-time' };
+  var state = Object.assign({}, START);
+
+  var chat = document.getElementById('chat');
+  var handle = document.getElementById('handle');
+  var messages = document.getElementById('messages');
+  var widthtag = document.getElementById('widthtag');
+  var arrangement = document.getElementById('arrangement');
+  var notice = document.getElementById('notice');
+
+  var SLOT_FOR = {
+    roster:    { below: 'below-chat', top: 'over-picture' },
+    inviteBar: { above: 'above-chat', on: 'over-picture' },
+    controls:  { under: 'under-picture', inside: 'over-picture-bottom' }
+  };
+  var POSITION_FOR = {
+    roster:    { 'below-chat': 'below', 'over-picture': 'top' },
+    inviteBar: { 'above-chat': 'above', 'over-picture': 'on' },
+    controls:  { 'under-picture': 'under', 'over-picture-bottom': 'inside' }
+  };
+
+  function piece(key) { return document.getElementById(key === 'inviteBar' ? 'invitebar' : key); }
+  function slotEl(name) { return document.querySelector('[data-slot="' + name + '"]'); }
+
+  function arrangementJSON() {
+    return JSON.stringify({
+      chatWidth: state.chatWidth,
+      roster: state.roster,
+      inviteBar: state.inviteBar,
+      controls: state.controls,
+      messages: state.messages
+    });
+  }
+
+  var rendered = {};
+  function apply() {
+    chat.style.width = state.chatWidth + 'px';
+    widthtag.textContent = state.chatWidth + ' px';
+    messages.dataset.style = state.messages;
+
+    Object.keys(SLOT_FOR).forEach(function (key) {
+      var home = SLOT_FOR[key][state[key]];
+      if (rendered[key] !== home) {
+        slotEl(home).appendChild(piece(key));
+        rendered[key] = home;
+      }
+    });
+
+    document.querySelectorAll('.choices button').forEach(function (b) {
+      var parts = b.dataset.set.split(':');
+      b.classList.toggle('on', state[parts[0]] === parts[1]);
+    });
+    document.querySelectorAll('#styles button').forEach(function (b) {
+      b.classList.toggle('on', state.messages === b.dataset.style);
+    });
+
+    arrangement.value = arrangementJSON();
+  }
+
+  /* ---------- the chat column's left edge ---------- */
+  var resize = null;
+  handle.addEventListener('pointerdown', function (e) {
+    if (e.button !== 0 && e.button !== undefined && e.pointerType !== '') { /* keep going */ }
+    e.preventDefault();
+    resize = { x: e.clientX, w: chat.getBoundingClientRect().width };
+    handle.classList.add('hot');
+    try { handle.setPointerCapture(e.pointerId); } catch (err) { /* no capture: window listeners still see it */ }
+  });
+  window.addEventListener('pointermove', function (e) {
+    if (!resize) return;
+    var w = resize.w - (e.clientX - resize.x);
+    state.chatWidth = Math.round(Math.min(520, Math.max(280, w)));
+    apply();
+  });
+  window.addEventListener('pointerup', function () {
+    if (!resize) return;
+    resize = null;
+    handle.classList.remove('hot');
+  });
+
+  /* ---------- every piece drags to its other home ---------- */
+  // The drop targets are areas, not elements: an empty slot is a thin strip, and
+  // a person dropping a panel on the picture aims at the picture.
+  function inRect(r, x, y) {
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  }
+
+  function zoneAt(x, y, key) {
+    var pic = document.getElementById('picture').getBoundingClientRect();
+    if (key === 'controls') {
+      var under = slotEl('under-picture').getBoundingClientRect();
+      if (inRect(under, x, y)) return 'under-picture';
+      if (inRect(pic, x, y) && y > pic.top + pic.height * 0.45) return 'over-picture-bottom';
+      return null;
+    }
+    if (inRect(pic, x, y) && y < pic.top + pic.height * 0.65) return 'over-picture';
+    var chatBox = chat.getBoundingClientRect();
+    if (inRect(chatBox, x, y)) return key === 'roster' ? 'below-chat' : 'above-chat';
+    return null;
+  }
+
+  function draggable(key) {
+    var el = piece(key);
+    var grip = el.querySelector('[data-grip]');
+    var drag = null;
+
+    grip.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      drag = { x: e.clientX, y: e.clientY, moved: false };
+      try { grip.setPointerCapture(e.pointerId); } catch (err) { /* as above */ }
+      document.body.classList.add('dragging');
+    });
+
+    window.addEventListener('pointermove', function (e) {
+      if (!drag) return;
+      if (!drag.moved && Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 6) {
+        drag.moved = true;
+        el.classList.add('lifted');
+      }
+      if (drag.moved) {
+        el.style.transform = 'translate(' + (e.clientX - drag.x) + 'px,' + (e.clientY - drag.y) + 'px)';
+        document.querySelectorAll('.slot').forEach(function (s) {
+          s.style.background = '';
+        });
+        var hot = zoneAt(e.clientX, e.clientY, key);
+        if (hot) slotEl(hot).style.background = 'rgba(78,161,255,.14)';
+      }
+    });
+
+    window.addEventListener('pointerup', function (e) {
+      if (!drag) return;
+      var moved = drag.moved;
+      drag = null;
+      el.classList.remove('lifted');
+      el.style.transform = '';
+      document.body.classList.remove('dragging');
+      document.querySelectorAll('.slot').forEach(function (s) { s.style.background = ''; });
+      if (!moved) return;
+      var home = zoneAt(e.clientX, e.clientY, key);
+      if (home && POSITION_FOR[key][home]) {
+        state[key] = POSITION_FOR[key][home];
+      }
+      apply();
+    });
+  }
+
+  draggable('roster');
+  draggable('inviteBar');
+  draggable('controls');
+
+  /* ---------- the chips, the switch, the buttons ---------- */
+  document.querySelectorAll('.choices button').forEach(function (b) {
+    b.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var parts = b.dataset.set.split(':');
+      state[parts[0]] = parts[1];
+      apply();
+    });
+  });
+
+  document.querySelectorAll('#styles button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      state.messages = b.dataset.style;
+      apply();
+    });
+  });
+
+  document.querySelectorAll('.switch .tab').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('.switch .tab').forEach(function (o) { o.classList.toggle('on', o === b); });
+      document.getElementById('screen-front').classList.toggle('on', b.dataset.screen === 'front');
+      document.getElementById('screen-watching').classList.toggle('on', b.dataset.screen === 'watching');
+      document.body.classList.toggle('watching', b.dataset.screen === 'watching');
+    });
+  });
+
+  document.getElementById('rtoggle').addEventListener('click', function () {
+    piece('roster').classList.toggle('closed');
+  });
+
+  document.getElementById('ndismiss').addEventListener('click', function () {
+    notice.classList.add('gone');
+  });
+
+  document.getElementById('copy').addEventListener('click', function () {
+    var json = arrangementJSON();
+    arrangement.value = json;
+    arrangement.focus();
+    arrangement.select();
+    var done = function () {
+      var b = this;
+      var label = b.textContent;
+      b.textContent = 'copied';
+      b.classList.add('copied');
+      setTimeout(function () { b.textContent = label; b.classList.remove('copied'); }, 1400);
+    }.bind(this);
+    var copied = false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(json).then(done, fallbackCopy);
+        copied = true;
+      }
+    } catch (err) { copied = false; }
+    if (!copied) fallbackCopy();
+    function fallbackCopy() {
+      try { arrangement.select(); document.execCommand('copy'); } catch (err) { /* the textarea still holds it */ }
+      done();
+    }
+  });
+
+  document.getElementById('reset').addEventListener('click', function () {
+    state = Object.assign({}, START);
+    notice.classList.remove('gone');
+    piece('roster').classList.remove('closed');
+    rendered = {};
+    apply();
+  });
+
+  apply();
+})();
+</script>
+</body>
+</html>
