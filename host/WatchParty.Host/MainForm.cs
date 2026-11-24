@@ -2101,7 +2101,7 @@ public sealed class MainForm : Form
         else
         {
             _page.Dock = DockStyle.Right;
-            _page.Width = SidebarWidth;
+            _page.Width = ColumnDeviceWidth();
         }
 
         // Docking follows these properties, but not before the message returns, so
@@ -2114,6 +2114,23 @@ public sealed class MainForm : Form
         HostLog.Write(layout == "narrow"
             ? $"layout: page mode narrow - site {_site.Width}x{_site.Height} above a {_page.Height} px app view"
             : $"layout: page mode - site {_site.Width}x{_site.Height} left of a {SidebarWidth} px app view");
+    }
+
+    /// <summary>
+    /// T132, ADR-047 ("One column width, owned by the host too"): the column is
+    /// <see cref="SidebarWidth"/> **CSS** px in both modes, and a CSS pixel is not
+    /// a device pixel at any scaling but 100%. WinForms' <see cref="Control.Width"/>
+    /// is device pixels, so the dock was putting a number the page disagreed with
+    /// beside the variable that named the CSS one (measured 2026-11-24 at 125%: a
+    /// 380 px app view was a 304 CSS px viewport while the page's
+    /// <c>--chat-column</c> said <c>380px</c>, so the column overflowed). One
+    /// constant still, converted once here; the log line and the variable keep
+    /// saying the CSS number, which is the number the page draws with.
+    /// </summary>
+    private int ColumnDeviceWidth()
+    {
+        int dpi = DeviceDpi;
+        return dpi > 0 ? (int)Math.Round(SidebarWidth * dpi / 96.0) : SidebarWidth;
     }
 
     /// <summary>
