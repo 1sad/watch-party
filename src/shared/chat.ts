@@ -82,6 +82,48 @@ export function pushChat(buffer: ChatMessage[], message: ChatMessage): ChatMessa
   return message
 }
 
+/**
+ * T152 / R43: the chat box is also where a name is set - `/name Ada` sends the
+ * same `rename` frame the roster's form used to (R19: it travels as the frame,
+ * never as a chat line and never as a keystroke into the site).
+ *
+ * Pure, so the box's two odd ends - a command with no name, a name that is a
+ * fragment of markup - are decided here and tested without a browser.
+ */
+export const NAME_MAX_CHARS = 24
+
+export type ChatCommand =
+  /** `/name <text>`: send `RenameFrame`, post nothing. */
+  | { kind: 'rename'; name: string }
+  /** `/name` that the room cannot use: one short reason, and the line stays put. */
+  | { kind: 'rejected'; reason: string }
+  /** Anything else, `/hello` included, is an ordinary message exactly as typed. */
+  | { kind: 'message'; text: string }
+
+/** A name is visible characters: no markup, no control characters, one space
+ *  between words, at most `NAME_MAX_CHARS` of them. */
+function nameProblem(name: string): string | null {
+  if (name.length === 0) return 'Type a name after /name.'
+  if (/[<>\u0000-\u001f\u007f]/.test(name)) return 'A name has no < or > in it.'
+  if (Array.from(name).length > NAME_MAX_CHARS) {
+    return `A name is at most ${NAME_MAX_CHARS} characters.`
+  }
+  return null
+}
+
+export function parseChatCommand(text: string): ChatCommand {
+  const trimmed = text.trim()
+  // The command word must stand alone: `/names` is a message, not a bad rename.
+  if (!/^\/name(?:\s|$)/.test(trimmed)) return { kind: 'message', text }
+
+  const name = trimmed
+    .slice('/name'.length)
+    .trim()
+    .replace(/\s+/g, ' ')
+  const problem = nameProblem(name)
+  return problem === null ? { kind: 'rename', name } : { kind: 'rejected', reason: problem }
+}
+
 /** §4.6's "seeked to 12:34": whole minutes, seconds zero-padded. */
 export function formatClock(seconds: number): string {
   const whole = Number.isFinite(seconds) ? Math.max(0, Math.floor(seconds)) : 0

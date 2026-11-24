@@ -51,7 +51,7 @@
   import { readClockSkew } from './dev-clock.ts'
   import { readDevPlay } from './dev-drift.ts'
   import { dismissNotice, raiseNotice, reapNotices, type Notice } from './notices.ts'
-  import { CHAT_MUTE_MS } from '../shared/chat.ts'
+  import { CHAT_MUTE_MS, parseChatCommand } from '../shared/chat.ts'
   import Player from './Player.svelte'
   import {
     PLAYER_MESSAGE_KINDS,
@@ -184,7 +184,6 @@
   let chatList = $state<HTMLDivElement | null>(null)
 
   let joinText = $state('')
-  let nameDraft = $state('')
 
   // T03b: §5's address bar. `pageNotice` is the bar's one line: what the field
   // could not use, why the clipboard was unreadable, or (T105) why a guest's
@@ -576,7 +575,6 @@
     // the dead room's code, so the first screen must not show it either.
     joinText = ''
     chatDraft = ''
-    nameDraft = ''
     sentence = null
     hideSiteView()
     // The closed socket is no longer this window's, so its close event cannot
@@ -1089,6 +1087,10 @@
 
   /** ADR-050: the put-back line's own end, whichever comes first with "the room moved". */
   const PUT_BACK_NOTICE_MS = 30_000
+
+  /** T152: how long a refused `/name`'s reason stays before it goes by itself;
+   *  the line can also be dismissed at once (ADR-049's notice store). */
+  const NAME_REFUSAL_NOTICE_MS = 8_000
 
   /**
    * ADR-050: this window's own put-back count for one stray address and one
@@ -1875,22 +1877,32 @@
     sendPage(pageDraft)
   }
 
-  function submitRename(event: SubmitEvent): void {
-    event.preventDefault()
-    if (socket === null || selfId === null) return
-    // The wire gets the draft as written; the room normalises it (R26), so a
-    // second copy of that rule never decides what is sent.
-    socket.send(JSON.stringify({ type: 'rename', name: nameDraft }))
-    // T148: the identity record keeps the name beside the id, so a second load
-    // of this profile greets the room as the same person, not a blank one.
-    rememberMemberName(normalizeName(nameDraft))
-  }
-
+  /**
+   * T152 / R43: `/name Ada` in the box is the rename, carrying the same frame
+   * the roster's form used to send - never a chat line, never a keystroke into
+   * the site (R19). A refused command says why as a notice and leaves the typed
+   * line where it is, so it is edited rather than retyped.
+   */
   function submitChat(event: SubmitEvent): void {
     event.preventDefault()
     if (socket === null || selfId === null) return
     const text = chatDraft
     if (text.length === 0) return
+
+    const command = parseChatCommand(text)
+    if (command.kind === 'rename') {
+      socket.send(JSON.stringify({ type: 'rename', name: command.name }))
+      // T148: the identity record keeps the name beside the id, so a second load
+      // of this profile greets the room as the same person, not a blank one.
+      rememberMemberName(normalizeName(command.name))
+      chatDraft = ''
+      return
+    }
+    if (command.kind === 'rejected') {
+      notice('name', command.reason, { until: performance.now() + NAME_REFUSAL_NOTICE_MS })
+      return
+    }
+
     // The only way a line reaches the panel is this gate and the broadcast that
     // comes back (T4). The page never appends its own copy first.
     socket.send(JSON.stringify({ type: 'chat', text }))
@@ -2319,7 +2331,6 @@
                         >&#9819;</span
                       >
                     {/if}
-                    {#if member.id === selfId}<span class="you">you</span>{/if}
                   </li>
                 {/each}
               </ul>
@@ -2336,7 +2347,6 @@
                   <p class="message" class:mine={message.memberId === selfId}>
                     <span class="author">{message.name}</span>
                     <span class="time">{timeOfDay(message.ts)}</span>
-                    {#if message.memberId === selfId}<span class="you">you</span>{/if}
                     <span class="text">{message.text}</span>
                   </p>
                 {/if}
@@ -2361,7 +2371,7 @@
               <input
                 type="text"
                 aria-label="Message"
-                placeholder={roomEnded ? 'The room ended' : 'Message'}
+                placeholder={roomEnded ? 'The room ended' : '/name your name'}
                 autocomplete="off"
                 disabled={roomEnded}
                 bind:value={chatDraft}
@@ -2369,18 +2379,6 @@
               <button type="submit" disabled={roomEnded}>Send</button>
             </form>
           </section>
-
-          {#if selfId !== null && !roomEnded}
-            <!-- T154b: the count and the names moved to the chat's heading row;
-                 only the name form keeps the roster's old place, under the
-                 message box, until `/name` replaces it (ADR-049, ticket 152). -->
-            <section class="rename" aria-label="Your name">
-              <form onsubmit={submitRename}>
-                <input type="text" aria-label="Your name" placeholder="Your name" bind:value={nameDraft} />
-                <button type="submit">Set name</button>
-              </form>
-            </section>
-          {/if}
         </div>
       {/if}
     </div>
@@ -2601,7 +2599,7 @@
 
   /* The chat's heading and input are not the picture's to squeeze: the column
      asks for no width of its own and keeps eight lines' worth, so the picture
-     gives way first and the name form scrolls into view. */
+     gives way first and the chat's input stays in view. */
   :global(html[data-layout='narrow']) .room-body {
     flex: 1 1 0;
     min-height: 8rem;
@@ -2939,20 +2937,11 @@
     overflow-wrap: anywhere;
   }
 
-  .you {
-    padding: 0.05rem 0.4rem;
-    border: 1px solid #3b6f5a;
-    border-radius: 999px;
-    font-size: 0.75rem;
-    color: #7fd0a5;
-  }
-
-  /* ADR-047 / ADR-049 / T154b: the chat column - the chat's heading row, its
-     names, its list and its input, with the name form under them, and the column
-     is the bar's and the body's two rows. The chat takes the column's spare height
-     with a definite size, so the list below is the only thing that scrolls: the
-     heading and the input keep their height, the invite bar above and the name
-     form below never move. */
+  /* ADR-047 / ADR-049 / T154b / T152: the chat column - the chat's heading row,
+     its names, its list and its input, and the column is the bar's and the body's
+     two rows. The chat takes the column's spare height with a definite size, so
+     the list below is the only thing that scrolls: the heading and the input keep
+     their height, and the invite bar above never moves. */
   .room-body {
     grid-area: body;
     display: flex;
@@ -2996,13 +2985,6 @@
 
   .chat form {
     flex: 0 0 auto;
-  }
-
-  /* T154b: the name form keeps the place the roster gave it - under the message
-     box - until `/name` replaces it (ADR-049, ticket 152). */
-  .rename {
-    flex: 0 0 auto;
-    min-width: 0;
   }
 
   /* T154 / ADR-049: one line, "N online", beside the heading, and the names only

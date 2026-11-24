@@ -10,7 +10,9 @@ import {
   CHAT_RATE_LIMIT,
   CHAT_RATE_WINDOW_MS,
   formatClock,
+  NAME_MAX_CHARS,
   newChatBudget,
+  parseChatCommand,
   pushChat,
 } from '../../src/shared/chat.ts'
 import { createRoom, postChat, postSystemChat } from '../../src/server/room.ts'
@@ -117,6 +119,53 @@ test('a seek is written as mm:ss', () => {
   assert.equal(formatClock(5), '0:05')
   assert.equal(formatClock(-2), '0:00')
   assert.equal(formatClock(Number.NaN), '0:00')
+})
+
+test('a `/name` command renames with the typed name, trimmed; other slashes are messages', () => {
+  assert.equal(NAME_MAX_CHARS, 24)
+  assert.deepEqual(parseChatCommand('/name Ada'), { kind: 'rename', name: 'Ada' })
+  // The box's own whitespace does not become part of the name.
+  assert.deepEqual(parseChatCommand('  /name  Ada  '), { kind: 'rename', name: 'Ada' })
+  assert.deepEqual(parseChatCommand('/name sam  the  second'), {
+    kind: 'rename',
+    name: 'sam the second',
+  })
+  // A name of exactly the limit is usable; the frame travels, no chat line does.
+  assert.deepEqual(parseChatCommand(`/name ${'a'.repeat(NAME_MAX_CHARS)}`), {
+    kind: 'rename',
+    name: 'a'.repeat(NAME_MAX_CHARS),
+  })
+  // Any other text is an ordinary message, the leading slash included: `/names`
+  // is not a command word, so it cannot be mistaken for a bad rename.
+  assert.deepEqual(parseChatCommand('/hello'), { kind: 'message', text: '/hello' })
+  assert.deepEqual(parseChatCommand('/names are hard'), {
+    kind: 'message',
+    text: '/names are hard',
+  })
+  assert.deepEqual(parseChatCommand('hello /name Ada'), {
+    kind: 'message',
+    text: 'hello /name Ada',
+  })
+})
+
+test('a `/name` the room cannot use is rejected with one short reason', () => {
+  const empty = parseChatCommand('/name')
+  assert.equal(empty.kind, 'rejected')
+  assert.equal(parseChatCommand('   /name   ').kind, 'rejected')
+
+  const markup = parseChatCommand('/name  <script>')
+  assert.equal(markup.kind, 'rejected')
+  assert.equal(parseChatCommand('/name <b>sam</b>').kind, 'rejected')
+
+  const long = parseChatCommand(`/name ${'a'.repeat(NAME_MAX_CHARS + 1)}`)
+  assert.equal(long.kind, 'rejected')
+
+  // Short enough to read, and one sentence: the notice is a line, not a dialog.
+  for (const rejected of [empty, markup, long]) {
+    if (rejected.kind !== 'rejected') throw new Error('expected a rejection')
+    assert.ok(rejected.reason.length > 0 && rejected.reason.length <= 60, rejected.reason)
+    assert.ok(!rejected.reason.includes('\n'))
+  }
 })
 
 test('plain text is stored verbatim: nothing is escaped, parsed or fetched', () => {
