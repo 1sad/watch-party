@@ -39,6 +39,11 @@ export interface ClientOptions {
   clock?: FakeClockOptions
   duration?: number
   timeoutMs?: number
+  /**
+   * T148: the member id this client claims in `hello`. Absent means the
+   * authority mints one, which is what every older case asserts.
+   */
+  id?: string
 }
 
 const DEFAULT_TIMEOUT_MS = 3000
@@ -139,7 +144,14 @@ export class ScriptedClient {
       else live.receive(record)
     })
 
-    socket.send(JSON.stringify({ type: 'hello', code, ...(name === undefined ? {} : { name }) }))
+    socket.send(
+      JSON.stringify({
+        type: 'hello',
+        code,
+        ...(name === undefined ? {} : { name }),
+        ...(options.id === undefined ? {} : { id: options.id }),
+      }),
+    )
 
     const outcome = await Promise.race([
       welcomed.then((welcome) => ({ kind: 'welcome' as const, welcome })),

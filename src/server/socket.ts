@@ -48,7 +48,7 @@ import {
 /** Only what this file uses of a `ws` socket; the library's types are not installed. */
 interface PeerSocket {
   send(data: string): void
-  close(): void
+  close(code?: number, reason?: string): void
   on(event: 'message', listener: (data: unknown, isBinary: boolean) => void): void
   on(event: 'close', listener: () => void): void
   on(event: 'error', listener: (error: Error) => void): void
@@ -83,6 +83,15 @@ export interface RoomSocketOptions {
    */
   refusals?: RefusalBook
 }
+
+/**
+ * T148 / ADR-033 rule 1: the older socket of a re-seated member is closed with
+ * this pair, so the room holds one connection per seat and the person's other
+ * window can tell why. 4001 is in the application range `ws` accepts
+ * (3000-4999); the reason is ASCII (`AGENTS.md` rule 10).
+ */
+export const SEAT_REUSED_CLOSE_CODE = 4001
+export const SEAT_REUSED_CLOSE_REASON = 'seat reused'
 
 function isLoopback(remoteAddress: string | undefined): boolean {
   return (
@@ -334,8 +343,12 @@ export function attachRoomSocket(
     }
 
     const joinedAt = now()
+    // T148 / ADR-033 rule 1: the page's stored id chooses the seat. A client
+    // that sends none - a scripted one, or an older page - is a new person and
+    // gets a fresh row, exactly as before the field existed.
+    const requestedId = typeof frame.id === 'string' ? frame.id.trim() : ''
     const candidate: Member = {
-      id: newId(),
+      id: requestedId.length === 0 ? newId() : requestedId,
       name: normalizeName(frame.name),
       joinedAt,
       transport: 'app',
@@ -355,6 +368,18 @@ export function attachRoomSocket(
       return
     }
 
+    // T148: one row, one connection. The socket the row pointed at is dropped
+    // from the map **before** it is closed, because its close handler reads a
+    // seat's absence as a departure - and for the owner that is the room's end.
+    // `closing` makes the replaced socket's late frames (a second `hello`, above
+    // all) inert rather than a re-seat that would kick this new connection.
+    for (const [previous, seated] of sockets) {
+      if (seated.id !== result.member.id) continue
+      sockets.delete(previous)
+      closing.add(previous)
+      previous.close(SEAT_REUSED_CLOSE_CODE, SEAT_REUSED_CLOSE_REASON)
+      log(`[room] reseated id=${seated.id} addr=${address}`)
+    }
     sockets.set(socket, result.member)
     send(socket, {
       type: 'welcome',

@@ -108,12 +108,28 @@ export type JoinResult = { ok: true; member: Member } | { ok: false; code: Error
  * page arrives. A connection from a guest can never take it: control is the
  * owner's alone in M1 (ADR-030, phase slice §5), so `controllers` is only ever
  * `[owner]`.
+ *
+ * T148 / ADR-033 rule 1: a member's id is its seat. A join that names an id the
+ * room already holds **reuses that row** - the join time, the name and any
+ * control stay as they were, and only the presence fields move with the new
+ * connection - so a reconnect never adds a second name to the roster or the
+ * count. The socket half of the replacement (closing the older connection) is
+ * `socket.ts`'s, because the room has no sockets.
  */
 export function joinRoom(
   room: RoomState,
   member: Member,
   options: { isLocal: boolean },
 ): JoinResult {
+  const existing = room.members.get(member.id)
+  if (existing !== undefined) {
+    existing.status = member.status
+    existing.lastSeen = member.lastSeen
+    existing.transport = member.transport
+    room.revision += 1
+    return { ok: true, member: existing }
+  }
+
   if (room.members.size >= MAX_MEMBERS) return { ok: false, code: 'room_full' }
 
   room.members.set(member.id, member)

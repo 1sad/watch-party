@@ -17,6 +17,8 @@
     type WireMember,
   } from '../shared/protocol.ts'
   import { parseJoinLink, UNREADABLE_LINK, UNREACHABLE_ROOM } from './join.ts'
+  import { memberIdentity, rememberMemberName } from './identity.ts'
+  import { normalizeName } from '../shared/names.ts'
   import {
     MEASURE_TIMEOUT_MS,
     checkExtension,
@@ -503,7 +505,10 @@
       // `hello` per connection, so "zero after the room ended" is countable.
       if (dev) console.info('[ws] hello')
       // R26: no name, so the member appears as `anonymous`; the roster renames.
-      opened.send(JSON.stringify({ type: 'hello', code }))
+      // T148 / ADR-033 rule 1: the stored id is this person's seat, so a
+      // reconnect or a second load of the same profile reuses the row instead
+      // of adding a second name (a scripted client sends none and still joins).
+      opened.send(JSON.stringify({ type: 'hello', code, id: memberIdentity().id }))
     }
     opened.onmessage = (event: MessageEvent) => {
       if (opened !== socket) return
@@ -1873,9 +1878,12 @@
   function submitRename(event: SubmitEvent): void {
     event.preventDefault()
     if (socket === null || selfId === null) return
-    // A blank draft is sent as written; the room turns it into `anonymous`
-    // (R26). Normalising here would be a second copy of `normalizeName`.
+    // The wire gets the draft as written; the room normalises it (R26), so a
+    // second copy of that rule never decides what is sent.
     socket.send(JSON.stringify({ type: 'rename', name: nameDraft }))
+    // T148: the identity record keeps the name beside the id, so a second load
+    // of this profile greets the room as the same person, not a blank one.
+    rememberMemberName(normalizeName(nameDraft))
   }
 
   function submitChat(event: SubmitEvent): void {

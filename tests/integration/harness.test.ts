@@ -13,6 +13,7 @@ import type {
   StateFrame,
 } from '../../src/shared/protocol.ts'
 import { discardRoom } from '../../src/server/room.ts'
+import { SEAT_REUSED_CLOSE_CODE, SEAT_REUSED_CLOSE_REASON } from '../../src/server/socket.ts'
 import { expected } from '../../src/shared/timing.ts'
 import { ScriptedClient } from '../support/client.ts'
 import {
@@ -799,6 +800,91 @@ test('F4: after a discard, a loopback hello is refused and no owner is re-seated
     assert.equal(outcome.error.code, 'bad_room')
     assert.equal(harness.room.owner, null, 'the loopback hello did not re-seat an owner')
     assert.equal(harness.room.members.size, 0, 'and it added no member')
+  } finally {
+    await harness.close()
+  }
+})
+
+// T148 / ADR-033 rule 1: a reconnect restores the same seat. The second socket
+// names the id the first one joined with, and the room must keep one row for
+// that person - its join time, its name and the control it held - while the
+// older connection is closed. Without the reuse this case shows three rows in a
+// two-person room, which is what the owner saw on the evening.
+test('T148/ADR-033: a second hello with the same member id re-seats the row, keeps name and control, and closes the older socket', async () => {
+  const harness = await startHarness({ clients: 0 })
+  try {
+    const ADA = 'ada00000-0000-4000-8000-000000000148'
+    // The first connection on loopback is the room's owner, so Ada's control is
+    // the grant ADR-033 rule 1 binds to this id; no grant frame exists in M1.
+    const first = await harness.join('Ada', { id: ADA })
+    assert.equal(first.welcome.selfId, ADA, 'the id the page sent is the seat')
+    assert.equal(harness.room.members.size, 1, 'one row before the second hello')
+    assert.deepEqual(harness.room.controllers, [ADA], 'Ada holds control before the rejoin')
+
+    let closeCode = -1
+    let closeReason = ''
+    first.socket.once('close', (code: number, reason: Buffer) => {
+      closeCode = code
+      closeReason = String(reason)
+    })
+
+    const second = await harness.join('Ada', { id: ADA })
+
+    await waitFor(() => closeCode !== -1, 2000, 'the older socket was closed')
+    assert.equal(closeCode, SEAT_REUSED_CLOSE_CODE, 'the older socket got the seat-reused code')
+    assert.equal(closeReason, SEAT_REUSED_CLOSE_REASON, 'and a reason a person can read')
+
+    assert.equal(second.welcome.selfId, ADA, 'the second socket holds the same seat')
+    assert.equal(harness.room.members.size, 1, 'one row after the second hello, never two')
+    const row = harness.room.members.get(ADA)
+    assert.equal(row?.name, 'Ada', 'the name the row already had')
+    assert.deepEqual(harness.room.controllers, [ADA], 'the control granted before the second hello is still hers')
+    assert.equal(harness.room.owner, ADA, 'the rejoin did not move the owner seat')
+
+    // Requirement 3: the welcome list and the roster broadcast are keyed by id.
+    assert.deepEqual(
+      second.welcome.members.map((member) => member.id),
+      [ADA],
+      'welcome carries the full list as one row',
+    )
+    const roster = await waitFor(
+      () => {
+        const latest = second.frames.filter((record) => record.frame.type === 'members').pop()
+        const members = latest?.frame.type === 'members' ? latest.frame.members : []
+        return members.length === 1 ? members : null
+      },
+      2000,
+      'the rejoin broadcast a one-row roster',
+    )
+    assert.deepEqual(roster.map((member) => member.id), [ADA])
+  } finally {
+    await harness.close()
+  }
+})
+
+// The sibling guard: the join path must not collapse distinct people. Two ids
+// are two rows, and neither socket is closed by the other's arrival.
+test('T148/ADR-033: two different member ids still make two rows', async () => {
+  const harness = await startHarness({ clients: 0 })
+  try {
+    const ada = await harness.join('Ada', { id: 'ada00000-0000-4000-8000-00000000014a' })
+    assert.equal(harness.room.members.size, 1, 'one row for the first id')
+
+    const bea = await harness.join('Bea', { id: 'bea00000-0000-4000-8000-00000000014b' })
+    assert.equal(harness.room.members.size, 2, 'a distinct id is a distinct person')
+    assert.notEqual(ada.selfId, bea.selfId)
+    assert.equal(ada.socket.readyState, WebSocket.OPEN, 'Ada was not evicted by Bea joining')
+
+    const roster = await waitFor(
+      () => {
+        const latest = bea.frames.filter((record) => record.frame.type === 'members').pop()
+        const members = latest?.frame.type === 'members' ? latest.frame.members : []
+        return members.length === 2 ? members : null
+      },
+      2000,
+      'the roster holds both people',
+    )
+    assert.deepEqual(roster.map((member) => member.id).sort(), [ada.selfId, bea.selfId].sort())
   } finally {
     await harness.close()
   }

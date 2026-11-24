@@ -175,6 +175,13 @@ export interface HelloFrame {
   type: 'hello'
   code: string
   name?: string | null
+  /**
+   * T148 / ADR-033 rule 1: the page's stored member id. Optional because a
+   * scripted client or an older page sends none, and such a join is given a
+   * fresh row exactly as before. When it names a row the authority already
+   * holds, the join re-seats that row instead of adding a second one.
+   */
+  id?: string
   lastEpoch?: number
 }
 
