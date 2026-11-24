@@ -10,7 +10,8 @@
  *
  * The canonicalisation table is a unit test (`tests/unit/page.test.ts`); the one
  * case here is the one that could only be proved over the wire: a tokenised
- * address is stored without its query string.
+ * address is stored and reaches every member with its query and fragment
+ * (ADR-052 — the loss the owner accepted in exchange for episode links working).
  */
 
 import test from 'node:test'
@@ -29,7 +30,8 @@ import { settle, startHarness, waitFor } from './harness.ts'
 
 const FIXTURE = fileURLToPath(new URL('../fixtures/fixture.mp4', import.meta.url))
 const TOKENISED = 'https://Example.com/watch/abc?token=secret123#t=42'
-const CANONICAL = 'https://example.com/watch/abc'
+// ADR-052: the canonical form keeps the query and the fragment, exactly as sent.
+const CANONICAL = 'https://example.com/watch/abc?token=secret123#t=42'
 
 const pageCommits = (client: ScriptedClient): Array<{ frame: PageCommittedFrame; at: number }> =>
   client.frames.filter(
@@ -88,16 +90,18 @@ test('T03: a staged page is silent for the whole window, then exactly one pageCo
     }
 
     const commit = pageCommits(guest)[0]!.frame
-    assert.equal(commit.page, CANONICAL, 'the commit carries the canonical address')
+    assert.equal(commit.page, CANONICAL, 'the commit carries the canonical address, query and fragment included')
     assert.equal(commit.by, owner.selfId, 'the commit names whoever staged it')
     assert.equal(typeof commit.at, 'number')
+    // ADR-052's cost, which the owner accepted: the query and the fragment are
+    // part of the page, so the guest receives the tokenised address as pasted.
     assert.equal(
-      JSON.stringify(commit).includes('secret'),
-      false,
-      'a tokenised address never reaches another member',
+      JSON.stringify(commit).includes('token=secret123#t=42'),
+      true,
+      'a tokenised address reaches another member with its query and fragment',
     )
 
-    assert.equal(harness.room.page, CANONICAL, 'the room stores the address without its query string')
+    assert.equal(harness.room.page, CANONICAL, 'the room stores the address with its query and fragment')
     assert.equal(harness.room.pendingPage, null)
     assert.equal(harness.room.revision, revisionAfterJoin + 1, 'the commit is exactly one write')
   } finally {
