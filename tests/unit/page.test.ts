@@ -55,9 +55,10 @@ function roomWithTwo(): { room: RoomState; owner: string; guest: string } {
   return { room, owner: 'sam', guest: 'alex' }
 }
 
-// §4.3 invariant 5 / §10.3: "the room never stores a tokenised or private URL;
-// `page` is stored with its query string stripped". A tokenised link must never
-// travel to another member, so each row is a case and not a convenience.
+// §4.3 invariant 5 / §10.3 as amended by ADR-052: the room stores the page
+// address as pasted, query string and fragment included, because an episode that
+// lives in the query is what the sender meant by the link. Each row is a case and
+// not a convenience.
 const CANONICAL: Array<[string, string | null]> = [
   // A bare host is https, and canonical in is canonical out.
   ['example.com/watch/abc', 'https://example.com/watch/abc'],
@@ -65,11 +66,13 @@ const CANONICAL: Array<[string, string | null]> = [
   // The host and the scheme are case-insensitive; the path is not.
   ['HTTPS://EXAMPLE.COM/Watch/Abc', 'https://example.com/Watch/Abc'],
   ['http://example.com/a/b', 'http://example.com/a/b'],
-  // **Query and fragment dropped** — the one that must not regress.
-  ['https://example.com/watch?token=secret123', 'https://example.com/watch'],
-  ['https://example.com/watch/abc?t=30&sig=abc#t=42', 'https://example.com/watch/abc'],
-  ['example.com/watch?token=secret123', 'https://example.com/watch'],
-  ['https://example.com/watch#fragment', 'https://example.com/watch'],
+  // **Query and fragment kept exactly as sent** — ADR-052, the one that must not
+  // regress back to the stripping: an episode in the query takes everyone there.
+  ['https://example.com/watch?token=secret123', 'https://example.com/watch?token=secret123'],
+  ['https://example.com/watch/abc?t=30&sig=abc#t=42', 'https://example.com/watch/abc?t=30&sig=abc#t=42'],
+  ['example.com/watch?token=secret123', 'https://example.com/watch?token=secret123'],
+  ['https://example.com/watch#fragment', 'https://example.com/watch#fragment'],
+  // An empty query or fragment is the address without it, so the form is stable.
   ['https://example.com/watch?#', 'https://example.com/watch'],
   // Anything in front of the host is a secret in a shared address too.
   ['https://user:pass@example.com/watch', 'https://example.com/watch'],
@@ -93,7 +96,7 @@ const CANONICAL: Array<[string, string | null]> = [
   ['https://', null],
 ]
 
-test('T03: the canonical address table — https, lowercased host, no query, no fragment', () => {
+test('T03: the canonical address table — https, lowercased host, query and fragment kept (ADR-052)', () => {
   for (const [raw, expected] of CANONICAL) {
     assert.equal(canonicalPage(raw), expected, `canonicalPage(${JSON.stringify(raw)})`)
   }
@@ -115,7 +118,7 @@ test('T03: a controller’s setPage is held, not applied — the room has not ch
   const result = stagePage(room, owner, 'https://Example.com/watch?token=abc', room.authority.epoch, now)
   assert.equal(result.ok, true)
   assert.deepEqual(room.pendingPage, {
-    page: 'https://example.com/watch',
+    page: 'https://example.com/watch?token=abc',
     by: owner,
     expiresAt: 10_000 + PAGE_STAGE_MS,
   })
@@ -135,8 +138,8 @@ test('T03: a controller’s setPage is held, not applied — the room has not ch
   // One millisecond past it, and the change is the room's.
   clock = 15_001
   const commit = commitDuePage(room, now)
-  assert.deepEqual(commit, { page: 'https://example.com/watch', by: owner, at: 15_001 })
-  assert.equal(room.page, 'https://example.com/watch')
+  assert.deepEqual(commit, { page: 'https://example.com/watch?token=abc', by: owner, at: 15_001 })
+  assert.equal(room.page, 'https://example.com/watch?token=abc')
   assert.equal(room.pendingPage, null, 'a committed entry is gone from the room')
   assert.equal(room.revision, revisionBefore + 1, 'the commit is one write, and one only')
 
@@ -331,7 +334,7 @@ test('T03b: a usable address sends one canonical setPage carrying the room’s e
   const frame = setPageFrame('  EXAMPLE.com/watch?token=secret  ', 7)
   assert.deepEqual(frame, {
     type: 'setPage',
-    page: 'https://example.com/watch',
+    page: 'https://example.com/watch?token=secret',
     epoch: 7,
   })
 })

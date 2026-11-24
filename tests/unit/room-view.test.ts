@@ -137,10 +137,11 @@ test('a socket that has not closed is still connected, whatever it has seen', ()
 })
 
 /**
- * T105 / ADR-048: a site's own navigation is a page change like one typed into
- * the address bar. The decision compares through `canonicalPage` (ADR-032), so
- * only a genuinely different address can stage or be put back. Seven facts a
- * window can hold, one test each, plus the two "no address at all" cases.
+ * T105 / ADR-048, ADR-052: a site's own navigation is a page change like one typed
+ * into the address bar. The decision compares through `canonicalPage`, so a case
+ * difference is the same address — but since ADR-052 a query or a fragment is part
+ * of the page, so a change to one of those is a change. Seven facts a window can
+ * hold, one test each, plus the two "no address at all" cases.
  */
 const followedRoom = 'https://example.com/watch/1'
 
@@ -156,13 +157,23 @@ test('a site that lands on the address the room is already on is not a change', 
   )
 })
 
-test('a reload or route change to the same canonical address is not a change', () => {
-  // The query string is dropped by `canonicalPage` (ADR-032), so a reload with
-  // a fresh cache-buster or a route that canonicalises back is the same page.
+test('a query the room is not on is a page change of its own (ADR-052)', () => {
+  // ADR-052: two addresses that differ only in their query are two different
+  // pages, so a controller landing on episode 2 stages it for the room.
   assert.equal(
     pageFollowOutcome({
-      address: 'https://example.com/watch/1?reload=2',
+      address: 'https://example.com/watch/1?ep=2',
       roomPage: followedRoom,
+      previewPage: null,
+      controller: true,
+    }),
+    'stage',
+  )
+  // Once it is the room's page, the same address is not a second stage.
+  assert.equal(
+    pageFollowOutcome({
+      address: 'https://example.com/watch/1?ep=2',
+      roomPage: 'https://example.com/watch/1?ep=2',
       previewPage: null,
       controller: true,
     }),
@@ -170,7 +181,9 @@ test('a reload or route change to the same canonical address is not a change', (
   )
 })
 
-test('a fragment on the room page is not a change', () => {
+test('a fragment on the room page is a change of its own, a case difference is not', () => {
+  // ADR-052 keeps the fragment exactly as sent, so a jump to another point in
+  // the page is a different address; the same address in another case is not.
   assert.equal(
     pageFollowOutcome({
       address: 'https://example.com/watch/1#t=90',
@@ -178,9 +191,8 @@ test('a fragment on the room page is not a change', () => {
       previewPage: null,
       controller: true,
     }),
-    'ignore',
+    'stage',
   )
-  // Neither is the same address written in another case.
   assert.equal(
     pageFollowOutcome({
       address: 'https://Example.COM/watch/1',
@@ -227,10 +239,22 @@ test("the navigation this window's own preview caused is not a second stage", ()
     }),
     'ignore',
   )
-  // A fragment on the preview's address is still that same staged page.
+  // ADR-052: a query or a fragment is part of the page, so the preview's address
+  // with one added is an address the room has not been told about — it stages
+  // like any other, and only the exact staged address is the preview's echo.
   assert.equal(
     pageFollowOutcome({
       address: 'https://example.com/watch/2#resume',
+      roomPage: followedRoom,
+      previewPage,
+      controller: true,
+    }),
+    'stage',
+  )
+  // The same staged address written in another case is still the preview's.
+  assert.equal(
+    pageFollowOutcome({
+      address: 'https://Example.COM/watch/2',
       roomPage: followedRoom,
       previewPage,
       controller: true,

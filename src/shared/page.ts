@@ -1,8 +1,9 @@
 /**
- * §4.3 invariant 5 and §10.3: the room never stores a tokenised or private URL.
- * `room.page` is the address every other app navigates to, so it travels to
- * people the sender never meant to hand a link to — a query string carrying a
- * token must never make that trip.
+ * §4.3 invariant 5, §10.3 and ADR-052: the room stores the page address as
+ * pasted — query string and fragment included. `room.page` is the address every
+ * other app navigates to, and an episode that lives in the query is what the
+ * sender meant by the link; a tokenised link therefore travels with it, which
+ * the owner accepted on 2026-11-24 (ADR-052).
  *
  * One function, because both halves of the app need the same answer: the
  * authority before it stores an address (ticket 03), and the page before it
@@ -44,9 +45,14 @@ const HOST_AND_PORT = /^[a-z0-9.-]+:\d+/i
  * - only `http` and `https` survive — `ftp:`, `file:`, `javascript:` and
  *   `data:` are refused, because every app in the room would run them;
  * - the host is lowercased, since `Example.COM` and `example.com` are one site;
- * - **the query string and the fragment are dropped** (invariant 5), and so is
- *   any `user:pass@` in front of the host, for the same reason: it is a secret
- *   in an address that is about to be handed to five machines.
+ * - **the query string and the fragment are kept, exactly as sent** (ADR-052):
+ *   they are part of what the sender meant by the page, so an episode in the
+ *   query reaches every window and the put-back restores it. Any `user:pass@`
+ *   in front of the host is still dropped — it is a credential the site reads,
+ *   not part of the page's name.
+ * - trailing `?` and `#` with nothing after them are not kept: the URL parser
+ *   reads them as an empty query and fragment, which is the address without
+ *   them.
  *
  * The result is idempotent — canonical in, the same canonical out — so a stored
  * page can be compared with a fresh one by string equality.
@@ -78,9 +84,11 @@ export function canonicalPage(raw: string): string | null {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
   if (url.hostname.length === 0) return null
 
-  // Built field by field rather than by clearing `search`/`hash` on `url.href`:
-  // what is not named here cannot travel, which is the point of the function.
-  return `${url.protocol}//${url.host}${url.pathname}`
+  // Built field by field rather than by returning `url.href`: what is not named
+  // here cannot travel, so `user:pass@` is dropped by construction and the five
+  // parts that name a page — scheme, host, path, query and fragment (ADR-052) —
+  // are the only ones that do.
+  return `${url.protocol}//${url.host}${url.pathname}${url.search}${url.hash}`
 }
 
 /**

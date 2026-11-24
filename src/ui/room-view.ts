@@ -167,12 +167,12 @@ export type PageFollow = 'ignore' | 'stage' | 'return'
 /**
  * T105 / ADR-048: the room follows the page's **own** navigation, not only the
  * address bar. A controller that lands on a new address stages it through the
- * ordinary `setPage` — the same two-second window and Cancel a typed address
+ * ordinary `setPage` — the same five-second window and Cancel a typed address
  * gets (ADR-032) — and a window that does not hold control puts its site view
- * back on the room's page instead. The comparison is `canonicalPage`'s
- * (ADR-032): a reload, a fragment, a query string or a case difference is the
- * same page and never a second stage, and neither is the navigation this
- * window's own preview caused.
+ * back on the room's page instead. The comparison is `canonicalPage`'s: a case
+ * difference is the same address and never a second stage, while a query or a
+ * fragment is part of the page since ADR-052, so a change to either is a change
+ * — and the navigation this window's own preview caused never is a second stage.
  *
  * The decision lives here so a unit test can hold it: this project has no DOM
  * test, so a rule kept only inside the component is a rule nothing checks (the
@@ -200,10 +200,11 @@ export const PUT_BACK_LIMIT = 3
  * every command are untouched by it.
  *
  * The key is the pair the count belongs to - the stray address and the room's
- * page, both canonical, so a query, a fragment or a case difference is the same
- * pair as the `ignore` above. A different pair starts from zero; a commit
- * clears the record entirely (`NO_PUT_BACKS`), so a real page change still puts
- * the guest back once.
+ * page, both canonical, so a case difference is the same pair as the `ignore`
+ * above while a query or a fragment is a pair of its own (ADR-052; narrowing
+ * this key to origin and path is ticket 161's job). A different pair starts
+ * from zero; a commit clears the record entirely (`NO_PUT_BACKS`), so a real
+ * page change still puts the guest back once.
  */
 export interface PutBackRecord {
   /** `stray\nroom` of the last pair, or null before the first put-back. */
