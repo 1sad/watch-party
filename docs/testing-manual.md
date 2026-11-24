@@ -61,8 +61,9 @@ which window.
    top, the film filling the left of the window, and the chat column on the right carrying the invite bar (**Room
    <code>**, the link, **Copy**, **Raw address**) at its top; under the picture sit **Pause**, the seek slider,
    **Mute** and the volume slider. Note the room code and the link from the invite bar.
-3. Open B with `node scripts/run-host.mjs --cdp-port 9223`. Join it with A's invite link: B lands on the watching
-   screen, not on a front door of its own.
+3. Open B with `node scripts/run-host.mjs --cdp-port 9223 "<A's invite link>"` (the link in quotes): B lands on
+   the watching screen, not on a front door of its own. Pasting the same link into B's front door does the same
+   thing by hand - it is one more thing to type, and it is the route a person takes (T131).
 4. Press play in A and let both run. Check A's roster shows two people.
 5. Scrub A's player to the middle. B must be at the same position, within a fraction of a second, without a reload.
 6. Stall one window on purpose — the dev switch T7b2 added. On this build the frozen window is pulled back by §6.3's
