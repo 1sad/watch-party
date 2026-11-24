@@ -306,6 +306,23 @@ The page carries `#fullscreen`, a `#playpause` button that writes what it receiv
 `tests/fixtures/fixture.mp4`. `seekable` reads `60.00 of 60.00` because the server answers `Range` with `206` and a real
 `Content-Range` (trap 3 above); `tests/unit/probe-server.test.ts` holds it to that under `npm test`.
 
+Two more pages sit beside it (ticket 144). `probe-loop.html` leaves itself on every load - `location.replace` with `?n=`
+bumped once per load - so a page the app puts back leaves again, and renders `leaving <n>`. `probe-swap.html` starts a
+muted `fixture.mp4` at 50 s and has a `#swap` button that replaces the player with a fresh one starting at 0, with
+`#now` reading the position. `probe.html` also takes `?blockplay=1` (the first `play()` is refused with
+`NotAllowedError`, the next allowed) and `?blockplay=all` (every `play()` refused until a real press), counting
+accepted plays in `#plays`. The fixture server logs the path it served on every answer, so a check can tell the page's
+own navigation from the app's.
+
+**2026-11-24: the dev window cannot open its browser in this session.** `node scripts/run-host.mjs --cdp-port <n>` and
+`npm run dev:debug` both fail at `CreateCoreWebView2ControllerAsync` (`0x8000FFFF`, sometimes `0x800700AA`) and show
+the "WebView2 runtime is missing or blocked" page, while the same window with no port opens and renders. The packaged
+Debug copy does open with a port and answers `cdp.mjs targets` - `powershell -NoProfile -File
+scripts\portable-launch.ps1 -Exe release\WatchParty-0.3.0-portable-debug.exe -CdpPort <n>` - measured twice (17:13 and
+17:25, ticket 144b). Its launch passes no `WATCHPARTY_*`, so a check that needs a spike URL must navigate the site view
+with `cdp.mjs eval` instead, and `portable-launch.ps1 -Restore` afterwards points the `watchparty://` key back at the
+developer host.
+
 The fullscreen button reports what it sends; it does not prove a grant. This window never grants `requestFullscreen()`
 (ADR-028): a real press in the visible site view is heard and logged as `site: fullscreen=enter w=... h=...` while
 `document.fullscreenElement` stays `null`. Quote that intent line, not a fullscreen element.
