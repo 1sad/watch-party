@@ -46,6 +46,8 @@
   } from './popup-notice.ts'
   import { readClockSkew } from './dev-clock.ts'
   import { readDevPlay } from './dev-drift.ts'
+  import { dismissNotice, raiseNotice, reapNotices, type Notice } from './notices.ts'
+  import { CHAT_MUTE_MS } from '../shared/chat.ts'
   import Player from './Player.svelte'
   import {
     PLAYER_MESSAGE_KINDS,
@@ -145,8 +147,18 @@
   // later `chat` frame appends; the page never writes its own copy of a message
   // and never reorders one (§5: chat is centralised on the broadcast).
   let chat = $state<ChatMessage[]>([])
-  /** Refusals and the mute warning, on the panel's own lines rather than the join box. */
-  let chatNotices = $state<Array<{ kind: 'warning' | 'error'; text: string }>>([])
+  /**
+   * T149 / ADR-049: the room's transient lines - muted, too many messages, the
+   * player has not caught up, put back - as notices with an end and a dismiss,
+   * drawn between the messages and the input. They are not chat: nothing here
+   * enters the ring buffer, so a late joiner never reads tonight's mute.
+   * `src/ui/notices.ts` owns when a line goes; this page owns why it was raised.
+   */
+  let notices = $state<Notice[]>([])
+  /** Every accepted line of this person's chat, so the flood notice can end on
+   *  the next one (ADR-049). Only `user` messages count: a system line is the
+   *  room's news, not this member's message being accepted. */
+  let chatAccepted = $state(0)
   let chatDraft = $state('')
   let chatList = $state<HTMLDivElement | null>(null)
 
@@ -414,7 +426,7 @@
     roomCode = null
     members = []
     chat = []
-    chatNotices = []
+    notices = []
     playback = null
     revision = 0
     media = null
@@ -519,7 +531,7 @@
     roomCode = null
     members = []
     chat = []
-    chatNotices = []
+    notices = []
     playback = null
     revision = 0
     media = null
@@ -584,7 +596,6 @@
   $effect(() => {
     const list = chatList
     void chat.length
-    void chatNotices.length
     if (!stickToBottom || list === null) return
     stickToBottom = false
     list.scrollTop = list.scrollHeight
@@ -594,11 +605,18 @@
     if (stick) stickToBottom = true
   }
 
-  function notice(kind: 'warning' | 'error', text: string): void {
-    const stick = atBottom()
-    chatNotices = [...chatNotices, { kind, text }]
-    followNewest(stick)
+  /**
+   * T149: one notice raised with its end. `id` names the line, so raising it
+   * again replaces it instead of stacking a second copy of the same news;
+   * `until` and `when` are the two ways it ends by itself (ADR-049).
+   */
+  function notice(id: string, text: string, end: { until?: number; when?: () => boolean } = {}): void {
+    notices = raiseNotice(notices, { id, text, ...end })
   }
+
+  /** How often the page re-checks a notice's end: four times a second, so a
+   *  condition that turned false is gone well inside the eye's next glance. */
+  const NOTICE_TICK_MS = 250
 
   function apply(frame: ServerFrame): void {
     if (frame.type === 'welcome') {
@@ -759,6 +777,7 @@
       }
       const stick = atBottom()
       chat = [...chat, frame]
+      if (frame.kind === 'user') chatAccepted += 1
       followNewest(stick)
     } else if (frame.type === 'pong') {
       // §6.1: t0 is ours (echoed untouched), t1/t2 the authority's, t3 this
@@ -775,12 +794,24 @@
       // never sets this flag and is therefore a lost connection, not an ending.
       roomOverSeen = true
     } else if (frame.type === 'warning') {
-      notice('warning', frame.message)
+      // T149 / ADR-049: the mute's own window, from the server's number, so a
+      // frame that arrived a moment late still ends when the mute does.
+      notice('mute', frame.message, { until: performance.now() + frame.retryAfterMs })
     } else if (frame.type === 'error') {
       // T3b item 5: one sentence, no code and no jargon. A chat refusal belongs
       // beside the messages it refused; anything else keeps the join box.
-      if (isChatRefusal(frame.code)) notice('error', ERROR_SENTENCES[frame.code])
-      else sentence = ERROR_SENTENCES[frame.code]
+      if (isChatRefusal(frame.code)) {
+        // ADR-049: "too many messages" ends on the next accepted message, and -
+        // when the refusal names a mute - no later than the mute's own end,
+        // whichever comes first.
+        const acceptedAt = chatAccepted
+        notice(`chat-${frame.code}`, ERROR_SENTENCES[frame.code], {
+          until: performance.now() + (frame.retryAfterMs ?? CHAT_MUTE_MS),
+          // The line stays while no message has been accepted since it was
+          // raised: the next accepted one is its end (ADR-049).
+          when: () => chatAccepted === acceptedAt,
+        })
+      } else sentence = ERROR_SENTENCES[frame.code]
       // ADR-030/§14: a room action this window was not allowed to make is
       // undone locally too. Explaining it is not enough — the gesture already
       // moved this element, and the room did not move with it.
@@ -1010,10 +1041,17 @@
     // ADR-048: the room is not asked; the existing restore route takes the site
     // view to the committed page, or hides it when the room has none yet.
     restoreSiteAfterPreview()
-    pageNotice =
-      roomPage === null
+    // ADR-049: the put-back line is a notice like the others, and it ends when
+    // the room moves - the sentence "the room is on X" is stale the moment the
+    // room's page changes. Ticket 147 adds the bound and the 30 s end.
+    const putBackOn = roomPage
+    notice(
+      'putback',
+      putBackOn === null
         ? 'The room has no page yet, so this window was put back.'
-        : `The room is on ${roomPage}, so this window was put back.`
+        : `The room is on ${putBackOn}, so this window was put back.`,
+      { when: () => roomPage === putBackOn },
+    )
   }
 
   /**
@@ -1245,7 +1283,9 @@
       alignTimer = undefined
       if (!unaligned || alignWaitingSince !== startedAt) return
       if (!alignmentOverdue(startedAt, performance.now())) return
-      notice('warning', ALIGN_LATE_SENTENCE)
+      // T149 / ADR-049: the line ends when the picture aligns, so the notice's
+      // own condition is the wait itself rather than a second timer.
+      notice('align', ALIGN_LATE_SENTENCE, { when: () => unaligned })
     }, ALIGN_TOLERANCE_MS)
   }
 
@@ -1834,11 +1874,20 @@
       connect(target.host, target.port, target.code)
     }
 
+    // T149 / ADR-049: a notice's own end. One tick for every line on screen:
+    // the timer (`until`) and the condition (`when`) are both checked here, and
+    // the array comes back identical when nothing ended, so the DOM is not
+    // touched four times a second for nothing.
+    const noticeWatch = setInterval(() => {
+      notices = reapNotices(notices, performance.now())
+    }, NOTICE_TICK_MS)
+
     host?.addEventListener('message', onHostMessage)
     return () => {
       panelWatch.disconnect()
       host?.removeEventListener('message', onHostMessage)
       clearTimeout(timer)
+      clearInterval(noticeWatch)
       stopPopupTimer()
       stopPing()
     }
@@ -2113,10 +2162,22 @@
                   </p>
                 {/if}
               {/each}
-              {#each chatNotices as entry, index (index)}
-                <p class="notice {entry.kind}" role="status">{entry.text}</p>
-              {/each}
             </div>
+            {#if notices.length > 0}
+              <div class="notices">
+                {#each notices as entry (entry.id)}
+                  <p class="notice" role="status">
+                    <span>{entry.text}</span>
+                    <button
+                      type="button"
+                      class="dismiss"
+                      aria-label="Dismiss this notice"
+                      onclick={() => (notices = dismissNotice(notices, entry.id))}>Dismiss</button
+                    >
+                  </p>
+                {/each}
+              </div>
+            {/if}
             <form onsubmit={submitChat}>
               <input
                 type="text"
@@ -2767,6 +2828,41 @@
 
   .notice.warning {
     color: #e0b34a;
+  }
+
+  /* T149 / ADR-049: the notices are their own strip between the messages and
+     the input - the chat's only scroller stays the messages, so these do not
+     scroll away with them. One tone: a notice is news about the person's own
+     state, not an alarm, and the dismiss button is always beside it. */
+  .notices {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin: 0.5rem 0.75rem 0;
+  }
+
+  .notice {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid #4a3f24;
+    border-radius: 6px;
+    background: #211d14;
+    color: #e0b34a;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+  }
+
+  .notice .dismiss {
+    flex: none;
+    padding: 0.1rem 0.5rem;
+    border-color: #4a3f24;
+    background: transparent;
+    color: #e0b34a;
+    font-size: 0.85rem;
   }
 
   .chat form {

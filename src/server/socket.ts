@@ -213,8 +213,8 @@ export function attachRoomSocket(
     socket.send(JSON.stringify(frame))
   }
 
-  const fail = (socket: PeerSocket, code: ErrorCode): void => {
-    send(socket, errorFrame(code))
+  const fail = (socket: PeerSocket, code: ErrorCode, retryAfterMs?: number): void => {
+    send(socket, errorFrame(code, retryAfterMs))
   }
 
   // `members` goes to everyone, sender included (§5: a command echoes to its sender).
@@ -603,9 +603,15 @@ export function attachRoomSocket(
           budgets.set(member.id, budget)
           const verdict = admitChat(budget, frame.text, at)
           if (!verdict.ok) {
+            // T149: the window the server began the mute in is not the window
+            // this client receives it in, so the remaining time travels with
+            // the refusal and the page's notice is timed from it. It is the
+            // limiter's own `mutedUntil`, read and never written: the rate
+            // limit itself is untouched.
+            const retryAfterMs = Math.max(0, budget.mutedUntil - at)
             // The warning names a member's own state, so it goes to that member only.
-            if (verdict.muted) send(socket, warningFrame(verdict.code))
-            fail(socket, verdict.code)
+            if (verdict.muted) send(socket, warningFrame(verdict.code, retryAfterMs))
+            fail(socket, verdict.code, verdict.code === 'chat_rate_limited' ? retryAfterMs : undefined)
             return
           }
           const message = postChat(

@@ -135,14 +135,22 @@ export interface ErrorFrame {
   type: 'error'
   code: ErrorCode
   message: string
+  /**
+   * T149: how long the state behind this refusal lasts, in milliseconds from
+   * now - the mute's remainder for `chat_rate_limited`. Optional because every
+   * other code is a fact about one message, which has already ended. The page
+   * times its notice from this, not from the moment the window sent the mute.
+   */
+  retryAfterMs?: number
 }
 
 /**
  * The single place an `error` frame is made, so its shape cannot drift
  * between the tickets that raise one (T3 onward).
  */
-export function errorFrame(code: ErrorCode): ErrorFrame {
-  return { type: 'error', code, message: ERROR_SENTENCES[code] }
+export function errorFrame(code: ErrorCode, retryAfterMs?: number): ErrorFrame {
+  const frame: ErrorFrame = { type: 'error', code, message: ERROR_SENTENCES[code] }
+  return retryAfterMs === undefined ? frame : { ...frame, retryAfterMs }
 }
 
 /**
@@ -154,10 +162,13 @@ export interface WarningFrame {
   type: 'warning'
   code: ErrorCode
   message: string
+  /** T149: the mute's length from now, in milliseconds; the page's notice ends
+   *  when it does. Always present, because this frame is the mute starting. */
+  retryAfterMs: number
 }
 
-export function warningFrame(code: ErrorCode): WarningFrame {
-  return { type: 'warning', code, message: CHAT_MUTE_WARNING }
+export function warningFrame(code: ErrorCode, retryAfterMs: number): WarningFrame {
+  return { type: 'warning', code, message: CHAT_MUTE_WARNING, retryAfterMs }
 }
 
 export interface HelloFrame {
