@@ -26,7 +26,7 @@ import { clampToMedia, expected, scheduledStartAt, seekIsDuplicate } from '../sh
 export const MAX_MEMBERS = 10
 
 /**
- * ADR-032: the authority holds a pending room change for two seconds. The value
+ * ADR-032: the authority holds a pending room change for five seconds. The value
  * is the authority's, not the sender's — §5's `setPage` carries `stageMs` as a
  * suggestion, and a client that could shorten the window would own the undo.
  * It is *defined* in `shared/page.ts`, because the initiator's bar counts the

@@ -1,5 +1,5 @@
 /**
- * R31 and ADR-032 (amended 2026-11-21): the initiator's own two seconds.
+ * R31 and ADR-032 (amended 2026-11-21): the initiator's own five seconds.
  *
  * When this window's Enter sends `setPage`, its site view is moved to that
  * address at once — the preview — while the authority holds the change for its

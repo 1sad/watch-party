@@ -770,7 +770,7 @@
       // T03d: the instant this window learned of the commit. The initiator's site
       // view moved on Enter, so `moveSiteView` below is skipped for it and the
       // navigation line is the **guest's** only; without this line the initiator's
-      // log would hold nothing at the commit at all, and ADR-032's two seconds
+      // log would hold nothing at the commit at all, and ADR-032's five seconds
       // could not be measured in the window that started them.
       if (dev) console.info(`[page] pageCommitted page=${frame.page} previewed=${previewed}`)
       // T37 / ADR-038's 2026-11-22 amendment, §4.2: a room that held a file may
@@ -1790,7 +1790,7 @@
    * R29's countdown, in whole seconds, from this window's own clock. It is a
    * label and not the window: the pending preview ends on `pageCommitted`, on a
    * Cancel or on a refusal, never on this number reaching zero — the authority
-   * owns the two seconds (ADR-032), and a client timer that decided would be a
+   * owns the five seconds (ADR-032), and a client timer that decided would be a
    * second authority.
    */
   const previewSeconds = $derived.by(() => {

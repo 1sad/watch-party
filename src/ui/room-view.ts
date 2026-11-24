@@ -2,7 +2,7 @@
  * T26 and ADR-038: a room's committed state is either a site or a file, and with
  * no page there is no site view — except for the staged preview. A room that
  * holds a file may take a page (ADR-038, amended 2026-11-22), and for the
- * stage's two seconds both views are up while the room's fields still say file
+ * stage's five seconds both views are up while the room's fields still say file
  * (`page` is `null`, `media` is set): the staged page is a window-local preview
  * of a page the room has not committed, not a second kind of media. A pick
  * clears the room's page in the sidecar (`setMedia`, §4.2) and the authority
