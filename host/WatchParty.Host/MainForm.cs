@@ -1334,9 +1334,11 @@ public sealed class MainForm : Form
 
     /// <summary>
     /// T127, ADR-047 ("room end"): the page's <c>ownRoom</c> message says whether
-    /// this window has entered its own room. The close waits for the sidecar's
-    /// goodbye only then; a guest's window, and a window still on its own first
-    /// screen, has none to hear and closes at once. One line per change, ASCII only
+    /// this window's own sidecar owns the room it is showing. The close waits for
+    /// the sidecar's goodbye only then; a guest's window has none to hear and
+    /// closes at once. T133: ownership, not entry - the room is live from the
+    /// sidecar's boot, so a host still on its first screen owns the room a friend
+    /// joined and must say its goodbye too. One line per change, ASCII only
     /// (AGENTS.md rule 10).
     /// </summary>
     private void ReadOwnRoom(string json)
@@ -1357,8 +1359,8 @@ public sealed class MainForm : Form
         if (own == _ownRoomOpen) return;
         _ownRoomOpen = own;
         HostLog.Write(own
-            ? "room: this window is in its own room - the close waits for the room's goodbye"
-            : "room: this window is not in its own room - the close waits for no goodbye");
+            ? "room: this window owns the room - the close waits for the room's goodbye"
+            : "room: this window owns no room - the close waits for no goodbye");
     }
 
     /// <summary>
@@ -2399,7 +2401,9 @@ public sealed class MainForm : Form
     /// what was saved; nothing here can refuse the close. T113: when the window
     /// holds a room, the close is held back by one bounded goodbye instead, so the
     /// sidecar can say the room ended before it stops (ADR-047). T127: that wait
-    /// belongs to the window in its **own** room; a guest's close is immediate.
+    /// belongs to the window whose own sidecar owns the room; a guest's close is
+    /// immediate. T133: ownership, not entry - a host on its first screen already
+    /// owns the room early guests joined, so its close says the goodbye too.
     /// </summary>
     private void OnFormClosing(object? sender, FormClosingEventArgs e)
     {
@@ -2441,12 +2445,14 @@ public sealed class MainForm : Form
         if (e.CloseReason is CloseReason.WindowsShutDown or CloseReason.None) return;
         if (_appPort is null || _sidecar is null || _sidecar.HasExited || _page.CoreWebView2 is null) return;
 
-        // T127: only the room's owner's window hears `[room] over` when its page
-        // unloads; a guest's own sidecar never says it (`src/server/room.ts` has no
-        // owner), so waiting there is 1,500 ms spent on a line that cannot come.
-        // The page says which window this is - a window-local fact like
-        // `data-layout`, never room state (ADR-034). The sidecar still stops in
-        // OnFormClosed either way.
+        // T127: only the window whose own sidecar owns the room hears `[room] over`
+        // when its page unloads; a guest's own sidecar never says it
+        // (`src/server/room.ts` has no owner), so waiting there is 1,500 ms spent on
+        // a line that cannot come. T133: the room is live from the sidecar's boot,
+        // so a host still on its first screen owns it and waits here too - `entered`
+        // is not part of the fact. The page says which window this is - a
+        // window-local fact like `data-layout`, never room state (ADR-034). The
+        // sidecar still stops in OnFormClosed either way.
         if (!_ownRoomOpen)
         {
             HostLog.Write("closing: no room of this window's own to end; the close does not wait");

@@ -365,9 +365,16 @@
    * reads (ADR-034): this page says which way it goes, on a change and once on
    * load, because a fresh document has to say it again. A guest's own sidecar has
    * no owner to lose, so its window closing at once is right.
+   *
+   * T133: the ownership, not the entry. The room is live from the sidecar's boot
+   * (ADR-047), so a host still on its first screen already owns the room a guest
+   * joined; waiting for `entered` there let the close stop the sidecar before its
+   * `[room] over`, and every early guest was left on a lost connection. `entered`
+   * is not part of this because `inOwnRoom` already answers it: false for a guest,
+   * for a window that came by a link, and for a host that joined another room.
    */
   $effect(() => {
-    postToHost({ kind: 'ownRoom', own: entered && inOwnRoom })
+    postToHost({ kind: 'ownRoom', own: inOwnRoom })
   })
 
   function stopPing(): void {
