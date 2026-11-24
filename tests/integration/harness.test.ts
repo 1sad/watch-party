@@ -24,6 +24,7 @@ import {
   settle,
   startHarness,
   waitFor,
+  type Harness,
 } from './harness.ts'
 
 // T7a's own assertions, on the shared harness (phase spec §7 B). The tickets
@@ -32,6 +33,10 @@ import {
 
 const stateCount = (client: ScriptedClient): number =>
   client.frames.filter((record) => record.frame.type === 'state').length
+
+/** ADR-049's "N online": the same `status !== 'offline'` the chat column counts. */
+const onlineCount = (harness: Harness): number =>
+  [...harness.room.members.values()].filter((member) => member.status !== 'offline').length
 
 test('R6: one owner play reaches all three within 300 ms as exactly one state, and the players are in step 2 s later', async () => {
   const harness = await startHarness({ clients: 3 })
@@ -887,5 +892,53 @@ test('T148/ADR-033: two different member ids still make two rows', async () => {
     assert.deepEqual(roster.map((member) => member.id).sort(), [ada.selfId, bea.selfId].sort())
   } finally {
     await harness.close()
+  }
+})
+
+// T148b / ADR-049: presence is what the room hears, not what a socket once was.
+// The close handler is the only other path to `offline`, so a connection that
+// goes quiet without closing leaves its row online and the count keeps a person
+// who is gone. The owner's seat is exempt while its socket is open, which is why
+// the quiet client here is a guest and the count settles at one, not zero.
+test('T148b/ADR-049: a silent seat leaves the count at the presence cutoff while its socket stays open', async () => {
+  const previousPresence = process.env.WATCHPARTY_PRESENCE_MS
+  process.env.WATCHPARTY_PRESENCE_MS = '1500'
+  const harness = await startHarness({ clients: 0 })
+  try {
+    const owner = await harness.join('sam')
+    const quiet = await harness.join('quiet')
+    assert.equal(harness.room.owner, owner.selfId, 'the first loopback member owns the room')
+    assert.equal(onlineCount(harness), 2, 'the count starts at two, both heard at hello')
+
+    const startedAt = Date.now()
+    await waitFor(() => onlineCount(harness) === 1, 4000, 'the silent seat left the count')
+    const elapsedMs = Date.now() - startedAt
+
+    assert.equal(quiet.socket.readyState, WebSocket.OPEN, 'the sweep never closed the silent socket')
+    assert.equal(harness.room.members.get(quiet.selfId)?.status, 'offline', 'the silent row is offline')
+    assert.equal(harness.room.members.get(owner.selfId)?.status, 'online', 'the owner seat is not swept')
+
+    // ADR-049: the list and the count read the same predicate, so the roster
+    // broadcast a window draws "1 online" from must hold exactly the owner.
+    const roster = await waitFor(
+      () => {
+        const latest = owner.frames.filter((record) => record.frame.type === 'members').pop()
+        const members = latest?.frame.type === 'members' ? latest.frame.members : []
+        return members.filter((member) => member.status !== 'offline').length === 1 ? members : null
+      },
+      2000,
+      'the room broadcast the one-person roster',
+    )
+    assert.deepEqual(
+      roster.filter((member) => member.status !== 'offline').map((member) => member.id),
+      [owner.selfId],
+    )
+    // The check's number: within 4 s at a 1500 ms cutoff (reported in the TESTED line).
+    assert.ok(elapsedMs < 4000, `the count dropped in ${elapsedMs} ms (the check allows 4000)`)
+    console.log(`T148b: online count 2 -> 1 in ${elapsedMs} ms (cutoff 1500 ms)`)
+  } finally {
+    await harness.close()
+    if (previousPresence === undefined) delete process.env.WATCHPARTY_PRESENCE_MS
+    else process.env.WATCHPARTY_PRESENCE_MS = previousPresence
   }
 })

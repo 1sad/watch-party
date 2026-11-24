@@ -93,6 +93,22 @@ export interface RoomSocketOptions {
 export const SEAT_REUSED_CLOSE_CODE = 4001
 export const SEAT_REUSED_CLOSE_REASON = 'seat reused'
 
+/**
+ * T148b / ADR-049: presence is what the room hears, not what its socket map
+ * once held. A member whose last `ping` is older than this is marked `offline`
+ * and drops out of the count and the roster (§4.4: `offline` at 20 s). The
+ * integration harness sets `WATCHPARTY_PRESENCE_MS=1500` on its own process so
+ * the case does not wait 20 s; the shipped sidecar has no such variable and
+ * uses this default.
+ */
+export const PRESENCE_SWEEP_MS = 20_000
+
+/** The cutoff in force, read when a room's socket is attached so a test can set it. */
+function presenceSweepMs(): number {
+  const override = Number(process.env.WATCHPARTY_PRESENCE_MS)
+  return Number.isFinite(override) && override >= 1 ? override : PRESENCE_SWEEP_MS
+}
+
 function isLoopback(remoteAddress: string | undefined): boolean {
   return (
     remoteAddress === '127.0.0.1' || remoteAddress === '::1' || remoteAddress === '::ffff:127.0.0.1'
@@ -252,6 +268,39 @@ export function attachRoomSocket(
     )
     for (const socket of sockets.keys()) socket.send(text)
   }
+
+  /**
+   * T148b / ADR-049: a member is present only while the room hears from it.
+   * The close handler above is the only other path to `offline`, so a socket
+   * that dies without a close (Wi-Fi dropping, a suspended laptop) leaves its
+   * row `online` for the rest of the evening. This sweep marks that silence:
+   * it never closes a socket, never writes `playback` and never touches the one
+   * writer's commands. The owner's seat is exempt while its socket is open -
+   * the window that serves the room must not make the count say it is empty.
+   *
+   * The tick is a quarter of the cutoff (capped at one second), so the count
+   * drops within a second of the 20 s the spec names rather than at the next
+   * full window; the test's 1500 ms cutoff therefore settles inside 4 s.
+   */
+  const presenceMs = presenceSweepMs()
+  const presenceTickMs = Math.min(1000, Math.max(1, Math.floor(presenceMs / 4)))
+  const presenceSweep = setInterval(() => {
+    const at = now()
+    let changed = false
+    for (const member of room.members.values()) {
+      if (member.status === 'offline') continue
+      if (at - member.lastSeen <= presenceMs) continue
+      if (room.owner === member.id) {
+        const open = [...sockets.values()].some((seated) => seated.id === member.id)
+        if (open) continue
+      }
+      markOffline(room, member.id, () => at)
+      changed = true
+    }
+    if (changed) broadcastMembers()
+  }, presenceTickMs)
+  presenceSweep.unref?.()
+  wss.on('close', () => clearInterval(presenceSweep))
 
   /**
    * ADR-032's window, owned by the authority and by nothing else. One timer per
