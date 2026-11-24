@@ -608,11 +608,30 @@
     return code === 'chat_too_long' || code === 'chat_rate_limited' || code === 'chat_byte_limit'
   }
 
-  /** True when the panel is close enough to the end that a new line should follow it. */
-  function atBottom(): boolean {
+  /** How close to the newest line still counts as being on it, in px. */
+  const PIN_SLACK_PX = 8
+
+  /** The distance from the list's newest line, in px; 0 at the bottom. */
+  function gapToNewest(): number {
     const list = chatList
-    if (list === null) return true
-    return list.scrollHeight - list.scrollTop - list.clientHeight <= 8
+    if (list === null) return 0
+    return list.scrollHeight - list.scrollTop - list.clientHeight
+  }
+
+  /**
+   * T153b: whether the reader is on the newest line, **remembered** rather than
+   * asked at the moment a line arrives. A notice strip appearing, or the window
+   * changing height, takes height off the list without moving `scrollTop`, so
+   * the same question answered after that change reads a reader who never
+   * scrolled as scrolled up - and the newest line stayed 150 px below the fold
+   * after a flood notice (153b's BEFORE). Only the list's own scroll moves this
+   * flag, because only the person moves the list: the page's own scroll to the
+   * newest line lands on the bottom, which reads as pinned again.
+   */
+  let pinned = $state(true)
+
+  function pinFromScroll(): void {
+    pinned = gapToNewest() <= PIN_SLACK_PX
   }
 
   /**
@@ -629,8 +648,31 @@
     list.scrollTop = list.scrollHeight
   })
 
+  /**
+   * T153b: the pin survives the list being made shorter. A notice strip above
+   * the input, a shorter window and a narrower column all change the list's box
+   * while its `scrollTop` stays where the reader left it, so a pinned reader is
+   * put back on the newest line once the new height is laid out. A reader who
+   * scrolled up is left exactly where they are - `pinned` is false for them and
+   * this does nothing.
+   */
+  $effect(() => {
+    const list = chatList
+    if (list === null) return
+    const observer = new ResizeObserver(() => {
+      if (!pinned) return
+      list.scrollTop = list.scrollHeight
+    })
+    observer.observe(list)
+    return () => observer.disconnect()
+  })
+
   function followNewest(stick: boolean): void {
-    if (stick) stickToBottom = true
+    if (!stick) return
+    // Staying with the newest line is the pin: a welcome re-pins a window that
+    // had scrolled up in whatever it was looking at before.
+    pinned = true
+    stickToBottom = true
   }
 
   /**
@@ -808,7 +850,10 @@
         const from = frame.memberId ?? 'system'
         console.info(`[chat] m=${frame.id} from=${from} chars=${frame.text.length}`)
       }
-      const stick = atBottom()
+      // T153b: the pin as of the reader's last scroll, not a measurement taken
+      // now - a notice that has already taken height off the list would read
+      // this reader as scrolled up.
+      const stick = pinned
       chat = [...chat, frame]
       if (frame.kind === 'user') chatAccepted += 1
       followNewest(stick)
@@ -2272,7 +2317,7 @@
               </ul>
             {/if}
 
-            <div class="messages" bind:this={chatList}>
+            <div class="messages" bind:this={chatList} onscroll={pinFromScroll}>
               {#each chat as message (message.id)}
                 {#if message.kind === 'system'}
                   <p class="system">
