@@ -564,9 +564,10 @@ What has to be true for this to work, and what to do when it isn't:
 - **Fullscreen belongs to us** (ADR-028). Intercept the page's fullscreen request, expand the picture to fill our
   window, and keep the chat and roster where they are. Of eleven sites tested in E2, seven took the whole screen
   and four stayed inside; the app has to make that a choice rather than a lottery.
-- **The player is a follower, and gets realigned at three moments** (ADR-029, R32): when the video element is
-  replaced (mirror switch, quality change, a site rebuilding its own player), when a navigation finishes, and when
-  the window regains focus. Without those three, a site can silently move the goalposts mid-film.
+- **The player is a follower, and gets realigned at four moments** (ADR-029, ADR-048, R32): when the video element is
+  replaced (mirror switch, quality change, a site rebuilding its own player), when a navigation finishes, when the site
+  changes its own address without a reload (an episode picked inside the site's own page, ADR-048), and when the window
+  regains focus. Without those four, a site can silently move the goalposts mid-film.
 - **Peer-to-peer plumbing is blocked before the page runs**, with a one-line notice and a per-site Allow switch
   (R35, ADR-031). The video is usually not the thing being shared — on the one site that triggered it, the film came
   over plain HTTPS — but a page uploading to strangers is the only part of this design we do not control, so the

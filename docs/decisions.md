@@ -1481,7 +1481,8 @@ throttled by the bridge's change check, not by the room). A page whose episode l
 not followed; the address bar remains the way, and the limitation is written down rather than silently half-fixed. The
 bridge now carries one more responsibility, so every existing site test must still pass unchanged.
 
-**Amends.** Nothing. It adds a page half to `spec.md` §7.1's realignment sentence ("the player ... gets realigned
-when a navigation finishes") and to R21, whose second route was described in §1 but never wired. The relay's
+**Amends.** Nothing. It adds the page half to `spec.md` §7.1's realignment sentence, which now lists four moments - the
+new one "when the site changes its own address without a reload (an episode picked inside the site's own page, ADR-048)"
+- and it completes R21, whose second route ("or by browsing inside the app") §1 described but nothing wired. The relay's
 whitelist and the bridge's message kinds gain `pageAddress`; nothing else about the two views changes.
 
