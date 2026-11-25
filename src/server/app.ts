@@ -122,6 +122,41 @@ button { font: inherit; padding: 0.5rem; border: 0; border-radius: 0.25rem; back
 </html>
 `
 
+/**
+ * T176 / R52: the room's code, written into the page a **browser guest** is
+ * served. A guest who reloads `/` is let in by the `wp_key` cookie, which is
+ * HttpOnly, and `/discovery` - the only other source - answers loopback only.
+ * So the page the sidecar serves carries the code: one `<meta>`, and the page's
+ * bootstrap reads it before it would ask `/discovery` (`src/ui/served-code.ts`
+ * is the reader, and its `ROOM_CODE_META` is this name - a unit test holds the
+ * two together). It goes below the gate, so a caller without the code never
+ * receives it, and only for a caller that is not this machine's own window.
+ */
+const PAGE_CODE_META = 'watch-party-room'
+
+/** An HTML attribute's own escapes: the code is the room's, never the page's, markup. */
+function escapeAttribute(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+/**
+ * The built page with the room's code in it. The tag is put straight after
+ * `<head>` so it is the first thing the page's own script can read; a page with
+ * no head at all (nothing the build emits) gets it in front rather than not at
+ * all.
+ */
+function withRoomCode(html: string, code: string): string {
+  const meta = `<meta name="${PAGE_CODE_META}" content="${escapeAttribute(code)}">`
+  const head = /<head[^>]*>/i.exec(html)
+  if (head === null) return meta + html
+  const end = head.index + head[0].length
+  return html.slice(0, end) + meta + html.slice(end)
+}
+
 /** The room's code, as `/discovery` already answers it; `null` before there is one. */
 function roomCodeOf(options: SidecarOptions): string | null {
   const state: unknown = options.start?.()
@@ -353,6 +388,13 @@ async function handle(
   } catch {
     sendText(response, 404, 'not found\n', method)
     return
+  }
+
+  // T176 / R52: the page a browser guest reloads carries the room's code, so its
+  // bootstrap never has to ask the loopback-only `/discovery`. The app's own
+  // window arrives from this machine and gets the built file byte for byte.
+  if (!loopback && code !== null && extname(filePath).toLowerCase() === '.html') {
+    body = Buffer.from(withRoomCode(body.toString('utf8'), code), 'utf8')
   }
 
   response.writeHead(200, {

@@ -17,6 +17,7 @@
     type WireMember,
   } from '../shared/protocol.ts'
   import { parseJoinLink, UNREADABLE_LINK, UNREACHABLE_ROOM } from './join.ts'
+  import { ROOM_CODE_META, servedRoomCode } from './served-code.ts'
   import { memberIdentity, rememberMemberName, rememberSeat } from './identity.ts'
   import { normalizeName } from '../shared/names.ts'
   import {
@@ -2027,15 +2028,32 @@
         ? parseJoinLink(location.href)
         : null
 
+    // T176 / R52: a browser guest whose reload has no code in its address is
+    // still in the room by its `wp_key` cookie, and the page the sidecar served
+    // it carries the code (the tag `app.ts` writes). `/discovery` is the last
+    // source, not the first: it answers loopback only, and asking it here is
+    // what drew the "room process is not answering" fault at a live room.
+    const served = target === null
+      ? servedRoomCode(document.querySelector(`meta[name="${ROOM_CODE_META}"]`)?.getAttribute('content'))
+      : null
+
     if (pasted !== null && target === null) sentence = UNREADABLE_LINK
 
-    if (target === null) {
-      void refresh()
-    } else {
+    if (target !== null) {
       fromLink = true
       enteredRoom = true
       payload = joinedFrom({ code: target.code, port: target.port })
       connect(target.host, target.port, target.code)
+    } else if (served !== null) {
+      // The link's load again, on the same seat: the id and proof in `wp_member`
+      // are what `connect()` presents, so the room re-seats this row rather than
+      // adding one. It is not this window's own room, so no "Start a room".
+      fromLink = true
+      enteredRoom = true
+      payload = joinedFrom({ code: served, port: Number(location.port) })
+      connect(location.hostname, Number(location.port), served)
+    } else {
+      void refresh()
     }
 
     // T149 / ADR-049: a notice's own end. One tick for every line on screen:
