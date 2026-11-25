@@ -1668,6 +1668,16 @@ app's own player (ADR-051) instead of the followed site view.
 
 ## ADR-053 - A person's identity lives in a cookie the app sets on its own host
 
+> **Amended 2026-11-25 (ticket 165, the phase-6 review):** the id alone did not prove a seat - every member receives
+> every other member's id in `members`, so a guest (or anything on the plain-HTTP path) could quote one and take that
+> row, the owner's included. A seat is now **proved**: the room mints a secret at the seat's first join, sends it in
+> that member's own `welcome` (never in a broadcast), the page keeps it in the same `wp_member` cookie as
+> `{id, name, proof}` (32 random bytes, 64 lowercase hex characters) and presents it on `hello`. A hello naming an
+> occupied row without the matching proof is seated as a **fresh member**, never as that row and never with its
+> control. Rejected: refusing the claim with a close code (the claimant still needs a `welcome`, and one code path is
+> less to get wrong), and one proof shared by the room (any member could then quote it - the fault this amendment
+> closes).
+
 > **Amends ADR-033 rule 1** (a returning member keeps their id). It is the first implementation of that rule (phase 6,
 > ticket 148) and the record R42 owes.
 
