@@ -37,6 +37,7 @@
   import { PAGE_STAGE_MS, canonicalPage, playbackAfterPageCommit, setPageFrame } from '../shared/page.ts'
   import { siteViewAddress, youtubeVideoId, isYouTubeEmbedAddress } from '../shared/youtube.ts'
   import { previewHolds, type PendingPreview } from './preview.ts'
+  import { pictureFor, BROWSER_YOUTUBE_SENTENCE } from './picture-area.ts'
   import {
     closeOutcome,
     pageSide,
@@ -970,6 +971,30 @@
   }
 
   const host = hostWebview()
+
+  /**
+   * T178 / R54, ADR-054: what the picture area holds, chosen in one place. A room
+   * on a file is the player, a room on a page is the window host's site view, a
+   * YouTube room with no host is ticket 179's branch, and any other page room
+   * read in a plain browser is one plain sentence naming the app. The rule is
+   * `ui/picture-area.ts`; this only gives it the room's fields and this page's
+   * own bridge.
+   */
+  const pictureArea = $derived(pictureFor({ page: roomPage, media, host: host !== null }))
+
+  /**
+   * The words the picture area shows, or `null` when the player or the site view
+   * is the picture. `youtube` is the one branch whose picture ticket 179 has not
+   * put there yet, so it says the app's name rather than nothing (R54 forbids a
+   * blank rectangle); 179 replaces that sentence with the embed.
+   */
+  const pictureWords = $derived(
+    pictureArea.kind === 'words'
+      ? pictureArea.text
+      : pictureArea.kind === 'youtube'
+        ? BROWSER_YOUTUBE_SENTENCE
+        : null,
+  )
 
   let picking = $state(false)
   let pickNotice = $state<{ kind: 'ok' | 'error'; text: string } | null>(null)
@@ -2294,19 +2319,28 @@
       {#if panel !== 'chat'}
         <div class="picture">
           {#if selfId !== null && playback !== null && !roomEnded}
-            <Player
-              {playback}
-              {revision}
-              {realign}
-              {nudge}
-              {media}
-              src={playerSrc}
-              {devPlay}
-              emptyLine={emptyPictureLine}
-              clock={authorityClock}
-              rtt={() => estimate.rtt}
-              send={sendCommand}
-            />
+            {#if pictureWords !== null}
+              <!-- T178 / R54, ADR-054: a room on an ordinary website cannot be
+                   played in a browser (ADR-006), so the picture area is one plain
+                   sentence naming the app - never "Waiting for the host", never a
+                   blank rectangle. A YouTube room with no host says the app's
+                   name until ticket 179 puts the app-owned embed here. -->
+              <p class="empty-picture">{pictureWords}</p>
+            {:else}
+              <Player
+                {playback}
+                {revision}
+                {realign}
+                {nudge}
+                {media}
+                src={playerSrc}
+                {devPlay}
+                emptyLine={emptyPictureLine}
+                clock={authorityClock}
+                rtt={() => estimate.rtt}
+                send={sendCommand}
+              />
+            {/if}
           {:else}
             <!-- T150: the picture area is never blank, and it never tells the
                  owner to wait for themselves. One line, in the role's terms. -->
