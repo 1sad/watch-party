@@ -35,6 +35,7 @@ import {
   dropPendingPage,
   joinRoom,
   markOffline,
+  markOnline,
   postChat,
   postSystemChat,
   renameMember,
@@ -488,6 +489,13 @@ export function attachRoomSocket(
         return
       }
 
+      // T167 / ADR-049: any frame from a seated member is proof the connection is
+      // live, so presence is restored here, where the socket's member is read,
+      // rather than in one case (a `ping` used to be the only frame that touched
+      // `lastSeen`). `markOnline` returns true only for a row the sweep had marked
+      // `offline`: one roster frame per return, none for the beats that follow.
+      if (markOnline(room, member.id, now)) broadcastMembers()
+
       switch (frame.type) {
         case 'rename': {
           renameMember(room, member.id, normalizeName(frame.name), now)
@@ -532,9 +540,9 @@ export function attachRoomSocket(
           // honest (the 10 s / 20 s presence ladder is T17's), and the
           // same frame is the clock sample. `t1` is the receive instant and `t2`
           // the send one; the member works out its own offset from all four and
-          // the authority never learns it (§4.3 invariant 4).
+          // the authority never learns it (§4.3 invariant 4). `lastSeen` itself
+          // was already moved at the read of `member` above (T167).
           if (typeof frame.t0 !== 'number' || !Number.isFinite(frame.t0)) return
-          member.lastSeen = now()
           const t1 = now()
           send(socket, { type: 'pong', t0: frame.t0, t1, t2: now() })
           return

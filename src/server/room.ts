@@ -401,6 +401,31 @@ export function markOffline(
 }
 
 /**
+ * T167 / ADR-049: the roster shows the members the authority has heard from, not
+ * the ones it once heard from. A row the presence sweep marked `offline` comes
+ * back the moment a frame from that seat arrives; `markOffline` is its only
+ * counterpart, and a reconnecting socket takes the `online` row `joinRoom` makes.
+ *
+ * `lastSeen` moves on every frame, because every frame proves the connection is
+ * live. `status` and `revision` move only on the return, so a 1 Hz beat that
+ * keeps someone online is not a roster change and broadcasts nothing. Returns
+ * `true` for that one transition: the caller broadcasts `members` once.
+ */
+export function markOnline(
+  room: RoomState,
+  memberId: string,
+  now: () => number = Date.now,
+): boolean {
+  const member = room.members.get(memberId)
+  if (member === undefined) return false
+  member.lastSeen = now()
+  if (member.status === 'online') return false
+  member.status = 'online'
+  room.revision += 1
+  return true
+}
+
+/**
  * §4.4's last line, and ADR-024's file half: "a replica held by an app that has
  * not noticed its peers left is discarded when its last connection fails; there
  * is no timer and nothing to clean up." This phase has only file mode, where

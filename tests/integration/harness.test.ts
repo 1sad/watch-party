@@ -1104,3 +1104,84 @@ test('T148b/ADR-049: a silent seat leaves the count at the presence cutoff while
     else process.env.WATCHPARTY_PRESENCE_MS = previousPresence
   }
 })
+
+// T167 / ADR-049: the roster shows the members the authority has heard from, not
+// the ones it once heard from. A row the sweep marked `offline` comes back on the
+// next frame that seat sends - and that return is one roster frame, not one per
+// frame, so a 1 Hz beat that keeps someone online adds nothing to the roster.
+test('T167/ADR-049: a member heard from again is online again, once, on any frame', async () => {
+  const previousPresence = process.env.WATCHPARTY_PRESENCE_MS
+  process.env.WATCHPARTY_PRESENCE_MS = '1500'
+  const harness = await startHarness({ clients: 0 })
+  const membersFrames = (client: ScriptedClient): number =>
+    client.frames.filter((record) => record.frame.type === 'members').length
+  try {
+    const owner = await harness.join('sam')
+    const quiet = await harness.join('quiet')
+    await waitFor(() => onlineCount(harness) === 1, 4000, 'the silent seat left the count')
+    assert.equal(harness.room.members.get(quiet.selfId)?.status, 'offline', 'the sweep marked it offline')
+    const countBefore = onlineCount(harness)
+    const revisionBefore = harness.room.revision
+    const rostersBefore = membersFrames(owner)
+
+    // A `ping` is proof the seat is still there, so the row comes back.
+    const heardAt = Date.now()
+    quiet.send({ type: 'ping', t0: Date.now() })
+    await waitFor(() => onlineCount(harness) === 2, 2000, 'the heard-from seat is back in the count')
+    const elapsedMs = Date.now() - heardAt
+    const row = harness.room.members.get(quiet.selfId)
+    assert.equal(row?.status, 'online', 'the row a ping came from is online')
+    assert.equal(owner.socket.readyState, WebSocket.OPEN, 'the owner socket is still open')
+    assert.equal(quiet.socket.readyState, WebSocket.OPEN, 'the ping came over the quiet socket itself')
+    console.log(
+      `T167: online count ${countBefore} -> ${onlineCount(harness)} in ${elapsedMs} ms ` +
+        `(cutoff 1500 ms), status=${row?.status}`,
+    )
+
+    // One transition, one roster: the return is news, and the roster now says two.
+    const roster = await waitFor(
+      () => {
+        const latest = owner.frames.filter((record) => record.frame.type === 'members').pop()
+        const members = latest?.frame.type === 'members' ? latest.frame.members : []
+        return members.filter((member) => member.status !== 'offline').length === 2 ? members : null
+      },
+      2000,
+      'the room broadcast the two-person roster again',
+    )
+    assert.deepEqual(
+      roster.filter((member) => member.status !== 'offline').map((member) => member.id).sort(),
+      [owner.selfId, quiet.selfId].sort(),
+    )
+    assert.equal(membersFrames(owner), rostersBefore + 1, 'the return was one roster frame, not a burst')
+    assert.equal(harness.room.revision, revisionBefore + 1, 'revision moved on the return, and once')
+
+    // §5: a beat that only keeps someone online is not a roster change.
+    const revisionBack = harness.room.revision
+    const rostersBack = membersFrames(owner)
+    const pong = quiet.next((frame) => frame.type === 'pong')
+    quiet.send({ type: 'ping', t0: Date.now() })
+    await pong
+    await settle(100)
+    assert.equal(membersFrames(owner), rostersBack, 'a ping that keeps a member online adds no roster frame')
+    assert.equal(harness.room.revision, revisionBack, 'and moves no revision')
+
+    // T167 item 1: the rule sits where the socket's member is read, so a chat
+    // line from a swept seat restores it too - this is not the ping's own doing.
+    await waitFor(() => onlineCount(harness) === 1, 4000, 'the idle seat was swept again')
+    assert.equal(harness.room.members.get(quiet.selfId)?.status, 'offline', 'offline again before the chat')
+    const revisionBeforeChat = harness.room.revision
+    quiet.send({ type: 'chat', text: 'back' })
+    await waitFor(
+      () => harness.room.members.get(quiet.selfId)?.status === 'online',
+      2000,
+      'a chat line puts the offline row back online',
+    )
+    assert.equal(onlineCount(harness), 2, 'the count says two again')
+    assert.equal(harness.room.revision, revisionBeforeChat + 1, 'one revision for the second return')
+    assert.equal(owner.socket.readyState, WebSocket.OPEN, 'and no socket was closed on the way')
+  } finally {
+    await harness.close()
+    if (previousPresence === undefined) delete process.env.WATCHPARTY_PRESENCE_MS
+    else process.env.WATCHPARTY_PRESENCE_MS = previousPresence
+  }
+})

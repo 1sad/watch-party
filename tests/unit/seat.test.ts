@@ -10,7 +10,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createRoom, joinRoom, snapshot, wireMembers, type RoomState } from '../../src/server/room.ts'
+import {
+  createRoom,
+  joinRoom,
+  markOffline,
+  markOnline,
+  snapshot,
+  wireMembers,
+  type RoomState,
+} from '../../src/server/room.ts'
 import type { Member } from '../../src/shared/protocol.ts'
 
 function member(id: string, name: string, joinedAt: number): Member {
@@ -97,4 +105,31 @@ test('T165: the proof appears in no member list and no room snapshot', () => {
     assert.equal(Object.keys(row).includes('proof'), false, 'a member row has no proof field')
   }
   assert.equal(Object.keys(snapshot(room)).includes('proof'), false, 'nor does the snapshot')
+})
+
+// T167 / ADR-049: a row the sweep marked `offline` is the room's "I stopped
+// hearing from this seat", so the next frame from it is the answer. Every frame
+// moves `lastSeen`; only the return moves `status` and `revision`, because the
+// roster (and the count beside the chat) reads those two.
+test('T167: a frame from a swept seat puts its row back online, and only the return is a revision', () => {
+  const { room } = roomWithOwner()
+  const row = room.members.get('ada')
+  assert.notEqual(row, undefined)
+  if (row === undefined) return
+
+  markOffline(room, 'ada', () => 1000)
+  assert.equal(row.status, 'offline', 'the sweep marked the silent seat')
+  const offlineAt = room.revision
+
+  assert.equal(markOnline(room, 'ada', () => 2000), true, 'the first frame is the return')
+  assert.equal(row.status, 'online', 'the row is online again')
+  assert.equal(row.lastSeen, 2000, 'and the frame is the last thing heard')
+  assert.equal(room.revision, offlineAt + 1, 'the return is one revision')
+
+  const backAt = room.revision
+  assert.equal(markOnline(room, 'ada', () => 9000), false, 'a later frame is not a return')
+  assert.equal(row.lastSeen, 9000, 'but it still proves the connection is live')
+  assert.equal(room.revision, backAt, 'so revision does not move')
+
+  assert.equal(markOnline(room, 'nobody', () => 9000), false, 'a seat with no row is nobody')
 })
