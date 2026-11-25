@@ -405,8 +405,14 @@ export interface RoomOverFrame {
  * align a joiner with more than the `welcome` snapshot: on load the snapshot is
  * the alignment (§4.3 invariant 9), and a joiner's arrival must broadcast no
  * `state` at all (T6b's Safety line).
+ *
+ * `media` is the one reason the picker causes: `setMedia` resets the room's
+ * `playback` to position 0, paused (§4.2, ADR-050 item 1), and the socket
+ * publishes that reset as a `state` after the `media` frame so every window -
+ * the picker's included, §5's echo rule - holds the new film from the same
+ * instant (T166). The reset itself stays the authority's; this only names it.
  */
-export type PlaybackReason = 'play' | 'pause' | 'seek' | 'start' | 'join'
+export type PlaybackReason = 'play' | 'pause' | 'seek' | 'start' | 'join' | 'media'
 
 export interface StateFrame {
   type: 'state'

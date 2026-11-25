@@ -657,6 +657,13 @@ export function attachRoomSocket(
           // own pick. It is the wire snapshot, so the path stays in this process.
           const mediaText = JSON.stringify({ type: 'media', media: snapshot(room).media } satisfies ServerFrame)
           for (const socket of sockets.keys()) socket.send(mediaText)
+          // T166 / R44, ADR-050 item 1: `setMedia()` has moved the room to
+          // position 0, paused, and this is the authority publishing it - the
+          // frame §5 already has, not a second reset. It follows the `media`
+          // frame so a window that was holding its own preview has already
+          // dropped it (the pick ends the page), and the page applies the reset
+          // to the new film instead of seeking it to the old film's position.
+          broadcastState(member.id, 'media')
           // ADR-049: the pick is the room's log's second event - one dimmed line
           // at the moment the file becomes the room's, naming the file by the
           // title the picker gave it (never the path, which stays here).

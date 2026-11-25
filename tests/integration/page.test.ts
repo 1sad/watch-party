@@ -170,7 +170,11 @@ test('T03: the commit clears the file and resets playback to 0, paused', async (
     })
     await waitFor(() => harness.room.media !== null, 2000, 'the room holds the fixture')
 
-    const playing = harness.clients.map((client) => client.next((frame) => frame.type === 'state'))
+    // T166: the pick's reset is its own `state` (reason `media`); the play's
+    // frame is the next one with reason `play`.
+    const playing = harness.clients.map((client) =>
+      client.next((frame) => frame.type === 'state' && frame.reason === 'play'),
+    )
     owner.send({ type: 'play', position: 10 })
     await Promise.all(playing)
     assert.equal(harness.room.playback.playing, true)

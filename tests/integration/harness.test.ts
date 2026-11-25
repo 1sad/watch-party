@@ -642,6 +642,83 @@ test('R11: only the owner may set the room\'s media, and a refusal leaves the ro
   }
 })
 
+// T166 / R44 (ADR-050 item 1): a pick is a new film for **every** window, and
+// the reset travels on the wire. `setMedia` moves the authority's `playback`
+// through `playbackAfterPageCommit`, but before T166 the only frame a pick
+// broadcast was `media`, which carries no playback: a window already in the room
+// kept the old film's position, and `Player.onLoadedMetadata` sought the new
+// file to it. The reset now follows the `media` frame as the `state` frame §5
+// already has - to everyone, the picker included (§5's echo rule) - and the
+// media frame's own shape is unchanged (T166's Safety line).
+test('R44: a pick resets every window to 0, paused, on a state frame after the media frame', async () => {
+  const harness = await startHarness({ clients: 2 })
+  const fixture = fileURLToPath(new URL('../fixtures/fixture.mp4', import.meta.url))
+  try {
+    // The room is watching the old film, 50 s in.
+    const playing = harness.clients.map((client) =>
+      client.next((frame) => frame.type === 'state' && frame.reason === 'play'),
+    )
+    harness.owner.send({ type: 'play', position: 50 })
+    for (const record of await Promise.all(playing)) {
+      const state = record.frame as StateFrame
+      assert.equal(state.playback.position, 50, 'the old film is at 50 s')
+      assert.equal(state.playback.playing, true)
+    }
+
+    // One pick for a 60 s file: both windows hear the media frame, then the reset.
+    const picked = harness.clients.map((client) => client.next((frame) => frame.type === 'media'))
+    harness.owner.send({
+      type: 'setMedia',
+      id: 't166',
+      title: 'A new film',
+      duration: 60,
+      path: fixture,
+      epoch: harness.owner.welcome.epoch,
+    })
+    for (const record of await Promise.all(picked)) {
+      assert.deepEqual(
+        Object.keys(record.frame).sort(),
+        ['media', 'type'],
+        'the media frame carries the file and nothing else (T166 Safety)',
+      )
+    }
+    // `media` and the reset are two sends from one authority tick on loopback;
+    // this quiet spell is long enough for the second to land and proves no
+    // third frame follows it.
+    await settle(150)
+
+    const seen: string[] = []
+    for (const client of harness.clients) {
+      // The latest playback-bearing frame this window holds — the picking
+      // client's own included, because §5 echoes every command to its sender.
+      const bearerAt = client.frames.findLastIndex((record) => record.frame.type === 'state')
+      const latest = client.frames[bearerAt]?.frame as StateFrame | undefined
+      assert.ok(latest !== undefined, `${client.name} heard a playback-bearing frame after the pick`)
+      assert.equal(latest.type, 'state', `${client.name}: the reset is carried by a state frame`)
+      assert.equal(
+        latest.playback.position,
+        0,
+        `${client.name} holds the new film at 0, not ${latest.playback.position}`,
+      )
+      assert.equal(latest.playback.playing, false, `${client.name} holds the new film paused`)
+      assert.equal(
+        latest.revision,
+        harness.room.revision,
+        `${client.name}: the new revision travels with the reset`,
+      )
+      const mediaAt = client.frames.findIndex((record) => record.frame.type === 'media')
+      assert.ok(mediaAt !== -1 && mediaAt < bearerAt, `${client.name}: the reset follows the media frame`)
+      seen.push(
+        `${client.name}${client === harness.owner ? ' (picker)' : ''}: frame=${latest.type} ` +
+          `position=${latest.playback.position} playing=${latest.playback.playing}`,
+      )
+    }
+    console.log(`T166: ${seen.join(' | ')}; revision=${harness.room.revision}`)
+  } finally {
+    await harness.close()
+  }
+})
+
 // F2 / `docs/spec.md:315` and phase slice §6's `clampToMedia` row: every seek
 // lands in `[0, duration − 0.25]`. The room is where that rule is enforced now,
 // so the wire is the layer that proves it: a controller dragging the bar to the
@@ -661,7 +738,11 @@ test('R6: a seek to the media duration lands at duration − 0.25, never at the 
     const media = await waitFor(() => harness.room.media, 2000, 'the room holds the fixture')
     assert.equal(media.duration, 60, 'the fixture is the 60 s clip')
 
-    const hearing = harness.clients.map((client) => client.next((frame) => frame.type === 'state'))
+    // T166: the pick itself broadcasts a `state` (the reset to 0); the seek's
+    // own frame is the next one with reason `seek`.
+    const hearing = harness.clients.map((client) =>
+      client.next((frame) => frame.type === 'state' && frame.reason === 'seek'),
+    )
     harness.owner.send({ type: 'seek', position: media.duration, wasPlaying: false })
     const heard = await Promise.all(hearing)
 
@@ -701,14 +782,19 @@ test('F7: a pause at duration − 0.1 is stored and broadcast where it was press
     const media = await waitFor(() => harness.room.media, 2000, 'the room holds the fixture')
 
     // A `pause` is only applied while the room is playing, so play first and
-    // consume the `state` it broadcasts — `next()` hands a frame out once.
-    const started = harness.clients.map((client) => client.next((frame) => frame.type === 'state'))
+    // consume the `state` it broadcasts — `next()` hands a frame out once. The
+    // pick's own reset (T166, reason `media`) is skipped by naming the reason.
+    const started = harness.clients.map((client) =>
+      client.next((frame) => frame.type === 'state' && frame.reason === 'play'),
+    )
     harness.owner.send({ type: 'play', position: 10 })
     for (const record of await Promise.all(started)) {
       assert.equal((record.frame as StateFrame).reason, 'play')
     }
 
-    const hearing = harness.clients.map((client) => client.next((frame) => frame.type === 'state'))
+    const hearing = harness.clients.map((client) =>
+      client.next((frame) => frame.type === 'state' && frame.reason === 'pause'),
+    )
     harness.owner.send({ type: 'pause', position: media.duration - 0.1 })
     const heard = await Promise.all(hearing)
 
