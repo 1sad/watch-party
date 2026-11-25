@@ -47,7 +47,7 @@ each member's own window because each app has its own browser.
 a code, and nobody is told to "look up your IP".
 
 **Join.** Click the link → the app opens → **Join**, which is also the autoplay gesture (research §8). A name is
-optional: leave it blank and appear as `anonymous`, and set a name later from the roster. The app then navigates to
+optional: leave it blank and appear as `anonymous`, and set a name later by typing `/name <text>` in the chat box. The app then navigates to
 the room's page if there is one.
 
 **Lobby → play.** Room shows who is connected and who has a player. When the page is loaded and the players are
@@ -117,7 +117,7 @@ unaffected (ADR-024, §4.4).
 | R23 | A member behind an ordinary home router can host with no settings and no account | fresh install on a home network; the link works from outside |
 | R24 | Anyone granted control may change the page, the film, play/pause/seek — not only the owner | a promoted member pauses, seeks, and changes the page |
 | R25 | A member who cannot load the site can request a rescue; the owner approves it; only that member is relayed | force a load failure in one app, rescue, that member sees the film |
-| R26 | A name may be set after joining; until then the member is `anonymous` | join without typing; set the name later from the roster |
+| R26 | A name may be set after joining; until then the member is `anonymous` | join without typing; type `/name Ada` in the chat box later (R43) |
 | R27 | Rooms form without any third-party service in the path | network trace while joining shows no rendezvous service |
 | R28 | Chat can float transparently over the video in cinema mode, fading after ~3 s idle and returning on pointer movement, keypress, or a new message | switch to cinema, stop moving the mouse for 3 s, move it; then send a message from the other window |
 | R29 | The address bar has a right-click menu (cut/copy/paste/select all) and a visible Paste button **inside the field's own box**; one press of Paste fills the field **and** takes the room there, and Enter does the same | right-click → Paste inserts; Ctrl+V works; pressing Paste with the clipboard holding an address moves the room without a second press |
