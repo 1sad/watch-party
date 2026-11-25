@@ -844,6 +844,16 @@ surface here is a few hundred lines that one person can read in a sitting.
 > grant the page the `Autoplay` permission that way. The rest of the capability list stands. What does let a scheduled
 > start play (`spec.md` §14) is unmeasured; when it is measured, this line names it.
 
+> **Amended 2026-11-26 (ticket 184):** a start that fails says which of the two faults it is. No engine at all keeps
+> the missing-runtime sentence, which names both ways to get one. An engine that is installed and still will not start
+> names the profile folder it could not use and asks the person to close any other Watch Party window - the old
+> "missing or blocked" sentence named a cause that was not there (runtime 157.0.4341.46 was installed and found) and
+> left nothing to do. The window also lets go of its views before drawing that sentence, so a failed start does not
+> hold the profile the next launch asks for. And a developer profile is a profile like any other: it sits at
+> `<Debug folder>\profile-dev-<port>`, beside the binary that uses it, not in `%TEMP%` (ADR-043) - measured
+> 2026-11-26, WebView2 157 refused a user-data folder under `%TEMP%` with `0x8000FFFF` while the same folder inside
+> the app folder opened the page. The packaged copy's `<exe folder>\profile` is unchanged.
+
 **Rejected.** (a) Electron — banned twice (ADR-014, ADR-022) and it ships a browser to every friend. (b) A webview
 wrapper in Go or Rust — one binary and a smaller footprint, but no request filter, no fullscreen event and no
 pre-page script hook, so M2 would have to bypass or replace it. (c) Python with pywebview — the same wrapper limits
