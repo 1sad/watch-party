@@ -2806,6 +2806,37 @@
     min-height: 8rem;
   }
 
+  /* T180 / ADR-055: a page with **no window host to ask** decides from its own
+     CSS width, in this one media query - the fallback the amendment adds. Every
+     rule in it is keyed on `html:not([data-layout])`, so a page the host has
+     spoken to matches none of them: the attribute wins when the two disagree, at
+     every width. The rules are the narrow ones above, so a phone gets the same
+     shape the window's narrow layout has - the chat under the picture, the
+     picture bounded at 60% of the height - instead of a 380 px column beside a
+     sliver of picture. The picture's own content keeps its `min-height`, so it
+     is never zero height. */
+  @media (width < 900px) {
+    :global(html:not([data-layout])) .watch {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem 0;
+    }
+
+    :global(html:not([data-layout])) .picture {
+      flex: 0 1 auto;
+      max-height: 60%;
+    }
+
+    :global(html:not([data-layout])) .invite-bar {
+      flex: 0 0 auto;
+    }
+
+    :global(html:not([data-layout])) .room-body {
+      flex: 1 1 0;
+      min-height: 8rem;
+    }
+  }
+
   /* T99 / ADR-047 ("the host's dock wins"): the host has docked this page as the
      chat column, so the picture is the site view's and this page draws one
      column - the invite bar, then the chat, its names and the controls. These
