@@ -667,7 +667,7 @@ case where it is unexplained.
 
 ## ADR-030 — Control is a role again; personal preferences never leave the window
 
-> **Amended 2026-11-20:** room actions are now **staged** for two seconds before they take effect (ADR-032), so a
+> **Amended 2026-11-20:** room actions are now **staged** for five seconds before they take effect (ADR-032 as amended 2026-11-24: two seconds until then), so a
 > misclick costs nothing; and control survives a reconnect and follows the host role (ADR-033). Everything below
 > about *which* actions need control, and about personal choices never being broadcast, stands.
 
@@ -675,7 +675,7 @@ case where it is unexplained.
 
 - **Room actions** — play, pause, seek, choose the page, choose the film, choose the episode, and whether a
   skip is followed. These require **control**. The owner has it always; anyone may be granted it for the session,
-  and the roster shows who has it. Room actions are staged for two seconds before they reach anyone (ADR-032).
+  and the roster shows who has it. Room actions are staged for five seconds before they reach anyone (ADR-032 as amended 2026-11-24).
 - **Personal choices** — which mirror or server, sub or dub, audio track, subtitles, volume, quality, sidebar or
   cinema. These are never broadcast and never touch room state.
 
@@ -983,13 +983,13 @@ not.
 >
 > **Amended 2026-11-22 (ticket 41, what the stage shows):** while a room that holds a file stages a page, the room is
 > still a file — `page` is `null` and `media` is set — so the staged page is a window-local preview of a page the room
-> has not committed, not a second kind of media. For the stage's two seconds both views are up: the site view appears
+> has not committed, not a second kind of media. For the stage's five seconds (two when this was decided on 2026-11-22) both views are up: the site view appears
 > at once and the host docks the app view to its page-mode width, so the file's picture is briefly a 380 px column.
 > A commit clears the file (above) and the layout stays; a cancel hides the site view and the file room is as it was.
 >
 > **Amended 2026-11-23 (ADR-047, ticket 103):** the sentence "the file's picture is briefly a 380 px column" no longer
-> describes what happens. For the stage's two seconds the host docks the app view and sets `data-panel="chat"`, so the
-> page draws its chat column and no picture; the file's picture is hidden for those two seconds rather than squeezed
+> describes what happens. For the stage's five seconds (two when this was decided on 2026-11-23) the host docks the app view and sets `data-panel="chat"`, so the
+> page draws its chat column and no picture; the file's picture is hidden for that stretch rather than squeezed
 > into a column. The rest of this amendment stands.
 
 **Decision.** The window is a native frame around two WebView2 controls, with a layout the host owns:
@@ -1379,12 +1379,12 @@ and takes the room there in the same press — one press is a route, not half of
 the field's own box rather than beside it, so the bar costs no extra width. Enter and the address bar's right-click
 menu keep working as R29 says.
 
-**The host's dock wins.** When the host docks the app view as a column - website mode, and the staged-preview second
+**The host's dock wins.** When the host docks the app view as a column - website mode, and the staged-preview stretch
 while a file room previews a page - it also sets `data-panel="chat"` on the app view's root element, and the page then
 renders the chat column alone (address bar, invite bar, chat, roster, controls) with no picture. `data-panel="chat"`
 **wins over** `data-layout`: the app view is the chat column at every window width, so a narrow page-mode window must
 not draw a second, empty picture. Otherwise the page owns the picture-and-chat layout. The staged preview therefore
-keeps its two seconds (ADR-038, R31) without squeezing a picture into a 380 px column.
+keeps its five seconds (two until 2026-11-24; ADR-038, R31) without squeezing a picture into a 380 px column.
 
 **The invite bar** carries the room code, the link and one copy button, with the raw address and code one click
 inside. It is a row of the chat column, not a second panel and not a modal, and it stays visible in fullscreen. A
@@ -1455,7 +1455,7 @@ typed into the address bar:
   document (`frame is null` in `RelaySiteEvent`); anything else is dropped like an unknown kind.
 - **A controller's navigation is staged, not adopted.** When a window that holds control sees the address change to
   something other than the room's page and other than its own pending preview, it sends the ordinary `setPage` — the
-  same two-second window, Cancel and `pageCommitted` reset to position 0, paused that ADR-032 already defines. A
+  same five-second window (two until 2026-11-24, ADR-032 as amended), Cancel and `pageCommitted` reset to position 0, paused that ADR-032 already defines. A
   mis-click on a thumbnail is therefore as cheap as a mis-typed address, and nothing about the room's protocol
   changes.
 - **A guest's navigation is put back.** A window that does not hold control does not change the room. When its site
@@ -1511,7 +1511,7 @@ whitelist and the bridge's message kinds gain `pageAddress`; nothing else about 
 
 - **A page or file change is announced.** When a page change commits or a file is picked, the authority posts one
   **system line** in the chat - "Moved to <address>", "Opened <file>" - in the same list as the messages and dimmed.
-  It is posted at the commit, never at the stage: a cancelled two-second preview posts nothing.
+  It is posted at the commit, never at the stage: a cancelled five-second preview posts nothing (the stage was two seconds until 2026-11-24, ADR-032 as amended).
 - **Every message carries a small time**, drawn beside the author from the `ts` already on the wire (§4.6). No new
   field.
 - **A notice has an end.** The room's transient lines (mute for 10 s, "too many messages", "the player has not

@@ -241,7 +241,7 @@ has it and may grant it to others; the roster shows who has it; a grant survives
 host role, and anyone can claim it if nobody has it. Not the same as authority: authority is one app writing state,
 control is people being allowed to ask.
 
-**Staging** — a room change is held for two seconds before it reaches anyone. The person who made it sees the new
+**Staging** — a room change is held for five seconds before it reaches anyone (two seconds until 2026-11-24, ADR-032 as amended). The person who made it sees the new
 page immediately with a countdown; everyone else's screen does not move, and if it is cancelled they never learn it
 happened.
 
