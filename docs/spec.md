@@ -435,8 +435,8 @@ as **member → authority** and **authority → members** so it survives that ch
 
 | Dir | Type | Payload | Notes |
 | --- | --- | --- | --- |
-| m→a | `hello` | `{code, name?, lastEpoch}` | creates or joins; `name` may be absent (R26) |
-| a→m | `welcome` | `{selfId, room, members, chatTail, epoch}` | full snapshot |
+| m→a | `hello` | `{code, name?, lastEpoch, id?, proof?}` | creates or joins; `name` may be absent (R26); `id` is the page's stored seat and `proof` its secret (ADR-033 rule 1, ADR-053 as amended 2026-11-25) - a `hello` naming an occupied seat without the matching proof is seated as a fresh member, and a client with neither still joins |
+| a→m | `welcome` | `{selfId, room, members, chatTail, epoch, proof?}` | full snapshot; `proof` is that member's own seat secret (ADR-053), sent to it alone and never in a broadcast |
 | a→m | `members` | `{members}` | on join/leave/rename/offset |
 | m→a | `ping` | `{t0}` | clock sync + liveness |
 | a→m | `pong` | `{t0, t1, t2}` | see §6.1 |
@@ -453,7 +453,7 @@ as **member → authority** and **authority → members** so it survives that ch
 | m→a | `play` | `{position}` | controller (ADR-030) |
 | m→a | `pause` | `{position}` | controller |
 | m→a | `seek` | `{position, wasPlaying}` | controller; may trigger ready gate |
-| a→m | `state` | `{playback, revision, by, reason}` | broadcast to **all**, incl. sender |
+| a→m | `state` | `{playback, revision, by, reason}` | broadcast to **all**, incl. sender; a picked file's reset follows the `media` frame with `reason: 'media'` at position 0, paused (R44) |
 | a→m | `ready` | `{ready[], waiting[], deadline}` | gate progress |
 | m→a | `readyAck` | `{}` | sent when the player is ready at the seek target (§6.5) |
 | a→m | `nudge` | `{target, rate, untilAuthorityMs}` | to one client only |
@@ -463,10 +463,11 @@ as **member → authority** and **authority → members** so it survives that ch
 | m→a | `report` | `{position, readyState, buffered, rate, duration, origin, rtt}` | every 3 s while playing; duration is auto-shared; `rtt` is client-measured (§6.1) and is how the authority learns `2 × maxRtt` for the scheduled start (§6.4) |
 | m→a | `chat` | `{text}` | ≤ 2000 chars, rate-limited |
 | a→m | `chat` | `{id, name, text, ts}` | |
+| a→m | `warning` | `{code, message, retryAfterMs}` | one transient notice with its own end; `retryAfterMs` is the mute's remainder, so it goes away without a second frame (ADR-049) |
 | m→a | `rescueRequest` | `{}` | v2 (ADR-026): "I can't load the site" |
 | a→m | `rescueGrant` | `{memberId, allowed}` | v2: the owner's decision, and only that member is relayed |
 | a→m | `peers` | `{members: [{id, address}]}` | v2 mesh: who to dial directly (ADR-023) |
-| a→m | `error` | `{code, message}` | stable codes only |
+| a→m | `error` | `{code, message, retryAfterMs?}` | stable codes only; `retryAfterMs` is the mute's remainder when the code is the mute |
 
 Rules:
 

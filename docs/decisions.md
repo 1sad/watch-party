@@ -1547,8 +1547,10 @@ action. (d) A crown on the control holder - it moves when control is granted, an
 computer runs the room.
 
 **Cost.** A shared notice store with an end and a dismiss; one system line per commit; one `/name` parser shared by
-the page and its test; a presence sweep in the sidecar. No protocol field is added: `ts` and `kind: 'system'` already
-exist (§4.6).
+the page and its test; a presence sweep in the sidecar. No field is added to `chat`: `ts` and `kind: 'system'` already
+exist (§4.6). It does add `warning.retryAfterMs` (required) and `error.retryAfterMs` (optional), so a mute notice knows
+its end; the seat's `hello.id` arrived with ADR-053, and `hello.proof` with `welcome.proof` with its 2026-11-25
+amendment.
 
 ---
 
