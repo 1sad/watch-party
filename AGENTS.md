@@ -17,9 +17,12 @@ read it before believing any claim about what works. **The working record -
 specs, tickets, session notes, costs - is kept on the owner's machine and is not in this public repo**, so a fresh
 clone has the code and `docs/` only.
 
-**Rebuilt on 2026-11-16** around ADR-022 … ADR-027. **ADR-055** (the narrow layout is the page's when no window says
-otherwise) and **ADR-054** (a browser guest is a viewer like any other) are the newest, planned as **M2d "browser join"**
-for phase 7 with requirements **R51-R58** (`.scratch/phase-7-browser-join/spec.md`, kept locally). ADR-053 (a person's
+**Rebuilt on 2026-11-16** around ADR-022 … ADR-027. **ADR-058** (the relay is a visible on/off toggle in the window's
+chrome; capturing the host's picture is not a fallback), **ADR-057** (every site in a browser: an add-on for Chrome and
+Firefox from GitHub, ahead of any relay), **ADR-056** (one invitation, on every screen), **ADR-055** (the narrow layout is
+the page's when no window says otherwise) and **ADR-054** (a browser guest is a viewer like any other) are the newest,
+planned as **M2d "browser join"**
+for phase 7 with requirements **R51-R59** (`.scratch/phase-7-browser-join/spec.md`, kept locally). ADR-053 (a person's
 identity lives in a cookie the app sets on its own host) sits beside them; ADR-054 amends ADR-006 (a cooperating player
 may be driven through the API it publishes) and ADR-055 amends ADR-047 (the 380/900 threshold). Beside them sit phase
 6's **ADR-049** to **ADR-052** (the chat column is the room's log; a new film starts at zero and the put-back has a

@@ -1825,3 +1825,26 @@ Nightly with `xpinstall.signatures.required` off**, or a temporary load per sess
 promised, and the alternative is a one-off signing submission that puts nothing in a store. Chrome loads an **unpacked
 folder** from a GitHub zip in Developer mode; a `.crx` from outside the store is refused by consumer Chrome. Both are work
 items with a live check in M5, not assumptions.
+## ADR-058 - The relay is a visible choice, and capture is not a fallback
+
+**Decision.** The relay is a setting the **host** owns, shown as a **visible toggle in the window's own chrome**, in space
+the window already has (the room strip or the chat column's head) - not behind a settings screen, not a menu item, and its
+state readable without hovering. Turning it off stops the relay. What the toggle means is **reusing the site's own
+stream**; **capturing the host's picture and sound is out of scope** at this stage, and if it is ever added it is a second,
+separate toggle of its own, never the automatic fallback when reuse fails, and never on by default. The toggle's default
+state is not settled here - the owner says when M6 is planned (R59).
+
+**Why.** The owner's call on 2026-11-26, in the session that recorded R58: a feature that spends the host's upload and
+sends a picture to their friends must be visible where the room is, and it must be the cheap route they asked for, not a
+silent upgrade to a screen capture they did not ask for. Two routes with one switch would mean the switch lies about what
+the host authorised.
+
+**Rejected.** (a) One switch for both routes, or capture as the fallback - the host would authorise "relay" and get capture,
+which costs their processor, softens the quality, and cannot be captured at all on DRM-protected video. (b) A hidden
+setting or a config file - a feature that changes what leaves the machine must be legible on the same screen as the room
+code. (c) Capture now, on the grounds that it always works - it is the expensive route, it is outside what the owner asked
+for, and E6 (can a site's stream be reused) is still unmeasured; measuring it is what decides whether a second toggle is
+ever needed.
+
+**Cost.** The window's chrome carries one more control, and the two routes stay two decisions rather than one. If reuse
+proves impossible on the sites the group uses, the room says so plainly rather than quietly switching to capture.
