@@ -105,8 +105,8 @@ public sealed class MainForm : Form
     /// T93, ADR-047 ("window size"): the browser profile folder, resolved once so
     /// the window's saved rectangle sits inside the same folder the log names -
     /// <c>&lt;exe folder&gt;\profile</c> in a packaged copy (ADR-043),
-    /// <c>%TEMP%\watchparty-dev-&lt;port&gt;</c> in a dev window. Null when this
-    /// build has no profile at all, and then nothing is saved.
+    /// <c>&lt;Debug folder&gt;\profile-dev-&lt;port&gt;</c> in a dev window (T184).
+    /// Null when this build has no profile at all, and then nothing is saved.
     /// </summary>
     private string? _profileFolder;
     private bool _closing;
@@ -448,15 +448,20 @@ public sealed class MainForm : Form
         {
             // T47b: neither engine can be used. One plain sentence names both ways
             // forward; the engine line EnsureViewsAsync wrote names what was tried.
-            ShowFailure("Watch Party cannot open its browser window because its engine is missing: "
-                + "use the larger build that carries its own engine, or install the WebView2 runtime "
-                + "from Microsoft.");
+            ShowFailure(EngineSentence.MissingRuntime());
             return;
         }
         catch (Exception error)
         {
+            // T184: the engine is installed and the start still failed - a profile
+            // folder another window holds, or one this window cannot use. The
+            // sentence names the folder and what to do about it, and the failed
+            // window lets the engine go so the next launch is not refused by this
+            // one. Measured 2026-11-26: the old wording blamed a missing runtime
+            // that was installed (157.0.4341.46).
             HostLog.Write($"webview2 unavailable: {error}");
-            ShowFailure("Watch Party cannot open its browser window. The WebView2 runtime is missing or blocked.");
+            ReleaseViews();
+            ShowFailure(EngineSentence.EngineFailed(_profileFolder));
             return;
         }
 
@@ -484,10 +489,10 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
-    /// T93: the one browser profile this window opens, named in the log as
+    /// T93/T184: the one browser profile this window opens, named in the log as
     /// <c>profile:</c>. A packaged copy keeps it at <c>&lt;exe folder&gt;\profile</c>
-    /// (T46, ADR-043), and a developer build asked for a CDP port keeps its
-    /// <c>%TEMP%\watchparty-dev-&lt;port&gt;</c> folder - its own profile, because
+    /// (T46, ADR-043), and a developer build asked for a CDP port keeps
+    /// <c>&lt;Debug folder&gt;\profile-dev-&lt;port&gt;</c> - its own profile, because
     /// WebView2 refuses a second controller in the browser process another window
     /// already owns (0x8007139F), and two windows on one debugging port could not
     /// be told apart. Null when this build has no profile: no payload and no port.
@@ -504,7 +509,25 @@ public sealed class MainForm : Form
         string? debugPort = Environment.GetEnvironmentVariable("WATCHPARTY_CDP_PORT");
         if (debugPort is not null)
         {
-            return Path.Combine(Path.GetTempPath(), $"watchparty-dev-{debugPort}");
+            // T184, measured 2026-11-26: WebView2 157 would not start a controller
+            // against a user-data folder outside the app's own folder in this
+            // environment - %TEMP%\watchparty-dev-<port> answered 0x8000FFFF
+            // (E_UNEXPECTED) with nothing else running, while the same folder inside
+            // the app opened its page. The folder therefore follows ADR-043's rule
+            // for every copy, not just the packaged one: it sits beside the binary
+            // that uses it, in <Debug folder>\profile-dev-<port>.
+            string folder = Path.Combine(AppContext.BaseDirectory, $"profile-dev-{debugPort}");
+            try
+            {
+                Directory.CreateDirectory(folder);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                // The engine may still be able to create it - the start's own error
+                // is the one that says what is wrong, and it is logged (T184).
+            }
+
+            return folder;
         }
 #endif
         return null;
@@ -543,8 +566,8 @@ public sealed class MainForm : Form
         // stays signed in - a fresh pid-keyed folder every evening is what signed
         // it out. One folder is one installation, so two copies in the same folder
         // share this profile by design. A developer build asked for a CDP port
-        // keeps its %TEMP%\watchparty-dev-<port> folder (parity with every earlier
-        // ticket).
+        // keeps its <Debug folder>\profile-dev-<port> folder (T184; parity with
+        // every earlier ticket, and one profile per port).
         string? userData = ProfileFolder();
 
         if (userData is not null) HostLog.Write($"profile: {userData}");
@@ -592,6 +615,35 @@ public sealed class MainForm : Form
                 + $"evergreen={evergreen ?? "none"}; {HostLog.Ascii(error.Message)}");
             throw;
         }
+    }
+
+    /// <summary>
+    /// T184, measured 2026-11-26: a window whose browser surface never started used to keep
+    /// whatever the attempt had opened - an app view that came up while the site view was
+    /// refused keeps its controller, and a controller keeps the browser process and the
+    /// profile folder it holds. The window itself stays up so its sentence can be read, but
+    /// the views go: the launch that follows, or the next window for another person, finds
+    /// the folder free. Measured beside it: when the start fails before any controller exists
+    /// (2026-11-26, 0x8000FFFF) no msedgewebview2 process is left at all, which is why the
+    /// sentence, not this method, is what names a folder another window holds.
+    /// </summary>
+    private void ReleaseViews()
+    {
+        foreach (WebView2 view in new[] { _page, _site })
+        {
+            try
+            {
+                view.Dispose();
+            }
+            catch (Exception error)
+            {
+                // A release that does not finish is a log line, never a second failure page.
+                HostLog.Write($"engine: failed view release: {HostLog.Ascii(error.Message)}");
+            }
+        }
+
+        HostLog.Write($"engine: failed start released its views; this window no longer holds profile "
+            + $"{_profileFolder ?? "none"}");
     }
 
     private void InstallRequestFilter(WebView2 view, string name, string listNote)
