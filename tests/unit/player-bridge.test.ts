@@ -98,6 +98,9 @@ function harness(videos: FakeVideo[], options: { top?: boolean } = {}) {
   const timers: Array<{ id: number; run: () => void; live: boolean }> = []
   const hostListeners: Array<(event: { data?: unknown }) => void> = []
   const windowListeners = new Map<string, Array<(event: { type: string }) => void>>()
+  // T145/R50: the document's own listeners, which is where the gesture route
+  // lives (`pointerdown`/`keydown` on the document, capture phase).
+  const documentListeners = new Map<string, Array<(event: { type: string }) => void>>()
   let nextTimer = 1
   let clock = 1_000_000
 
@@ -149,7 +152,11 @@ function harness(videos: FakeVideo[], options: { top?: boolean } = {}) {
   const document = Object.assign(Object.create(documentPrototype), {
     readyState: 'complete',
     querySelectorAll: (selector: string) => (selector === 'video' ? videos : []),
-    addEventListener: () => {},
+    addEventListener: (name: string, listener: (event: { type: string }) => void) => {
+      const listeners = documentListeners.get(name) ?? []
+      listeners.push(listener)
+      documentListeners.set(name, listeners)
+    },
     // The fake page has no focus, which is the paused-rate case.
     hasFocus: () => false,
   })
@@ -216,6 +223,13 @@ function harness(videos: FakeVideo[], options: { top?: boolean } = {}) {
     /** T104: fire a window event the address listeners hear (popstate/hashchange). */
     windowEvent(name: string) {
       for (const listener of windowListeners.get(name) ?? []) listener({ type: name })
+    },
+    /**
+     * T171/R50: fire a document event as a person's input would - the gesture
+     * listeners the bridge registered on the document are the ones that hear it.
+     */
+    documentEvent(name: string) {
+      for (const listener of documentListeners.get(name) ?? []) listener({ type: name })
     },
     /** T104: the browser moves the address with no history call, as a back press does. */
     moveTo(href: string) {
@@ -893,6 +907,49 @@ test('replaceState, popstate and hashchange each announce the address they land 
   bridge.windowEvent('hashchange')
   assert.equal(sent().length, 4, 'a fragment change is an address change')
   assert.equal(sent().at(-1)?.href, 'https://plyr.animex.one/embed/G4#t=30')
+})
+
+// ---- T145/T171: a refused play earns one more try, and a gesture buys it (R50) ----
+
+test('T171/R50: a document pointerdown retries a refused play with why=gesture, and the room is not told', async () => {
+  // The site answers the room's play with the browser's autoplay refusal, then
+  // accepts the next attempt: exactly what a real gesture buys in a real window.
+  const element = video({ paused: true, currentTime: 12 })
+  let plays = 0
+  element.play = () => {
+    plays += 1
+    if (plays === 1) {
+      return Promise.reject(Object.assign(new Error('play() failed'), { name: 'NotAllowedError' }))
+    }
+    element.paused = false
+    return Promise.resolve()
+  }
+  const bridge = harness([element])
+  bridge.posted.length = 0
+
+  // The room's play is the attempt the page refuses (R50's first half).
+  bridge.command({ kind: 'playerCommand', href: HREF, id: 1, reason: 'play', action: 'play', revision: 31 })
+  await new Promise((settle) => setImmediate(settle))
+  assert.equal(plays, 1, 'the room asked once, so the element was played once')
+  assert.equal(eventOf(bridge.posted, 'refused').name, 'NotAllowedError', 'the refusal is reported')
+  assert.equal(element.paused, true, 'and the element is still stopped, with the retry armed')
+
+  // R50's other half: a real press in this document. This is the gesture route,
+  // not the `canplay` one and not the beat.
+  bridge.posted.length = 0
+  bridge.documentEvent('pointerdown')
+
+  assert.equal(plays, 2, 'the pointerdown made the bridge play the element a second time')
+  const retry = eventOf(bridge.posted, 'retry')
+  assert.equal(retry.why, 'gesture', 'the retry names the gesture route of R50 (why=gesture)')
+  assert.equal(element.paused, false, 'and the second attempt was accepted, so the picture is playing')
+
+  // Item 3: neither `refused` nor `retry` is a room event. The app view's one
+  // branch for these two names writes a dev line and returns (App.svelte:1260),
+  // so what leaves this frame is the one log line and nothing else.
+  assert.equal(bridge.posted.length, 1, `the gesture posted ${JSON.stringify(bridge.posted)}`)
+  assert.equal(retry.kind, 'playerEvent', 'a log event, not a room event')
+  assert.equal('action' in retry, false, 'a room command has an action; this is not one')
 })
 
 
