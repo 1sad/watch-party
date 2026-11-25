@@ -1780,3 +1780,26 @@ keeping out of it; the amendment is on that ADR.
 ---
 
 
+
+## ADR-056 - One invitation, on every screen, beside the room code
+
+**Decision.** The room has exactly **one** invitation: its plain `http://<address>:<port>/join?c=<code>` address. It is
+shown on **every** screen a person can be on - the owner's front door, an app guest's bar, a browser guest's bar - in the
+same compact shape as the room code, with one **Invite** button beside it that copies the address and says on the button
+itself that it copied (and says so in words when the browser refuses the copy). ADR-047's rule that a guest's bar carries
+no invitation is withdrawn, and R51's two labelled forms with two Copy buttons are replaced by this one link.
+
+**Why.** The owner asked for it on 2026-11-26, after seeing a browser guest's bar say "The invite link is the host's to
+share." That sentence protects nothing: a guest's own address bar already holds the same address and the same code, so the
+invitation is not a secret the owner keeps - the owner is only its first holder. And with the app learning to accept the
+plain address (R57), one link is enough for everybody: a friend with the app pastes it, a friend without clicks it.
+
+**Rejected.** (a) Two labelled forms, each with its own Copy (ticket 177's build) - two links to explain and to choose
+between, and the host has to decide which to send, or send both. (b) Keeping the guest's bar silent - a protection that is
+not there, at the cost of the one person who already has the link being the only one who can pass it on. (c) A share
+sheet or a modal - more interface than five friends need for one line of text. (d) Hiding the address behind a disclosure
+- the owner asked for it where the room code already sits, because that is the line people read aloud.
+
+**Cost.** The `watchparty://` form leaves the visible screen: an app friend now needs to paste the address into the app,
+which is why R57 comes before the gate. A guest can invite anyone, which anyone holding the address could already do, and
+chat crosses an opened port in plain text (ADR-023) - the phase's accepted risk, not a new one.
