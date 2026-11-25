@@ -154,9 +154,24 @@ screen.
 **Picture** — whatever the room is playing, drawn in the big area: our own `<video>` in file mode, the site's own
 view in website mode. The chat never covers it except in cinema mode, which is not built yet.
 
+**Embed page** - the app's own page that hosts a site player: for a YouTube address it holds the YouTube IFrame API
+player, and the room's page is that page, served by the room's host, not youtube.com (ADR-051).
+
 **Chat column** - the thin column to the picture's right: invite bar, chat, roster and the room's controls. It is 380 px
 wide, and that number is the host's (`--chat-column`), not the page's. Under 900 px of window width it moves below the
 picture instead. The address bar is not one of its rows when the page lays out the window itself - see **Address bar**.
+
+**Log line** - a dimmed system line in the chat: a committed page or file change gets one, with its time, and it makes
+the chat the room's log rather than a list of messages from people (ADR-049).
+
+**Roster count** - the `N online` row at the chat's head; it opens on a click to show the names and takes no column of
+its own (ADR-049 as amended).
+
+**Host crown** - the mark on the owner's row in the roster. A name is set by typing `/name <text>`; there is no other
+name control and no "(you)" pill.
+
+**Notice** - a warning the app raises in the chat column for a while - a mute, too many messages, a player that has not
+caught up - with its own end and a dismiss button; it never joins the log.
 
 **Address bar** - the page's own top row on the watching screen: one bar across the top holding the field, its **Paste**
 button inside the field, and **Open a file** beside it (R29, R40). It sits above the picture and the chat column, which

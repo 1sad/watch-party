@@ -273,6 +273,14 @@ One line: runs **before M3** (the user's order, 2026-11-23) - two screens, the p
 Paste button inside it and Open a file beside it, the local player's volume bar, and the room following a page's own
 navigation (ADR-047, ADR-048, R39-R41, tracked as phase 5).
 
+### M2c - The room behaves
+
+One line: ran **before M3** (2026-11-24 to 2026-11-25) - the evening's faults and the chat's interface: the chat as the
+room's log with times and a counting roster, `/name` and the host's crown, a new film at zero and a volume that survives
+a replaced player, a bounded put-back, a refused play that recovers, icon controls, YouTube in an app-owned embed, a
+resize that keeps up, and a centred front door that says the room is already open (ADR-049 to ADR-053, R42-R50, tracked
+as phase 6, `phase-6-bugfix`).
+
 ### M3 - Resilience and polish
 
 | # | Ticket | Acceptance |

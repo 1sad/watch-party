@@ -232,6 +232,9 @@ type Media =
 In website mode `media` is `null` and `page` carries the address. File mode sets `media` and clears `page`. A room
 that held a file may take a page (ADR-038, amended 2026-11-22): the page commit clears `media` in every window.
 
+A commit is a new film: `pageCommitted` and `media` both start the room at position 0, paused (R44, ADR-050). A
+viewer's volume and mute are the window's own - they survive the site replacing its player and never travel to the room.
+
 ### 4.3 Invariants
 
 1. Only **commands** (play/pause/seek) mutate `playback`. Client position reports never do.
@@ -416,6 +419,10 @@ Rules:
   them in chat; that was wrong.)
 - Chat state lives in the room, not in a member, so it survives a member reconnecting and is identical for a member
   who joins on the other front door.
+- **A notice has an end.** A warning the app raises (a mute, "too many messages", "the player has not caught up", a
+  put-back that gave up) is not a chat message and never joins the log: it carries a lifetime or a condition and a
+  dismiss button, and it leaves the column when that passes, instead of reading as a new message every time the eye
+  returns (phase 6, ticket 149).
 
 ---
 
@@ -440,7 +447,7 @@ as **member → authority** and **authority → members** so it survives that ch
 | m→a | `grantControl` | `{memberId, allow, epoch}` | controller or owner; roster shows the result; survives reconnect (ADR-033) |
 | m→a | `claimControl` | `{}` | allowed only when no online member holds control; first to arrive wins |
 | m→a | `setMedia` | `{media, epoch}` | file mode; owner only, since they serve the bytes |
-| a→m | `media` | `{media}` | the room's media, to every window including the owner's; the only way a window already in the room learns of a pick |
+| a→m | `media` | `{media}` | the room's media, to every window including the owner's; the only way a window already in the room learns of a pick; a pick starts the room at position 0, paused (R44) |
 | a→m | `authorityChanged` | `{epoch, memberId, reason}` | see §4.4 |
 | a→m | `roomOver` | `{reason}` | file mode: the owner's close ends the room (`owner_left`) — §14, ADR-024. No reconnect, no recovery; the page also prints the sentence locally when the authority's process is gone |
 | m→a | `play` | `{position}` | controller (ADR-030) |
@@ -582,6 +589,10 @@ What has to be true for this to work, and what to do when it isn't:
   replaced (mirror switch, quality change, a site rebuilding its own player), when a navigation finishes, when the site
   changes its own address without a reload (an episode picked inside the site's own page, ADR-048), and when the window
   regains focus. Without those four, a site can silently move the goalposts mid-film.
+- **A YouTube address is played by us, not by youtube.com** (R46, ADR-051). The address is reduced to one video id and
+  one watch form (ticket 156), and the room's page is the app's own embed page, served by the room's host, driving the
+  YouTube IFrame API for play, pause and seek - no account, no site page, and the room's commands go through the API
+  rather than through whatever player the site chooses to show.
 - **Peer-to-peer plumbing is blocked before the page runs**, with a one-line notice and a per-site Allow switch
   (R35, ADR-031). The video is usually not the thing being shared — on the one site that triggered it, the film came
   over plain HTTPS — but a page uploading to strangers is the only part of this design we do not control, so the
@@ -672,6 +683,8 @@ problems ADR-022 buys us out of by shipping an app instead.
 isn't already there. The address is shared with the whole room and is stored **exactly as pasted**, query string and
 fragment included (ADR-052; the owner's answer, 2026-11-24), so an episode link that lives in the query takes everyone
 to that episode - and a tokenised link is therefore copied to the room's members. The app does the same thing natively.
+One exception to *exactly as pasted*: a YouTube address is reduced to one video id and one watch form (R46, ADR-051), so
+`youtu.be`, a `?t=` start and a share link are one page for the room (ticket 156).
 
 ### 10.5 Chrome and Firefox from one codebase
 

@@ -399,6 +399,24 @@ Each was measured in this phase and each has caught a run since:
   is scrolled out of view presses `BODY`, and `cdp.mjs type` then refuses with `activeElement BODY`. Scroll it into view
   and focus it first: a real press does not scroll the page for you (ticket 117).
 
+### The prototype, a resize, and a YouTube room
+
+**The prototype** - `design/prototype.html` is a page to rearrange, not a build. Open it with
+`Start-Process design\prototype.html`, size the browser window to what the check needs, and photograph it with
+`window-shot.ps1 <file.png> <window title>`; there is nothing to run and nothing to serve.
+
+**A resize** - `scripts/resize-probe.ps1 -Pid <n> -Count 120` drives a scripted drag (ticket 151) and prints a per-move
+table: requested, actual, the gap in px, and how long the window kept moving after the last request. For the page's own
+cost, install a `PerformanceObserver` for `longtask` before the drag and read its entries after it; the host log's
+layout publishes are the other half of R47 (at most two publishes for 120 moves, the last within 300 ms).
+
+**A YouTube room** - the parser is under `npm test` (one id, one watch form). In a live run the room's page reads
+`http://<room host>/embed/youtube.html?id=<id>` - the app's own embed, never youtube.com - and the picture is driven
+through the IFrame API; read `window.__wpYouTube.now()` and `state()` in the site view. Two windows must be read
+**concurrently**, one WebSocket per window in one process evaluating both in the same tick: two `cdp.mjs eval` calls in
+a row are the readings' own age. A settled gap under 0.25 s is in step (ADR-039); a minute of samples is the phase's
+standard (ticket 164).
+
 ## 8. If something is wrong
 
 - The window opens but shows no page: read the newest log's first lines — a missing `PORT` line means the sidecar did
