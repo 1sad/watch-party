@@ -1803,3 +1803,25 @@ sheet or a modal - more interface than five friends need for one line of text. (
 **Cost.** The `watchparty://` form leaves the visible screen: an app friend now needs to paste the address into the app,
 which is why R57 comes before the gate. A guest can invite anyone, which anyone holding the address could already do, and
 chat crosses an opened port in plain text (ADR-023) - the phase's accepted risk, not a new one.
+## ADR-057 - Every site in a browser: an add-on for Chrome and Firefox from GitHub, the relay later
+
+**Decision.** R58 is delivered by an **add-on first**, and a **relay later**. The add-on ships for **both Chrome and
+Firefox from this project's GitHub releases** - not from the Chrome Web Store and not from Firefox Add-ons - and it speaks
+the same room code and the same protocol as the app's own window (ADR-044, ADR-006 as amended). The relay stays where the
+roadmap put it: a later phase (M6), for people who will not install anything.
+
+**Why.** This is the owner's call on 2026-11-26, in the same session as R58: they want every site to work in a browser, the
+add-on is the route that reaches a site's own player, and a GitHub download keeps it out of a store account (ADR-023: no
+account) and out of a review queue.
+
+**Rejected.** (a) A store listing - an account and a review, both against ADR-023, and an add-on still has to be
+downloadable from GitHub for the friends who want it tonight. (b) The relay first - it spends the host's upload every
+evening and breaks on players that refuse to be captured (E6), while the add-on costs one install per friend. (c) Chrome
+only - half the group would be left out for no saving, since the manifests and the bridge are one body of code.
+
+**Cost, and what must be measured before it is promised.** Firefox will not install an **unsigned** extension from a plain
+download: a signed `.xpi` needs a submission to Mozilla, so "install from GitHub" means **Firefox Developer Edition or
+Nightly with `xpinstall.signatures.required` off**, or a temporary load per session - the owner must know that before it is
+promised, and the alternative is a one-off signing submission that puts nothing in a store. Chrome loads an **unpacked
+folder** from a GitHub zip in Developer mode; a `.crx` from outside the store is refused by consumer Chrome. Both are work
+items with a live check in M5, not assumptions.
