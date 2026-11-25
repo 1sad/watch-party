@@ -30,6 +30,12 @@ the assumption that the owner can always host, so two things follow:
    that path the cap no longer applies. That is a service and an account, so it is the user's call, not a quiet
    substitution.
 
+**Result (2026-11-25):** a member's line **can** be reached. The owner joined another member's room from outside
+that host's network through the host's `watchparty://` invite, with the app, and reports it worked. So the per-person
+answer stands and at least one member has a working public route. What was not recorded: whether the host's route was
+a UPnP mapping or a forwarded port, and which version hosted. Untested: a plain browser opening the same room - a
+browser cannot open a `watchparty://` link at all.
+
 ### A2 — Does an embedded browser actually work for these sites?
 
 ADR-022 assumes our own window, on the engine Windows ships, can load the group's real pages, block ads, and drive
