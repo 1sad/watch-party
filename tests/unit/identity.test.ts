@@ -10,7 +10,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { decodeIdentity, encodeIdentity, mintMemberId } from '../../src/ui/identity.ts'
+import {
+  decodeIdentity,
+  encodeIdentity,
+  memberIdentity,
+  mintMemberId,
+  rememberMemberName,
+  rememberSeat,
+} from '../../src/ui/identity.ts'
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 
@@ -45,6 +52,41 @@ test('T165 / ADR-053: the seat proof rides in the same record, and an older reco
     { id: 'abc', name: null },
     'an empty proof is no proof at all',
   )
+})
+
+test('T172 / ADR-053: a welcome re-seats the record under the id and proof the room issued', () => {
+  // The record before the room answers: one id, one proof, and the name this
+  // window remembers.
+  const refusedId = 'ada00000-0000-4000-8000-000000000172'
+  const roomId = 'bob00000-0000-4000-8000-000000000172'
+  const refusedProof = 'a1'.repeat(32)
+  const roomProof = 'b2'.repeat(32)
+
+  rememberMemberName('Ada Lovelace')
+  rememberSeat({ id: refusedId, proof: refusedProof })
+  assert.deepEqual(memberIdentity(), { id: refusedId, name: 'Ada Lovelace', proof: refusedProof })
+
+  // A room that refused that row seats the connection as a fresh member and
+  // sends its id with the new row's proof in the `welcome`. The record adopts
+  // both in one write, and keeps the name it already had.
+  const seated = rememberSeat({ id: roomId, proof: roomProof })
+  assert.deepEqual(
+    memberIdentity(),
+    { id: roomId, name: 'Ada Lovelace', proof: roomProof },
+    'the stored id follows the seat the room gave, with that seat\'s own proof',
+  )
+
+  // The same seat again changes nothing, so no write happens for nothing.
+  assert.equal(
+    rememberSeat({ id: roomId, proof: roomProof }),
+    seated,
+    'a welcome that agrees with the record returns the record itself',
+  )
+
+  // A `welcome` with no proof must not drop the stored one while the id matches.
+  const quiet = rememberSeat({ id: roomId, proof: null })
+  assert.equal(quiet, seated, 'a welcome with no proof changes nothing')
+  assert.equal(quiet.proof, roomProof, 'the stored proof of the matching id survives')
 })
 
 test('T148: an absent, empty or malformed record is no identity at all', () => {

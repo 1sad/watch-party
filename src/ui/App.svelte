@@ -17,7 +17,7 @@
     type WireMember,
   } from '../shared/protocol.ts'
   import { parseJoinLink, UNREADABLE_LINK, UNREACHABLE_ROOM } from './join.ts'
-  import { memberIdentity, rememberMemberName, rememberSeatProof } from './identity.ts'
+  import { memberIdentity, rememberMemberName, rememberSeat } from './identity.ts'
   import { normalizeName } from '../shared/names.ts'
   import {
     MEASURE_TIMEOUT_MS,
@@ -708,7 +708,10 @@
       selfId = frame.selfId
       // T165 / ADR-053: the room's proof for this seat, kept in the identity
       // cookie so the next load presents it and re-seats this one row.
-      rememberSeatProof(frame.proof ?? null)
+      // T172: the proof belongs to the id the room answered with - a hello it
+      // refused is seated under a new id - so the record adopts both, or the
+      // next load quotes an id no row was issued and is refused again.
+      rememberSeat({ id: frame.selfId, proof: frame.proof ?? null })
       roomCode = frame.room.code
       members = frame.members
       // T154: the crown comes from the snapshot's owner, never `controllers`.

@@ -119,16 +119,47 @@ export function rememberMemberName(name: string | null): MemberIdentity {
 }
 
 /**
- * T165 / ADR-053: keeps the proof the room issued this seat, so the next load
- * of the same profile can present it instead of only quoting its id. The page
- * gets it in its own `welcome`; it is written only when it changes, so a
- * reconnect that re-seats the row does not rewrite the cookie for nothing.
+ * T172 / ADR-053: the seat a `welcome` answered with - the room's id for this
+ * person, and the proof it issued that seat (`null` when the frame carried
+ * none).
  */
-export function rememberSeatProof(proof: string | null): MemberIdentity {
+export interface Seat {
+  id: string
+  proof: string | null
+}
+
+/**
+ * T172 / ADR-053: the record after a `welcome` answered with `seat`, or the
+ * record itself when the answer changes nothing. A `hello` that named an
+ * occupied row without that row's proof is seated as a **fresh member**
+ * (`src/server/room.ts`), so the id and the proof can both move - and they move
+ * together, because an id kept beside another row's proof is a pair no row was
+ * ever issued, refused again on every later load. The name stays: the room
+ * keeps its own name for the row, so the window's label does not change here.
+ */
+function seatAfterWelcome(identity: MemberIdentity, seat: Seat): MemberIdentity {
+  const offered = seat.proof === null || seat.proof.length === 0 ? undefined : seat.proof
+  // A `welcome` with no proof keeps the stored one only while the id matches:
+  // a different id means the old proof belonged to the row we no longer hold.
+  const proof = offered ?? (identity.id === seat.id ? identity.proof : undefined)
+  if (identity.id === seat.id && proof === identity.proof) return identity
+  return proof === undefined
+    ? { id: seat.id, name: identity.name }
+    : { id: seat.id, name: identity.name, proof }
+}
+
+/**
+ * T172 / ADR-053: keeps the seat the room answered with in its `welcome` - the
+ * id as well as the proof - in one write, so the next load presents two values
+ * that were issued together. The proof alone was T165's half: a page the room
+ * re-seated stored the new row's proof beside the refused id, and every later
+ * load of that profile was refused again. Written only when it changes, so a
+ * reconnect that re-seats the same row does not rewrite the cookie for nothing.
+ */
+export function rememberSeat(seat: Seat): MemberIdentity {
   const identity = memberIdentity()
-  if ((identity.proof ?? null) === proof) return identity
-  const updated: MemberIdentity =
-    proof === null ? { id: identity.id, name: identity.name } : { ...identity, proof }
+  const updated = seatAfterWelcome(identity, seat)
+  if (updated === identity) return identity
   remembered = updated
   writeCookie(IDENTITY_COOKIE, encodeIdentity(updated), MAX_AGE_S)
   return updated
