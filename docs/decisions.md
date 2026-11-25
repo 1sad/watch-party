@@ -131,6 +131,12 @@ breaks on CSP, signed assets, referrer checks, and turns the box into a re-hoste
 
 **Cost.** The extension is mandatory for that feature. Non-extension users get links only.
 
+> **Amended 2026-11-26 (ADR-054):** driving a **cooperating** player is not the shape this ADR rejects. Where a site
+> publishes its own embed API for a page to call - YouTube's IFrame API is the one this app already uses (ADR-051) - an
+> app page may carry that player and drive it through the API, in the app's own window and in an ordinary browser alike.
+> Nothing here permits framing a site that offers no such API: an ordinary website is still synced by the extension, or
+> not at all, and the proxy stays rejected for the reasons above.
+
 ---
 
 ## ADR-007 — No built-in site resolver or downloader in v1
@@ -1362,6 +1368,11 @@ page scripts per pixel and the window lagged behind the mouse. On a settled resi
 element and docks its two views to match; the page's CSS reads the attribute for the **threshold** and carries no width
 number of its own for it. A page with no attribute (a browser, a test) is `wide`.
 
+> **Amended 2026-11-26 (ADR-055):** a page with **no host to ask** decides for itself from its own CSS width, and the
+> fallback threshold lives in exactly one place in the page's stylesheet. A window host's attribute, when present, still
+> wins; what changes is only who answers when nobody is there - a phone browser was `wide` before this line and got a
+> 380 px column beside a sliver of picture.
+
 **One column width, owned by the host too.** The 380 px lives in the host's dock today; a file-mode page needs the same
 number and must not spell it a second time. The host sets `--chat-column: 380px` on the app view's root element beside
 the layout attribute, and the page's CSS uses `var(--chat-column, 380px)` — the fallback is for a browser or a test,
@@ -1390,6 +1401,11 @@ keeps its five seconds (two until 2026-11-24; ADR-038, R31) without squeezing a 
 inside. It is a row of the chat column, not a second panel and not a modal, and it stays visible in fullscreen. A
 guest's bar has no link to offer (the invite payload is the host's): it shows the room code and one line saying the
 link is the host's to share.
+
+> **Amended 2026-11-26 (ADR-054, R51):** the bar carries **two invitations, not one plus a fallback** - the
+> `watchparty://` link and the plain `http://<address>:<port>/join?c=<code>` address - each labelled with who it is for
+> and each with its own Copy, because a browser cannot open the first and the person this serves has installed nothing.
+> A guest's bar is unchanged: the host shares the invitation, not the guest.
 
 **Room end.** A guest whose room ends returns to the first screen with one line saying so; the dead room's code and
 link are cleared, and the window's **entered** flag is reset, so the first screen is that machine's own front door
@@ -1703,6 +1719,63 @@ the id would move or fork with it, and a returning guest would be a stranger to 
 HTTP already assumes (ADR-023), not a new exposure. Two people sharing one Windows account share one identity, which is
 the correct answer for a program two people do not share. A copy moved to another folder keeps its `runtime` folder and
 therefore its cookie; a fresh copy is a fresh guest.
+
+---
+
+## ADR-054 - A browser guest is a viewer like any other
+
+**Decision.** A person with only a browser joins by the plain address -
+`http://<address>:<port>/join?c=<code>` - and is a member of the room on the same terms as an app guest: one seat, one
+identity (the `wp_member` cookie ADR-053 sets on the owner's host), the same chat, the same play, pause and seek. What
+such a guest can **watch** is decided by what the room can serve from the host's own machine or from a player that
+cooperates: the room's file, played by the guest's own `<video>` from `/media/<id>?c=<code>`, and the room's YouTube
+video, played by the app-owned embed page (ADR-051) carried inside the page and driven through YouTube's own API. An
+ordinary website is **not** offered to a browser guest: the picture says so in one plain sentence naming the app, and
+never "waiting for the host". The invitation therefore offers **two forms side by side** - the `watchparty://` link for
+the app, the plain address for any browser (R51) - and a reloaded browser page learns the room's code from the page the
+sidecar serves, because `/discovery` is loopback-only and the `wp_key` cookie is HttpOnly.
+
+**Why.** A `watchparty://` link is nothing to a browser, and the raw address already exists in the invite composer, so
+the door has been half-open since phase 4 without anyone being told which form to send to whom. The person this serves
+is the seed's persona: a friend who will not install anything for one evening. What a browser cannot do is the limit
+ADR-006 recorded, now with the reason visible: the app's own window syncs a website because the **window host injects
+the bridge into its site view**, which no browser lets a page do; a website is driven either by the extension (M5) or by
+a relay (M6), both already on the roadmap, so nothing here reopens them. A player that publishes an embed API is the one
+exception, and YouTube is the one this app depends on.
+
+**Rejected.** (a) The HTML-rewriting proxy, to make a website same-origin with the injected bridge - ADR-006's
+rejections hold: CSP, signed assets, referrer checks, and re-hosting other people's pages from a friend's uplink. (b) A
+second invitation form that carries a token instead of the code - two things for a person to keep, when the code is
+already the key (ADR-044). (c) Telling the browser guest to install the app - that is the premise this phase exists to
+remove. (d) Making the embed work only in the app's own window - a browser guest would then see nothing in the room's
+commonest evening.
+
+**Cost / risk.** There are now two kinds of viewer, and the record must say which one a `Checked by` line was measured
+with. A browser guest gets no ad filtering and no fullscreen interception, so their picture obeys their browser's rules
+(the seed accepts this). A YouTube room in a browser needs a message path the window host never needed. The copy button
+may be refused by a browser on a plain page (R51). A browser guest's cookie jar is a different scope from the host's, so
+one person on two devices is two seats - the room counts devices, as it always has.
+
+## ADR-055 - The narrow layout is the page's when no window says otherwise
+
+**Decision.** The layout's numbers keep one owner - the window host's `data-layout` and `--chat-column` when they are set
+(ADR-047) - and gain one **fallback owner**: the page's own stylesheet, from its own CSS width, in exactly one place.
+Above the threshold the chat is a 380 px column beside the picture; below it the chat goes under the picture and the
+picture keeps usable height. A page that has a host obeys the host, even when the two disagree.
+
+**Why.** A browser guest has no window host at all, and a phone is 360-420 CSS px wide. ADR-047's rule that a page with
+no attribute is `wide` was written for a test, not for a phone, and it draws a 380 px chat beside a sliver of picture -
+the one shape this phase cannot ship. The alternative - the sidecar guessing the client width - would put a second
+layout authority on the server, further from the pixels than the page is.
+
+**Rejected.** (a) A `navigator.userAgent` phone check - a guess about the device where the page already knows its own
+width. (b) A second threshold value tuned for phones - two numbers to keep in step, and the failure it prevents is
+already covered by the first. (c) Dropping the host's attribute and letting the page always decide - ADR-047's drag
+measurement (a settled resize, one publish) is why the host speaks at all.
+
+**Cost.** Two authorities, ordered, instead of one: a reviewer must check that the host's attribute still wins and that
+the fallback number appears once. The page's stylesheet now carries a width number, which ADR-047 spent a paragraph
+keeping out of it; the amendment is on that ADR.
 
 ---
 

@@ -179,7 +179,14 @@ makes the invite bar the column's first row under it. When the host docks the ap
 room - the same row is that 380 px column's top row, and the invite bar follows it (ADR-047).
 
 **Invite bar** — the chat column's first row: the room code, the invite link and one Copy button, with the raw address
-and code one click inside. Always reachable while watching, including in fullscreen.
+and code one click inside. Always reachable while watching, including in fullscreen. From R51 it carries **two forms**:
+the `watchparty://` link for the app and the plain `http://<address>:<port>/join?c=<code>` address for any browser
+(ADR-054).
+
+**Browser guest** — a member who is watching through an ordinary browser, not the app's window: they opened the plain
+address from the invite bar, they hold a seat through the same cookie an app guest does, and they have no window host,
+so no site view, no Open a file and no app-owned fullscreen. They watch the room's file and the room's YouTube video;
+a room on an ordinary website says in one line that this page needs the app (ADR-054).
 
 **Watching route** - one of the two ways a room gets something to play: paste a page address (the address bar) or
 **Open a file**. In the owner's window both are on the watching screen at all times, and neither has to be closed to

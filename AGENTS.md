@@ -17,7 +17,13 @@ read it before believing any claim about what works. **The working record -
 specs, tickets, session notes, costs - is kept on the owner's machine and is not in this public repo**, so a fresh
 clone has the code and `docs/` only.
 
-**Rebuilt on 2026-11-16** around ADR-022 … ADR-027. **ADR-053** (a person's identity lives in a cookie the app sets on its own host) is the newest; phase 6's **ADR-049** to **ADR-052** sit beside it (the chat column is the room's log; a new film starts at zero and the put-back has a bound; YouTube plays in a player the app owns; a pasted page keeps its query and its fragment). Before them **ADR-048** (the room follows a page's own navigation, not only the address bar) amends ADR-047 (two screens; the picture fills the window with the chat beside it) amends ADR-038, and before it **ADR-046** (a joined guest's media URL carries the room code), **ADR-045** (the UPnP search leaves
+**Rebuilt on 2026-11-16** around ADR-022 … ADR-027. **ADR-055** (the narrow layout is the page's when no window says
+otherwise) and **ADR-054** (a browser guest is a viewer like any other) are the newest, planned as **M2d "browser join"**
+for phase 7 with requirements **R51-R56** (`.scratch/phase-7-browser-join/spec.md`, kept locally). ADR-053 (a person's
+identity lives in a cookie the app sets on its own host) sits beside them; ADR-054 amends ADR-006 (a cooperating player
+may be driven through the API it publishes) and ADR-055 amends ADR-047 (the 380/900 threshold). Beside them sit phase
+6's **ADR-049** to **ADR-052** (the chat column is the room's log; a new film starts at zero and the put-back has a
+bound; YouTube plays in a player the app owns; a pasted page keeps its query and its fragment). Before them **ADR-048** (the room follows a page's own navigation, not only the address bar) amends ADR-047 (two screens; the picture fills the window with the chat beside it) amends ADR-038, and before it **ADR-046** (a joined guest's media URL carries the room code), **ADR-045** (the UPnP search leaves
 UDP 1900) and **ADR-044** (every request is gated on the code); **ADR-043** (the portable copy is its folder, and nothing leaves
 it) amends ADR-042; ADR-041 (one portable executable; the browser is the only dependency outside
 it), ADR-040 (the ad list is share-alike data), ADR-038 (two views), ADR-039 (a quarter-second deadband) and ADR-034
