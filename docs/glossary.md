@@ -228,12 +228,14 @@ only while at least one app is in it.
 
 **Owner** — the member whose app is serving a local file. Never changes hands; if they leave, that room ends.
 
-**Seat** — one person's place in the room, held under a **member id** the room issues. A window that comes back
-presents that id together with its **seat proof**; an id presented without the proof that was issued with it is
+**Seat** — one person's place in the room, held under a member id the person's own page mints once and the room
+adopts (ADR-053); the room mints one itself only when a `hello` names none or a claim is refused. A window that comes
+back presents that id together with its **seat proof**; an id presented without the proof that was issued with it is
 refused, and the room seats that connection as a fresh member instead (ADR-033 rule 1, ADR-053).
 
 **Seat proof** — the secret the room hands a connection in its `welcome`, stored beside the member id in the app's own
-cookie and sent back in `hello`. Only the page that was given it can claim that seat (ADR-053 as amended 2026-11-25).
+cookie and sent back in `hello`. Only the profile it was issued to can claim that seat; a second window of the same
+profile presenting the same pair is seated on the same row (ADR-053 as amended 2026-11-25).
 
 **Host** — whoever currently holds **authority** (see below). The word deliberately does not mean "the person in
 charge": the host is only the app that is currently writing the room's state, and holding it is not permission to
