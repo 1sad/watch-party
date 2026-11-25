@@ -17,7 +17,7 @@
     type WireMember,
   } from '../shared/protocol.ts'
   import { parseJoinLink, UNREADABLE_LINK, UNREACHABLE_ROOM } from './join.ts'
-  import { memberIdentity, rememberMemberName } from './identity.ts'
+  import { memberIdentity, rememberMemberName, rememberSeatProof } from './identity.ts'
   import { normalizeName } from '../shared/names.ts'
   import {
     MEASURE_TIMEOUT_MS,
@@ -508,7 +508,18 @@
       // T148 / ADR-033 rule 1: the stored id is this person's seat, so a
       // reconnect or a second load of the same profile reuses the row instead
       // of adding a second name (a scripted client sends none and still joins).
-      opened.send(JSON.stringify({ type: 'hello', code, id: memberIdentity().id }))
+      // T165 / ADR-053: the id is only a quote without the proof the room issued
+      // this seat, kept in the same cookie - so a guest who read the owner's id
+      // out of `members` cannot present it as their own.
+      const identity = memberIdentity()
+      opened.send(
+        JSON.stringify({
+          type: 'hello',
+          code,
+          id: identity.id,
+          ...(identity.proof === undefined ? {} : { proof: identity.proof }),
+        }),
+      )
     }
     opened.onmessage = (event: MessageEvent) => {
       if (opened !== socket) return
@@ -695,6 +706,9 @@
   function apply(frame: ServerFrame): void {
     if (frame.type === 'welcome') {
       selfId = frame.selfId
+      // T165 / ADR-053: the room's proof for this seat, kept in the identity
+      // cookie so the next load presents it and re-seats this one row.
+      rememberSeatProof(frame.proof ?? null)
       roomCode = frame.room.code
       members = frame.members
       // T154: the crown comes from the snapshot's owner, never `controllers`.

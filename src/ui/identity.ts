@@ -22,6 +22,14 @@ export interface MemberIdentity {
   id: string
   /** The last name this window set, or `null` while it is `anonymous` (R26). */
   name: string | null
+  /**
+   * T165 / ADR-053: the proof the room issued this seat on its first join, kept
+   * beside the id so the next load can prove the row instead of only quoting
+   * its id. Absent in a record written before the proof existed, and on a first
+   * load - `hello` then sends only the id, and the room issues a proof with the
+   * `welcome` that seats it.
+   */
+  proof?: string
 }
 
 /**
@@ -49,7 +57,10 @@ export function decodeIdentity(raw: string | null): MemberIdentity | null {
     const id = record.id
     if (typeof id !== 'string' || id.trim().length === 0) return null
     const name = typeof record.name === 'string' && record.name.length > 0 ? record.name : null
-    return { id, name }
+    // T165: the seat proof rides in the same record; a record from before it
+    // existed simply has none, and the next `welcome` supplies one.
+    const proof = typeof record.proof === 'string' && record.proof.length > 0 ? record.proof : undefined
+    return proof === undefined ? { id, name } : { id, name, proof }
   } catch {
     return null
   }
@@ -105,4 +116,20 @@ export function rememberMemberName(name: string | null): MemberIdentity {
   remembered = identity
   writeCookie(IDENTITY_COOKIE, encodeIdentity(identity), MAX_AGE_S)
   return identity
+}
+
+/**
+ * T165 / ADR-053: keeps the proof the room issued this seat, so the next load
+ * of the same profile can present it instead of only quoting its id. The page
+ * gets it in its own `welcome`; it is written only when it changes, so a
+ * reconnect that re-seats the row does not rewrite the cookie for nothing.
+ */
+export function rememberSeatProof(proof: string | null): MemberIdentity {
+  const identity = memberIdentity()
+  if ((identity.proof ?? null) === proof) return identity
+  const updated: MemberIdentity =
+    proof === null ? { id: identity.id, name: identity.name } : { ...identity, proof }
+  remembered = updated
+  writeCookie(IDENTITY_COOKIE, encodeIdentity(updated), MAX_AGE_S)
+  return updated
 }

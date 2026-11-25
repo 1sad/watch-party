@@ -182,6 +182,14 @@ export interface HelloFrame {
    * holds, the join re-seats that row instead of adding a second one.
    */
   id?: string
+  /**
+   * T165 / ADR-053: the proof the room issued this page when it first took its
+   * seat, and sent back in that page's own `welcome`. It is the only thing that
+   * turns `id` from a quote into a claim: every member's id is broadcast, this
+   * value reaches nobody but the page it was issued to. Absent or wrong, a
+   * hello naming an occupied row is a new member, never that row.
+   */
+  proof?: string
   lastEpoch?: number
 }
 
@@ -347,6 +355,14 @@ export interface WelcomeFrame {
   members: WireMember[]
   chatTail: ChatMessage[]
   epoch: number
+  /**
+   * T165 / ADR-053: this member's seat proof, and nobody else's. It goes only to
+   * the connection that is being seated, so the page can keep it in its cookie
+   * and present it on its next load - which is what makes a reconnect the same
+   * person rather than a second one quoting the id. It appears in no `members`
+   * frame, no chat line, no `state`, and nothing else here changed shape.
+   */
+  proof?: string
 }
 
 /**

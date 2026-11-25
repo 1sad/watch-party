@@ -1,3 +1,4 @@
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { isAbsolute } from 'node:path'
 
 import type {
@@ -77,6 +78,13 @@ export interface RoomState {
   /** Monotonic on every mutation (§4.3 invariant 2). */
   revision: number
   members: Map<string, Member>
+  /**
+   * T165 / ADR-053: the proof each row was issued, keyed by member id. It is
+   * beside `members` rather than on the row because `wireMembers()` spreads a
+   * row onto the wire - anything on `Member` reaches every other member, and
+   * this value must reach nobody but the page it was issued to.
+   */
+  seatProofs: Map<string, string>
   chat: ChatMessage[]
   /** Monotonic across the room's chat, so ids sort the way arrival ordered them. */
   chatSeq: number
@@ -96,12 +104,46 @@ export function createRoom(code: string, now: () => number = Date.now): RoomStat
     playback: { playing: false, position: 0, updatedAt: now(), rate: 1 },
     revision: 0,
     members: new Map(),
+    seatProofs: new Map(),
     chat: [],
     chatSeq: 0,
   }
 }
 
-export type JoinResult = { ok: true; member: Member } | { ok: false; code: ErrorCode }
+export type JoinResult =
+  | {
+      ok: true
+      member: Member
+      /** T165: the proof this seat is and stays proved by; `welcome` carries it. */
+      proof: string
+      /** T165: the hello named a row it could not prove, so it is a new person. */
+      seatClaimRefused: boolean
+    }
+  | { ok: false; code: ErrorCode }
+
+export interface JoinOptions {
+  isLocal: boolean
+  /**
+   * T165: the value the page presented with its id. Never logged, never echoed
+   * to anyone but the connection that presented it.
+   */
+  proof?: string
+  /** Where a fresh seat's id comes from; only a test pins this. */
+  mintId?: () => string
+}
+
+/** A 256-bit secret, hex, the one value that makes an id a claim rather than a quote. */
+export function mintSeatProof(): string {
+  return randomBytes(32).toString('hex')
+}
+
+/** Constant-time over equal lengths, so a wrong proof cannot be narrowed by timing. */
+function sameProof(issued: string, presented: string): boolean {
+  const left = Buffer.from(issued, 'utf8')
+  const right = Buffer.from(presented, 'utf8')
+  if (left.length === 0 || left.length !== right.length) return false
+  return timingSafeEqual(left, right)
+}
 
 /**
  * Adds the member, and settles the owner seat the first time the window's own
@@ -115,31 +157,49 @@ export type JoinResult = { ok: true; member: Member } | { ok: false; code: Error
  * connection - so a reconnect never adds a second name to the roster or the
  * count. The socket half of the replacement (closing the older connection) is
  * `socket.ts`'s, because the room has no sockets.
+ *
+ * T165 / ADR-053: the id alone is not enough, because every member's page holds
+ * every other member's id (it is broadcast in `members`). A join re-seats an
+ * existing row **only if it presents that row's proof** - the value this room
+ * issued to the page on its first join and sent in that page's own `welcome`.
+ * A hello naming a row with no proof, or with another row's proof, is a
+ * different person and is seated as a fresh row under a new id; it never
+ * becomes the row, never gains its control and never displaces its socket.
  */
 export function joinRoom(
   room: RoomState,
   member: Member,
-  options: { isLocal: boolean },
+  options: JoinOptions,
 ): JoinResult {
+  const presented = typeof options.proof === 'string' ? options.proof.trim() : ''
   const existing = room.members.get(member.id)
+  let seatClaimRefused = false
   if (existing !== undefined) {
-    existing.status = member.status
-    existing.lastSeen = member.lastSeen
-    existing.transport = member.transport
-    room.revision += 1
-    return { ok: true, member: existing }
+    const issued = room.seatProofs.get(member.id) ?? ''
+    if (sameProof(issued, presented)) {
+      existing.status = member.status
+      existing.lastSeen = member.lastSeen
+      existing.transport = member.transport
+      room.revision += 1
+      return { ok: true, member: existing, proof: issued, seatClaimRefused: false }
+    }
+    // The row stays exactly as it is; this connection becomes somebody new.
+    seatClaimRefused = true
+    member = { ...member, id: options.mintId === undefined ? randomUUID() : options.mintId() }
   }
 
   if (room.members.size >= MAX_MEMBERS) return { ok: false, code: 'room_full' }
 
+  const proof = mintSeatProof()
   room.members.set(member.id, member)
+  room.seatProofs.set(member.id, proof)
   if (room.owner === null && options.isLocal) {
     room.owner = member.id
     room.authority = { memberId: member.id, epoch: room.authority.epoch }
     room.controllers = [member.id]
   }
   room.revision += 1
-  return { ok: true, member }
+  return { ok: true, member, proof, seatClaimRefused }
 }
 
 export function renameMember(

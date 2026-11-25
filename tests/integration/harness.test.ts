@@ -825,6 +825,10 @@ test('T148/ADR-033: a second hello with the same member id re-seats the row, kee
     assert.equal(first.welcome.selfId, ADA, 'the id the page sent is the seat')
     assert.equal(harness.room.members.size, 1, 'one row before the second hello')
     assert.deepEqual(harness.room.controllers, [ADA], 'Ada holds control before the rejoin')
+    // T165: the same profile's next load proves the seat with the value the room
+    // issued to the first one. Without it the id alone is a quote, not a claim.
+    const proof = first.welcome.proof
+    assert.equal(typeof proof, 'string', 'the room issued Ada a seat proof on her first join')
 
     let closeCode = -1
     let closeReason = ''
@@ -833,13 +837,14 @@ test('T148/ADR-033: a second hello with the same member id re-seats the row, kee
       closeReason = String(reason)
     })
 
-    const second = await harness.join('Ada', { id: ADA })
+    const second = await harness.join('Ada', { id: ADA, proof })
 
     await waitFor(() => closeCode !== -1, 2000, 'the older socket was closed')
     assert.equal(closeCode, SEAT_REUSED_CLOSE_CODE, 'the older socket got the seat-reused code')
     assert.equal(closeReason, SEAT_REUSED_CLOSE_REASON, 'and a reason a person can read')
 
     assert.equal(second.welcome.selfId, ADA, 'the second socket holds the same seat')
+    assert.equal(second.welcome.proof, proof, 'the proof the seat was issued is the one it keeps')
     assert.equal(harness.room.members.size, 1, 'one row after the second hello, never two')
     const row = harness.room.members.get(ADA)
     assert.equal(row?.name, 'Ada', 'the name the row already had')
@@ -862,6 +867,77 @@ test('T148/ADR-033: a second hello with the same member id re-seats the row, kee
       'the rejoin broadcast a one-row roster',
     )
     assert.deepEqual(roster.map((member) => member.id), [ADA])
+    console.log(
+      `T148/T165: reconnect rows ${harness.room.members.size}; welcome.selfId ${second.welcome.selfId}; ` +
+        `proof kept ${second.welcome.proof === proof}; older socket close ${closeCode} ${closeReason}`,
+    )
+  } finally {
+    await harness.close()
+  }
+})
+
+// T165 / ADR-053: the id every member's page already holds is broadcast in
+// `members`, so a guest - or anyone on the path, since the room is plain HTTP -
+// can read the owner's id and quote it. A quote is not a claim: a connection
+// naming an occupied seat without the proof the room issued that page is a new
+// member, and the owner keeps their row, their control and their socket.
+test('T165/ADR-053: a hello naming the owner id with no proof is a new member, never the owner', async () => {
+  const harness = await startHarness({ clients: 0 })
+  try {
+    const ADA = 'ada00000-0000-4000-8000-000000000165'
+    const owner = await harness.join('Ada', { id: ADA })
+    assert.equal(owner.welcome.selfId, ADA, 'the owner is seated under her own id')
+    assert.deepEqual(harness.room.controllers, [ADA], 'and holds control')
+
+    const quoted = await harness.join('Quoted', { id: ADA })
+
+    assert.notEqual(quoted.welcome.selfId, ADA, 'the quoting connection is not the owner')
+    assert.equal(harness.room.members.size, 2, 'the quote made a second row, not the owner one')
+    assert.deepEqual(harness.room.controllers, [ADA], 'the controllers are unchanged')
+    assert.equal(harness.room.owner, ADA, 'and the owner seat did not move')
+    assert.equal(owner.socket.readyState, WebSocket.OPEN, 'the owner socket is still open')
+    console.log(
+      `T165: quoted hello named ${ADA} with no proof -> welcome.selfId ${quoted.welcome.selfId}; ` +
+        `controllers ${JSON.stringify(harness.room.controllers)}; owner readyState ${owner.socket.readyState}`,
+    )
+  } finally {
+    await harness.close()
+  }
+})
+
+// T165 item 3: the proof is per seat, so a member's own proof presented for
+// someone else's row is worth nothing - it is refused exactly as no proof is.
+// The presented value carries a newline on purpose: `AGENTS.md` rule 10, and the
+// log must stay one fixed sentence whatever the wire said.
+test('T165/ADR-053: a proof for another member\u2019s seat does not take it', async () => {
+  const lines: string[] = []
+  const harness = await startHarness({ clients: 0, log: (line) => lines.push(line) })
+  try {
+    const ADA = 'ada00000-0000-4000-8000-00000000016a'
+    const BEA = 'bea00000-0000-4000-8000-00000000016b'
+    const ada = await harness.join('Ada', { id: ADA })
+    const bea = await harness.join('Bea', { id: BEA })
+    assert.equal(typeof bea.welcome.proof, 'string', 'Bea was issued a proof of her own')
+
+    const forged = `${ada.welcome.proof ?? 'no-proof-at-all'}\n[room] reseated id=forged`
+    const crossed = await harness.join('Crossed', { id: BEA, proof: forged })
+
+    assert.notEqual(crossed.welcome.selfId, BEA, 'Ada\u2019s proof is not Bea\u2019s seat')
+    assert.notEqual(crossed.welcome.selfId, ADA, 'and it is not Ada\u2019s either')
+    assert.equal(harness.room.members.size, 3, 'a third row, never a takeover')
+    assert.equal(bea.socket.readyState, WebSocket.OPEN, 'Bea was not displaced')
+    assert.deepEqual(harness.room.controllers, [ADA], 'the controllers are unchanged')
+    assert.equal(
+      lines.some((line) => line.includes('\n') || line.includes('no-proof-at-all') || line.includes('forged')),
+      false,
+      'no rejected id or proof reaches the log, one fixed sentence does',
+    )
+    assert.equal(
+      lines.filter((line) => line.startsWith('[room] seat claim refused')).length,
+      1,
+      'the refusal is logged once, as a fixed sentence',
+    )
+    console.log(`T165: crossed welcome.selfId ${crossed.welcome.selfId}; log line: ${lines[lines.length - 1]}`)
   } finally {
     await harness.close()
   }

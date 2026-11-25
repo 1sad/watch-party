@@ -28,6 +28,25 @@ test('T148: the identity record round-trips through the cookie value it is store
   assert.deepEqual(decodeIdentity(decodeURIComponent(value)), awkward)
 })
 
+test('T165 / ADR-053: the seat proof rides in the same record, and an older record has none', () => {
+  const proved = {
+    id: 'ada00000-0000-4000-8000-000000000165',
+    name: 'Ada Lovelace',
+    proof: 'ab'.repeat(32),
+  }
+  assert.deepEqual(decodeIdentity(decodeURIComponent(encodeIdentity(proved))), proved)
+  assert.deepEqual(
+    decodeIdentity('{"id":"abc"}'),
+    { id: 'abc', name: null },
+    'a record written before the proof existed still carries an id and no proof',
+  )
+  assert.deepEqual(
+    decodeIdentity('{"id":"abc","proof":""}'),
+    { id: 'abc', name: null },
+    'an empty proof is no proof at all',
+  )
+})
+
 test('T148: an absent, empty or malformed record is no identity at all', () => {
   assert.equal(decodeIdentity(null), null)
   assert.equal(decodeIdentity(''), null)

@@ -44,6 +44,12 @@ export interface ClientOptions {
    * authority mints one, which is what every older case asserts.
    */
   id?: string
+  /**
+   * T165: the seat proof the room issued this member's page on its first join.
+   * Absent means "I hold no proof", which is what a guest quoting an id it read
+   * out of `members` has - and that join must never inherit the row.
+   */
+  proof?: string
 }
 
 const DEFAULT_TIMEOUT_MS = 3000
@@ -150,6 +156,7 @@ export class ScriptedClient {
         code,
         ...(name === undefined ? {} : { name }),
         ...(options.id === undefined ? {} : { id: options.id }),
+        ...(options.proof === undefined ? {} : { proof: options.proof }),
       }),
     )
 

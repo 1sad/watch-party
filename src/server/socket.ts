@@ -395,7 +395,11 @@ export function attachRoomSocket(
     // T148 / ADR-033 rule 1: the page's stored id chooses the seat. A client
     // that sends none - a scripted one, or an older page - is a new person and
     // gets a fresh row, exactly as before the field existed.
+    // T165 / ADR-053: the id is a quote unless it arrives with the proof the room
+    // issued that page (`members` broadcasts every id, so an id is public). A
+    // hello naming an occupied row without its proof is seated as a new member.
     const requestedId = typeof frame.id === 'string' ? frame.id.trim() : ''
+    const presentedProof = typeof frame.proof === 'string' ? frame.proof : ''
     const candidate: Member = {
       id: requestedId.length === 0 ? newId() : requestedId,
       name: normalizeName(frame.name),
@@ -411,10 +415,20 @@ export function attachRoomSocket(
       address: null,
     }
 
-    const result = joinRoom(room, candidate, { isLocal: isLocal(remoteAddress) })
+    const result = joinRoom(room, candidate, {
+      isLocal: isLocal(remoteAddress),
+      ...(presentedProof.length === 0 ? {} : { proof: presentedProof }),
+      mintId: newId,
+    })
     if (!result.ok) {
       fail(socket, result.code)
       return
+    }
+    if (result.seatClaimRefused) {
+      // T165: the refused id and the presented proof are data from the wire, and
+      // a newline in either would forge a log line (AGENTS.md rule 10), so the
+      // line is fixed and names neither.
+      log('[room] seat claim refused: a hello named an occupied seat without its proof')
     }
 
     // T148: one row, one connection. The socket the row pointed at is dropped
@@ -438,6 +452,9 @@ export function attachRoomSocket(
       // §4.6: the ring buffer itself, already trimmed to the last 100 by `postChat`.
       chatTail: room.chat.slice(),
       epoch: room.authority.epoch,
+      // T165 / ADR-053: this connection's own proof, so the page can keep it in
+      // its cookie and prove the seat on its next load. Never broadcast.
+      proof: result.proof,
     })
     // §4.3 invariant 9 has no separate frame here: the snapshot *is* the
     // command, and `room.revision` travels with it. A newcomer's arrival must
