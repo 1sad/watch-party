@@ -19,7 +19,7 @@ clone has the code and `docs/` only.
 
 **Rebuilt on 2026-11-16** around ADR-022 … ADR-027. **ADR-055** (the narrow layout is the page's when no window says
 otherwise) and **ADR-054** (a browser guest is a viewer like any other) are the newest, planned as **M2d "browser join"**
-for phase 7 with requirements **R51-R57** (`.scratch/phase-7-browser-join/spec.md`, kept locally). ADR-053 (a person's
+for phase 7 with requirements **R51-R58** (`.scratch/phase-7-browser-join/spec.md`, kept locally). ADR-053 (a person's
 identity lives in a cookie the app sets on its own host) sits beside them; ADR-054 amends ADR-006 (a cooperating player
 may be driven through the API it publishes) and ADR-055 amends ADR-047 (the 380/900 threshold). Beside them sit phase
 6's **ADR-049** to **ADR-052** (the chat column is the room's log; a new film starts at zero and the put-back has a
