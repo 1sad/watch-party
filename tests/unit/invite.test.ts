@@ -2,6 +2,38 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { buildInviteLinks } from '../../src/server/invite.ts'
+import { parseJoinLink } from '../../src/ui/join.ts'
+
+// T177 / R51: one room code, two first-class invitations. The app form is
+// checked through the app's own link parser, so "opens a window with host, port
+// and code" is the claim the app itself makes of it.
+test('one code has both invitations: the app link and the plain browser address', () => {
+  const links = buildInviteLinks({
+    kind: 'ok',
+    externalIp: '203.0.113.9',
+    mappedPort: 62000,
+    lanIp: '192.168.10.44',
+    localPort: 52341,
+    code: 'ABC234',
+  })
+  assert.ok(links)
+
+  // The app form: a watchparty:// link the app parses into a window's target.
+  const app = parseJoinLink(links.primary)
+  assert.ok(app, 'the app form is a link the app can open')
+  assert.equal(app.host, '203.0.113.9')
+  assert.equal(app.port, 62000)
+  assert.equal(app.code, 'ABC234')
+
+  // The plain form: an http:// address a browser can open, same code.
+  const plain = new URL(links.raw)
+  assert.equal(plain.protocol, 'http:')
+  assert.equal(plain.hostname, '203.0.113.9')
+  assert.equal(plain.port, '62000')
+  assert.equal(plain.pathname, '/join')
+  assert.equal(plain.searchParams.get('c'), 'ABC234')
+  assert.ok(links.raw.endsWith('/join?c=ABC234'), 'the browser address ends in the code')
+})
 
 test('a cgnat verdict copies the same-network link, which carries the LAN address', () => {
   const links = buildInviteLinks({

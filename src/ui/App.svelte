@@ -18,6 +18,12 @@
   } from '../shared/protocol.ts'
   import { parseJoinLink, UNREADABLE_LINK, UNREACHABLE_ROOM } from './join.ts'
   import { ROOM_CODE_META, servedRoomCode } from './served-code.ts'
+  import { BOOT_SENTENCE_ID } from './boot-sentence.ts'
+  import {
+    copyTextToClipboard,
+    readTextFromClipboard,
+    type InviteForm,
+  } from './clipboard.ts'
   import { memberIdentity, rememberMemberName, rememberSeat } from './identity.ts'
   import { normalizeName } from '../shared/names.ts'
   import {
@@ -128,6 +134,8 @@
   }
 
   let payload = $state<StartPayload | null>(null)
+  /** T177 / R51: the two invitations the owner offers, one composer, one shape. */
+  const invite = $derived(payload?.invite ?? null)
   /**
    * T64: this window joined from a link (or the box), so the room it shows is
    * someone else's. `/discovery` no longer answers a guest (`app.ts`), and a
@@ -135,9 +143,13 @@
    */
   let fromLink = $state(false)
   let unreachable = $state(false)
-  let copied = $state(false)
-  /** T97: the invite bar's disclosure - the raw address/code fallback, opened one click in. */
-  let inviteOpen = $state(false)
+  /**
+   * T177 / R51: which invitation's Copy actually copied, and what a refused copy
+   * says. `copied` is a form, never a plain boolean: two buttons share this page
+   * and only the one that wrote may show "Copied".
+   */
+  let copied = $state<InviteForm | null>(null)
+  let copyNotice = $state<string | null>(null)
   let timer: ReturnType<typeof setTimeout> | undefined
 
   // The room on screen is only ever what the last frame said (T3b item 4):
@@ -1889,15 +1901,15 @@
    */
   async function pasteAddress(): Promise<void> {
     pageNotice = null
-    let text: string
-    try {
-      text = await navigator.clipboard.readText()
-    } catch (error) {
-      pageNotice = 'This window could not read the clipboard — press Ctrl+V in the field instead.'
-      if (dev) console.info(`[page] clipboard read failed: ${String(error)}`)
+    const result = await readTextFromClipboard()
+    if (result.text === null) {
+      // T177 / R51: the guard's own sentence, and it names the browser - a guest
+      // has no window host here, so blaming "this window" was never true.
+      pageNotice = result.notice
       addressInput?.focus()
       return
     }
+    const text = result.text
     if (text.trim().length === 0) {
       pageNotice = 'The clipboard has nothing to paste.'
       addressInput?.focus()
@@ -1983,24 +1995,29 @@
     }
   }
 
-  async function copy(): Promise<void> {
-    const text = payload?.invite?.primary
-    if (text === undefined) return
-    try {
-      await navigator.clipboard.writeText(text)
-    } catch {
-      const area = document.createElement('textarea')
-      area.value = text
-      document.body.appendChild(area)
-      area.select()
-      document.execCommand('copy')
-      area.remove()
+  /**
+   * T177 / R51: one Copy for one invitation. The clipboard module owns the
+   * decision - no `navigator.clipboard` on a plain `http://` page, or a write
+   * the browser refuses, is a refusal - and only a resolved write sets the
+   * copied state. A refusal names the address on screen instead of claiming a
+   * copy that did not happen.
+   */
+  async function copy(form: InviteForm, text: string): Promise<void> {
+    const result = await copyTextToClipboard(form, text)
+    copied = result.copied
+    copyNotice = result.notice
+    if (result.copied !== null) {
+      const formCopied = result.copied
+      setTimeout(() => {
+        if (copied === formCopied) copied = null
+      }, 1500)
     }
-    copied = true
-    setTimeout(() => (copied = false), 1500)
   }
 
   onMount(() => {
+    // T177 / R56: the sidecar's plain line is for a browser that could not run
+    // this bundle. The bundle has run, so the page takes the line away.
+    document.getElementById(BOOT_SENTENCE_ID)?.remove()
     // T99 / ADR-047: the host's dock is an attribute on the root element, and it
     // arrives after this page's first paint, so the page watches it rather than
     // reading it once. A document with no attribute (a browser, a test) has no
@@ -2178,16 +2195,33 @@
       {:else if payload.result !== null}
         <p class="sentence">{payload.result.sentence}</p>
 
-        {#if payload.invite !== null}
-          <section>
-            <p class="label">Invite link</p>
-            <p class="link" data-invite-link>{payload.invite.primary}</p>
-            <button type="button" onclick={() => void copy()}>{copied ? 'Copied' : 'Copy invite link'}</button>
-            <p class="label fallback">If the link does not open, paste this:</p>
-            <p class="link raw" data-invite-raw>{payload.invite.raw}</p>
-            {#if payload.invite.lanRaw !== null && payload.invite.lanRaw !== payload.invite.raw}
-              <p class="label fallback">On this network:</p>
-              <p class="link raw">{payload.invite.lanRaw}</p>
+        {#if invite !== null}
+          <!-- T177 / R51: both invitations are first-class. The app link is for
+               someone who has Watch Party; the plain address is for anyone with
+               a browser (ADR-054), and it is no longer a disclosure hidden
+               inside the link. Each has its own Copy, and a Copy that could not
+               copy says so instead of showing a copied state. -->
+          <section class="invitations">
+            <div class="invite-choice">
+              <p class="label">For the Watch Party app</p>
+              <p class="link" data-invite-link>{invite.primary}</p>
+              <button type="button" data-invite-copy onclick={() => void copy('app', invite.primary)}>
+                {copied === 'app' ? 'Copied' : 'Copy app link'}
+              </button>
+            </div>
+            <div class="invite-choice">
+              <p class="label">For any browser</p>
+              <p class="link raw" data-invite-raw>{invite.raw}</p>
+              <button type="button" data-invite-copy-browser onclick={() => void copy('browser', invite.raw)}>
+                {copied === 'browser' ? 'Copied' : 'Copy browser address'}
+              </button>
+              {#if invite.lanRaw !== null && invite.lanRaw !== invite.raw}
+                <p class="label fallback">On this network, in a browser:</p>
+                <p class="link raw">{invite.lanRaw}</p>
+              {/if}
+            </div>
+            {#if copyNotice !== null}
+              <p class="copy-notice" role="status">{copyNotice}</p>
             {/if}
           </section>
         {/if}
@@ -2281,29 +2315,17 @@
         </div>
       {/if}
 
-      <!-- T97 / ADR-047: the invite bar is the chat column's top row, not a
-           second panel: the room's code, the host's link and one Copy, with the
-           raw fallback one click inside. A guest's bar has no link to offer, so
-           it names the code and says the link is the host's. -->
+      <!-- T97 / ADR-047, T177 / R51: the invite bar is the chat column's top row,
+           not a second panel. The room's code, then both invitations as equals -
+           the app link and the plain address, each saying who it is for and each
+           with its own Copy. The plain address is no longer a disclosure. A
+           guest's bar has no link to offer, so it names the code and says the
+           link is the host's. -->
       <section class="invite-bar" data-invite>
         <div class="invite-row">
           <span class="invite-code">Room <strong data-invite-code>{roomCode ?? payload.roomCode}</strong></span>
 
-          {#if payload.invite !== null}
-            <span class="invite-link" data-invite-link title={payload.invite.primary}>{payload.invite.primary}</span>
-            <button type="button" class="invite-copy" data-invite-copy onclick={() => void copy()}>
-              {copied ? 'Copied' : 'Copy'}
-            </button>
-            <button
-              type="button"
-              class="invite-more"
-              aria-expanded={inviteOpen}
-              aria-controls="invite-fallback"
-              onclick={() => (inviteOpen = !inviteOpen)}
-            >
-              Raw address
-            </button>
-          {:else if inOwnRoom}
+          {#if invite === null && inOwnRoom}
             {#if payload.status === 'pending'}
               <span class="invite-note">Asking your router to open a port…</span>
             {:else if payload.result !== null}
@@ -2312,31 +2334,53 @@
                 <button type="button" class="invite-more" onclick={() => void retry()}>Try again</button>
               {/if}
             {/if}
-          {:else}
+          {:else if invite === null}
             <span class="invite-note" data-invite-note>The invite link is the host's to share.</span>
           {/if}
         </div>
+
+        {#if invite !== null}
+          <div class="invite-choice">
+            <span class="invite-for">For the app</span>
+            <span class="invite-link" data-invite-link title={invite.primary}>{invite.primary}</span>
+            <button type="button" class="invite-copy" data-invite-copy onclick={() => void copy('app', invite.primary)}>
+              {copied === 'app' ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+          <div class="invite-choice">
+            <span class="invite-for">For a browser</span>
+            <span class="invite-link" data-invite-raw title={invite.raw}>{invite.raw}</span>
+            <button
+              type="button"
+              class="invite-copy"
+              data-invite-copy-browser
+              onclick={() => void copy('browser', invite.raw)}
+            >
+              {copied === 'browser' ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+          {#if invite.lanRaw !== null && invite.lanRaw !== invite.raw}
+            <div class="invite-choice">
+              <span class="invite-for">Browser, this network</span>
+              <span class="invite-link" title={invite.lanRaw}>{invite.lanRaw}</span>
+            </div>
+          {/if}
+          {#if payload.result !== null && payload.result.kind !== 'ok'}
+            <p class="invite-reason">{payload.result.sentence}</p>
+            {#if payload.status === 'ready'}
+              <button type="button" class="secondary" onclick={() => void retry()}>Try again</button>
+            {/if}
+          {/if}
+          {#if copyNotice !== null}
+            <p class="invite-reason" role="status">{copyNotice}</p>
+          {/if}
+        {/if}
 
         {#if connectionLost}
           <!-- T98 / §6's "connection drops": one line. The room's code, chat,
                roster and playback all stay; there is no retry and the line
                promises none (rejoining is M3's, section 13). -->
           <p class="connection-lost" role="status">The connection to the room was lost.</p>
-        {/if}
-
-        {#if inviteOpen && payload.invite !== null}
-          <div class="invite-fallback" id="invite-fallback">
-            <p class="invite-raw" data-invite-raw>{payload.invite.raw}</p>
-            {#if payload.invite.lanRaw !== null && payload.invite.lanRaw !== payload.invite.raw}
-              <p class="invite-raw">{payload.invite.lanRaw}</p>
-            {/if}
-            {#if payload.result !== null && payload.result.kind !== 'ok'}
-              <p class="invite-reason">{payload.result.sentence}</p>
-              {#if payload.status === 'ready'}
-                <button type="button" class="secondary" onclick={() => void retry()}>Try again</button>
-              {/if}
-            {/if}
-          </div>
         {/if}
       </section>
 
@@ -2540,9 +2584,10 @@
     min-height: 0;
   }
 
-  /* T97 / ADR-047: the invite bar is one row of the chat column - the code, the
-     link, one Copy and the disclosure. Short lines and ellipsis keep it to a
-     row at the 380 px column; the full link stays in the DOM and in `title`. */
+  /* T97 / ADR-047: the invite bar is the chat column's top row - the code, then
+     T177 / R51's two invitations, each on its own line with a Copy. Short lines
+     and ellipsis keep them to the 380 px column; the full link stays in the DOM
+     and in `title`. */
   .invite-bar {
     grid-area: invite;
     min-width: 0;
@@ -2558,6 +2603,22 @@
     align-items: center;
     gap: 0.5rem;
     min-width: 0;
+  }
+
+  /* T177 / R51: the bar's two invitations as equals - a label saying who each
+     is for, the address, and its own Copy. */
+  .invite-bar .invite-choice {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+    margin-top: 0.3rem;
+  }
+
+  .invite-for {
+    flex: 0 0 auto;
+    color: #9a9aab;
+    white-space: nowrap;
   }
 
   .invite-code {
@@ -2602,22 +2663,8 @@
     line-height: 1.4;
   }
 
-  .invite-fallback {
-    margin-top: 0.35rem;
-    padding-top: 0.35rem;
-    border-top: 1px solid #2c2d36;
-  }
-
-  .invite-raw {
-    margin: 0 0 0.3rem;
-    font-family: Consolas, monospace;
-    line-height: 1.4;
-    overflow-wrap: anywhere;
-    color: #e9e9ef;
-  }
-
   .invite-reason {
-    margin: 0 0 0.3rem;
+    margin: 0.35rem 0 0;
     line-height: 1.4;
     color: #ffb3a7;
   }
@@ -2873,6 +2920,26 @@
     border: 1px solid #2c2d36;
     border-radius: 8px;
     background: #1a1b22;
+  }
+
+  /* T177 / R51: the front door's two invitations sit side by side and stack when
+     the window is too narrow for both. */
+  .invitations {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 0.75rem 1rem;
+    margin-top: 0.75rem;
+  }
+
+  .invite-choice {
+    min-width: 0;
+  }
+
+  .copy-notice {
+    grid-column: 1 / -1;
+    margin: 0;
+    line-height: 1.4;
+    color: #ffb3a7;
   }
 
   .manual {

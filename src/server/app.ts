@@ -5,6 +5,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 
 import { parseRange } from '../shared/media.ts'
+import { BOOT_SENTENCE, BOOT_SENTENCE_ID } from '../ui/boot-sentence.ts'
 import { YOUTUBE_EMBED_PATH, youtubeEmbedPage } from './embed.ts'
 import { ADDRESS_BLOCK_MS, createRefusalBook, type RefusalBook } from './socket.ts'
 
@@ -155,6 +156,24 @@ function withRoomCode(html: string, code: string): string {
   if (head === null) return meta + html
   const end = head.index + head[0].length
   return html.slice(0, end) + meta + html.slice(end)
+}
+
+/**
+ * T177 / R56: the plain line a browser that cannot run the page keeps. It is
+ * inserted into the served markup itself, so it is readable with no bundle at
+ * all; the page removes it once its own code has taken over (`App.svelte`).
+ * Styled inline because the page's stylesheet may be exactly what failed to
+ * load: this line is the fallback, not part of the design.
+ */
+function withBootSentence(html: string): string {
+  const line =
+    `<p id="${BOOT_SENTENCE_ID}" style="margin:0;padding:1rem;` +
+    'font:16px system-ui,sans-serif;color:#e9e9ef;background:#111">' +
+    `${BOOT_SENTENCE}</p>`
+  const body = /<body[^>]*>/i.exec(html)
+  if (body === null) return line + html
+  const end = body.index + body[0].length
+  return html.slice(0, end) + line + html.slice(end)
 }
 
 /** The room's code, as `/discovery` already answers it; `null` before there is one. */
@@ -391,10 +410,13 @@ async function handle(
   }
 
   // T176 / R52: the page a browser guest reloads carries the room's code, so its
-  // bootstrap never has to ask the loopback-only `/discovery`. The app's own
+  // bootstrap never has to ask the loopback-only `/discovery`. T177 / R56: the
+  // same page carries one plain sentence before the bundle runs. The app's own
   // window arrives from this machine and gets the built file byte for byte.
-  if (!loopback && code !== null && extname(filePath).toLowerCase() === '.html') {
-    body = Buffer.from(withRoomCode(body.toString('utf8'), code), 'utf8')
+  if (!loopback && extname(filePath).toLowerCase() === '.html') {
+    let html = body.toString('utf8')
+    if (code !== null) html = withRoomCode(html, code)
+    body = Buffer.from(withBootSentence(html), 'utf8')
   }
 
   response.writeHead(200, {
