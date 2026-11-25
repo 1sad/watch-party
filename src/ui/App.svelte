@@ -37,7 +37,8 @@
   import { PAGE_STAGE_MS, canonicalPage, playbackAfterPageCommit, setPageFrame } from '../shared/page.ts'
   import { siteViewAddress, youtubeVideoId, isYouTubeEmbedAddress } from '../shared/youtube.ts'
   import { previewHolds, type PendingPreview } from './preview.ts'
-  import { pictureFor, BROWSER_YOUTUBE_SENTENCE } from './picture-area.ts'
+  import { pictureFor } from './picture-area.ts'
+  import { EMBED_POLL_MS, createEmbedSite, embedFrameOf, type EmbedSite } from '../shared/embed-site.ts'
   import {
     closeOutcome,
     pageSide,
@@ -983,18 +984,64 @@
   const pictureArea = $derived(pictureFor({ page: roomPage, media, host: host !== null }))
 
   /**
-   * The words the picture area shows, or `null` when the player or the site view
-   * is the picture. `youtube` is the one branch whose picture ticket 179 has not
-   * put there yet, so it says the app's name rather than nothing (R54 forbids a
-   * blank rectangle); 179 replaces that sentence with the embed.
+   * The words the picture area shows, or `null` when a picture is drawn there.
+   * T179 filled the YouTube branch with the app-owned embed, so a room on an
+   * ordinary website is the only one left as words (R54).
    */
-  const pictureWords = $derived(
-    pictureArea.kind === 'words'
-      ? pictureArea.text
-      : pictureArea.kind === 'youtube'
-        ? BROWSER_YOUTUBE_SENTENCE
-        : null,
+  const pictureWords = $derived(pictureArea.kind === 'words' ? pictureArea.text : null)
+
+  /**
+   * T179 / R54, ADR-054 and ADR-006 as amended: the address of the app-owned
+   * embed the page's picture area carries when there is no window host. It is
+   * built exactly as the app's window builds its site view's address
+   * (`shared/youtube.ts`'s `siteViewAddress`, ADR-051), so both halves reach the
+   * same page. `null` for every picture that is not a YouTube room's.
+   */
+  const embedAddress = $derived(
+    pictureArea.kind === 'youtube' && roomPage !== null
+      ? siteViewAddress(roomPage, location.origin)
+      : null,
   )
+
+  /** The iframe the embed is carried in, bound by the template below. */
+  let embedFrame = $state<HTMLIFrameElement | null>(null)
+  /** This page's own transport to that embed while it is up; `null` with a window host. */
+  let embedSite: EmbedSite | null = null
+  let embedBeat: ReturnType<typeof setInterval> | undefined
+
+  /**
+   * T179: the page's other road to the app-owned embed (ADR-006 as amended). The
+   * embed publishes `window.__wpYouTube` on its own top document (ADR-051), and
+   * this page is served by the same sidecar origin, so the player's own API is
+   * reachable without the window host's bridge - which returns silently when
+   * `window.chrome.webview` is absent. `shared/embed-site.ts` turns the API's
+   * numbers into the same `playerReport`/`playerEvent` messages the site view
+   * posts and applies the room's commands to the API's methods; everything
+   * upstream of `onSiteEvent` and downstream of `postToHost` is the path this
+   * page already had. With a window host the embed is not drawn here at all, so
+   * nothing of this runs.
+   */
+  $effect(() => {
+    const address = embedAddress
+    const frame = embedFrame
+    stopEmbed()
+    if (address === null || frame === null) return
+    const site = createEmbedSite({
+      source: address,
+      frame: () => embedFrameOf(frame.contentWindow),
+      post: (payload) => onSiteEvent({ kind: 'siteEvent', source: address, payload }),
+    })
+    embedSite = site
+    site.poll()
+    embedBeat = setInterval(() => site.poll(), EMBED_POLL_MS)
+    return stopEmbed
+  })
+
+  function stopEmbed(): void {
+    if (embedBeat !== undefined) clearInterval(embedBeat)
+    embedBeat = undefined
+    embedSite = null
+  }
 
   let picking = $state(false)
   let pickNotice = $state<{ kind: 'ok' | 'error'; text: string } | null>(null)
@@ -1005,7 +1052,16 @@
   const canPick = $derived(selfId !== null && inOwnRoom)
 
   function postToHost(message: unknown): void {
-    host?.postMessage(message)
+    if (host !== null) {
+      host.postMessage(message)
+      return
+    }
+    // T179 / ADR-006 as amended: with no window host, a site command is carried by
+    // this page to the embed in its own picture area, through the player's own API
+    // (`shared/embed-site.ts`). Nothing else crosses this way, and with a host the
+    // line above is the only route - the bridge is untouched.
+    const sent = message as { kind?: unknown; payload?: unknown }
+    if (sent.kind === 'siteCommand') embedSite?.apply(sent.payload)
   }
 
   function requestFile(): void {
@@ -1554,7 +1610,10 @@
     // The room is putting the page on its position — a pause, a seek or a snap —
     // so §6.3's hold ends with it, before the plan can move the playhead (T14).
     endSiteNudge()
-    if (plan === null || host === null) return
+    // T179: `postToHost` is the one router - the window host's bridge in the app's
+    // window, the embed's own API in a browser - so the echo entries are recorded
+    // for both, before the write they describe.
+    if (plan === null) return
     const target = { source: plan.command.source, id: plan.command.id }
     // T15: this command supersedes whatever the element still owes, so a hold's
     // predicted `play` is dropped here rather than left to swallow a person's
@@ -2319,12 +2378,26 @@
       {#if panel !== 'chat'}
         <div class="picture">
           {#if selfId !== null && playback !== null && !roomEnded}
-            {#if pictureWords !== null}
+            {#if embedAddress !== null}
+              <!-- T179 / R54, ADR-054: a YouTube room with no window host carries
+                   the app-owned embed (ADR-051) in this page's own picture area,
+                   driven through the player's own API (ADR-006 as amended). It is
+                   the same page the app's window loads in its site view; the bridge
+                   it speaks to there needs `window.chrome.webview`, which a browser
+                   does not have, so this page reads `window.__wpYouTube` instead
+                   (`shared/embed-site.ts`). -->
+              <iframe
+                class="embed-picture"
+                title="The room's video"
+                src={embedAddress}
+                bind:this={embedFrame}
+                allow="autoplay; encrypted-media; picture-in-picture"
+              ></iframe>
+            {:else if pictureWords !== null}
               <!-- T178 / R54, ADR-054: a room on an ordinary website cannot be
                    played in a browser (ADR-006), so the picture area is one plain
                    sentence naming the app - never "Waiting for the host", never a
-                   blank rectangle. A YouTube room with no host says the app's
-                   name until ticket 179 puts the app-owned embed here. -->
+                   blank rectangle. -->
               <p class="empty-picture">{pictureWords}</p>
             {:else}
               <Player
@@ -2929,6 +3002,18 @@
     border-radius: 8px;
     color: #9a9aab;
     font-size: 1.1rem;
+  }
+
+  /* T179: the app-owned embed is the picture, so it fills the area the player
+     would have filled: the same flex share, no border of its own, black behind
+     the video while YouTube's frame loads. */
+  .embed-picture {
+    flex: 1 1 auto;
+    width: 100%;
+    min-height: 10rem;
+    border: 0;
+    border-radius: 8px;
+    background: #000;
   }
 
   .sentence.error {

@@ -12,8 +12,9 @@
  *   (`shared/media.ts`, R53 - ticket 182 proves the picture itself);
  * - a YouTube room in the app's window is the window host's site view, which
  *   carries the app-owned embed (ADR-051);
- * - a YouTube room in a plain browser is ticket 179's picture - the branch is
- *   chosen here, the picture itself is that ticket's;
+ * - a YouTube room in a plain browser is the same embed, carried in the page's
+ *   picture area and driven through the player's own API (ticket 179,
+ *   `shared/embed-site.ts`, ADR-006 as amended);
  * - a website room is one plain sentence naming the app, because a page cannot
  *   script a cross-origin frame and the app's window works only because the
  *   window host injects the bridge into its site view (ADR-006 as amended,
@@ -45,8 +46,8 @@ export interface PictureFields {
  *   that is on nothing at all;
  * - `site` - the window host's site view, which is the app's embed for a YouTube
  *   page; the page's picture area is not where that picture is drawn;
- * - `youtube` - a YouTube room with no window host. Ticket 179 puts the
- *   app-owned embed here; this ticket only chooses the branch;
+ * - `youtube` - a YouTube room with no window host: the page's picture area
+ *   carries the app-owned embed itself (ticket 179, ADR-054);
  * - `words` - one plain sentence in the picture area, ASCII (R54).
  */
 export type PictureArea =
@@ -62,14 +63,6 @@ export type PictureArea =
  */
 export const BROWSER_SITE_SENTENCE =
   'Watch this room in the Watch Party app - a browser cannot play the website it is on.'
-
-/**
- * What a YouTube room with no window host says until ticket 179 puts the
- * app-owned embed in the picture area. It names the app like the website
- * sentence does and is a stand-in only: 179's screen state is the picture, not
- * this sentence, so 179 removes it.
- */
-export const BROWSER_YOUTUBE_SENTENCE = 'Watch this video in the Watch Party app.'
 
 /**
  * The rule, in one place. A file wins: `setMedia` clears the page when it takes a

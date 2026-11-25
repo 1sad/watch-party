@@ -5,21 +5,20 @@
  * One rule is proved here and nothing else: the picture area's content is chosen
  * in one place, by what the room is on and whether a window host is looking. A
  * file room is the player, a YouTube room with a host is the host's site view, a
- * YouTube room without one is ticket 179's picture (this case holds only that the
- * branch is chosen, not what 179 draws there), and a website room is one plain
- * sentence naming the app. The wiring that draws this lives in `src/ui/App.svelte`,
- * which has no DOM test; the rule was put in a module so that this file can hold
- * it (the same arrangement `tests/unit/room-view.test.ts` keeps).
+ * YouTube room without one is the app-owned embed's branch - and the address that
+ * branch carries is built by the same function the app's window uses (ticket 179;
+ * the transport itself is `tests/unit/embed-site.test.ts`) - and a website room is
+ * one plain sentence naming the app. The wiring that draws this lives in
+ * `src/ui/App.svelte`, which has no DOM test; the rule was put in a module so that
+ * this file can hold it (the same arrangement `tests/unit/room-view.test.ts`
+ * keeps).
  */
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import {
-  BROWSER_SITE_SENTENCE,
-  BROWSER_YOUTUBE_SENTENCE,
-  pictureFor,
-} from '../../src/ui/picture-area.ts'
+import { BROWSER_SITE_SENTENCE, pictureFor } from '../../src/ui/picture-area.ts'
+import { siteViewAddress, isYouTubeEmbedAddress } from '../../src/shared/youtube.ts'
 import type { Media } from '../../src/shared/protocol.ts'
 
 /** The file the owner picked, as `welcome` and the `media` frame carry it (§4.2). */
@@ -52,14 +51,18 @@ test('a YouTube room with a window host is the site view, which carries the app 
   assert.deepEqual(pictureFor({ page: youtube, media: null, host: true }), { kind: 'site' })
 })
 
-test('a YouTube room with no window host is ticket 179\'s branch, chosen here', () => {
-  // Ticket 179 puts the app-owned embed in the picture area; this ticket only
-  // holds that the branch is the YouTube one - distinct from the website words.
+test('a YouTube room with no window host carries the app-owned embed', () => {
+  // Ticket 179 fills the branch: the picture area holds the embed, so the choice
+  // is not words at all, and the address it carries is the one the app's own
+  // window builds for its site view (ADR-051, `siteViewAddress`).
   const choice = pictureFor({ page: youtube, media: null, host: false })
   assert.deepEqual(choice, { kind: 'youtube' })
-  // The branch stands in as an app-naming sentence until 179 fills it (not tested
-  // on screen here; the unit case holds the branch, not 179's picture).
-  assert.ok(BROWSER_YOUTUBE_SENTENCE.includes('Watch Party'))
+  const origin = 'http://127.0.0.1:63144'
+  assert.equal(siteViewAddress(youtube, origin), `${origin}/embed/youtube.html?id=dQw4w9WgXcQ`)
+  // The address the page carries is one the app view already recognises as its own
+  // embed, so the election's YouTube rule treats the browser's player like the
+  // window's (ADR-051, ticket 157's `isYouTubeEmbedAddress`).
+  assert.ok(isYouTubeEmbedAddress(siteViewAddress(youtube, origin)))
 })
 
 test('a room on an ordinary website is one plain sentence naming the app', () => {
