@@ -119,6 +119,14 @@ const child = spawn(
     '-c',
     'Debug',
     '--nologo',
+    // T186: the WebView2 package always adds its WPF assembly, which is built
+    // against WindowsBase 5.0.0.0 while net10.0-windows references 4.0.0.0, so
+    // the host's build reports eleven MSB3277 lines before its first one. The
+    // conflict is the package's, not the host's references: the only source fix
+    // is a package bump or dropping the unused WPF asset, which changes what is
+    // built. So the code is silenced for this build only, and every other
+    // warning still prints.
+    '-p:NoWarn=MSB3277',
     ...(invite === null ? [] : ['--', invite]),
   ],
   {
