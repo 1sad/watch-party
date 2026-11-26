@@ -931,6 +931,14 @@ reaches a build that ships.
 > the standard library without them. The first measurement on the real tree was 127 errors, so the hook shipped with
 > `npm test` alone and T8a2 owns a green baseline.
 
+> **Amended 2026-11-26 (ADR-036):** the hook's body is a Node script (`#!/usr/bin/env node`, ESM because the repo's
+> `package.json` is `"type": "module"`), not `#!/bin/sh`. Git starts the interpreter named in the shebang directly, and
+> a node body has no `sh` in its path: the agent's confined shell could not start `sh.exe` (`sh.exe: couldn't create
+> signal pipe, Win32 error 5`), so nine commits in one afternoon were made with `--no-verify` after the three steps were
+> run by hand. The hook's location, its activation (`git config core.hooksPath .githooks`), the three steps and their
+> order, one line per passing step, the full output on refusal and the scanner-missing skip are unchanged. The
+> `.gitattributes` rule (`.githooks/* text eol=lf`) still holds: a CRLF shebang breaks the interpreter line.
+
 **Why a typechecker, and why not the two things already here.** Tests run TypeScript by *stripping* the types
 (Node 24) and Vite transpiles it the same way (esbuild): both delete the annotations without ever reading them, so a
 wrong type is invisible until the line runs, and a renamed field is invisible until it is `undefined` at runtime. The
