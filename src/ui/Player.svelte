@@ -13,6 +13,7 @@
   import { createEchoSet } from '../shared/echo.ts'
   import { untrack } from 'svelte'
   import { DEV_ARM_MS, type DevPlay } from './dev-drift.ts'
+  import { PRESS_PLAY_BUTTON } from './picture-area.ts'
 
   interface Props {
     /** The room's `playback`, from the last `welcome` or `state` (§4.1). */
@@ -53,9 +54,16 @@
      * the one who picks.
      */
     emptyLine: string
+    /**
+     * T187: the one line the picture shows when a play was refused - the same
+     * sentence in the file room and the YouTube embed, composed by
+     * `ui/picture-area.ts`'s `pressPlaySentence` so the subject (Windows, or the
+     * browser) is named by the page that knows it.
+     */
+    blockedLine: string
   }
 
-  let { playback, revision, clock, send, rtt, realign, nudge, media, src, devPlay, emptyLine }: Props =
+  let { playback, revision, clock, send, rtt, realign, nudge, media, src, devPlay, emptyLine, blockedLine }: Props =
     $props()
 
   // §6.6's set: the events this component's own play/pause/seek calls cause.
@@ -603,9 +611,9 @@
     {/if}
 
     {#if blocked}
-      <div class="autoplay" role="alertdialog" aria-label="Playback did not start">
-        <p>Windows did not let the film start on its own.</p>
-        <button type="button" onclick={joinPlayback}>Click to join playback</button>
+      <div class="autoplay" role="alertdialog" aria-label="Playback did not start" data-press-play>
+        <p>{blockedLine}</p>
+        <button type="button" onclick={joinPlayback}>{PRESS_PLAY_BUTTON}</button>
       </div>
     {/if}
   </div>

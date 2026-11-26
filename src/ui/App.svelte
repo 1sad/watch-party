@@ -34,7 +34,7 @@
   import { PAGE_STAGE_MS, canonicalPage, playbackAfterPageCommit, setPageFrame } from '../shared/page.ts'
   import { siteViewAddress, youtubeVideoId, isYouTubeEmbedAddress } from '../shared/youtube.ts'
   import { previewHolds, type PendingPreview } from './preview.ts'
-  import { pictureFor } from './picture-area.ts'
+  import { PRESS_PLAY_BUTTON, pictureFor, pressPlaySentence } from './picture-area.ts'
   import { EMBED_POLL_MS, createEmbedSite, embedFrameOf, type EmbedSite } from '../shared/embed-site.ts'
   import {
     closeOutcome,
@@ -1039,6 +1039,15 @@
   /** This page's own transport to that embed while it is up; `null` with a window host. */
   let embedSite: EmbedSite | null = null
   let embedBeat: ReturnType<typeof setInterval> | undefined
+  /**
+   * T187 / R54: the browser refused the room's play in this picture, so the
+   * picture says so and offers the one press that answers it. Asked of the
+   * transport on every beat; `false` the moment the player starts, however it
+   * started (`shared/embed-site.ts`'s `needsPress`).
+   */
+  let embedNeedsPress = $state(false)
+  /** T145's one line, its subject named by who refused (ticket 187, `ui/picture-area.ts`). */
+  const pressPlayLine = $derived(pressPlaySentence(host !== null))
 
   /**
    * T179: the page's other road to the app-owned embed (ADR-006 as amended). The
@@ -1056,6 +1065,7 @@
     const address = embedAddress
     const frame = embedFrame
     stopEmbed()
+    embedNeedsPress = false
     if (address === null || frame === null) return
     const site = createEmbedSite({
       source: address,
@@ -1064,14 +1074,31 @@
     })
     embedSite = site
     site.poll()
-    embedBeat = setInterval(() => site.poll(), EMBED_POLL_MS)
+    embedNeedsPress = site.needsPress()
+    embedBeat = setInterval(() => {
+      site.poll()
+      embedNeedsPress = site.needsPress()
+    }, EMBED_POLL_MS)
     return stopEmbed
   })
+
+  /**
+   * T187 / R54: the person's press in the picture area. It starts the embed inside
+   * their gesture - the only kind the browser's autoplay rule answers - and it is
+   * not a room command: the room is already playing, so this is an alignment of
+   * this page's own picture, exactly as `Player.svelte`'s `joinPlayback` is for the
+   * room's file. A press the browser still refuses leaves the line up.
+   */
+  function joinPicture(): void {
+    embedSite?.join()
+    embedNeedsPress = embedSite?.needsPress() ?? false
+  }
 
   function stopEmbed(): void {
     if (embedBeat !== undefined) clearInterval(embedBeat)
     embedBeat = undefined
     embedSite = null
+    embedNeedsPress = false
   }
 
   let picking = $state(false)
@@ -2446,13 +2473,27 @@
                    it speaks to there needs `window.chrome.webview`, which a browser
                    does not have, so this page reads `window.__wpYouTube` instead
                    (`shared/embed-site.ts`). -->
-              <iframe
-                class="embed-picture"
-                title="The room's video"
-                src={embedAddress}
-                bind:this={embedFrame}
-                allow="autoplay; encrypted-media; picture-in-picture"
-              ></iframe>
+              <div class="embed-shell">
+                <iframe
+                  class="embed-picture"
+                  title="The room's video"
+                  src={embedAddress}
+                  bind:this={embedFrame}
+                  allow="autoplay; encrypted-media; picture-in-picture"
+                ></iframe>
+                {#if embedNeedsPress}
+                  <!-- T187 / R54: the browser's autoplay rule refused the room's
+                       play (ticket 179 measured it), so the picture says why in
+                       T145's one line and offers the press that answers it. The
+                       line is a strip along the top, so YouTube's own centred play
+                       button stays reachable too - either press starts the
+                       picture, and both are inside the person's gesture. -->
+                  <div class="press-play" role="alertdialog" aria-label="Playback did not start" data-press-play>
+                    <p>{pressPlayLine}</p>
+                    <button type="button" data-press-play-button onclick={joinPicture}>{PRESS_PLAY_BUTTON}</button>
+                  </div>
+                {/if}
+              </div>
             {:else if pictureWords !== null}
               <!-- T178 / R54, ADR-054: a room on an ordinary website cannot be
                    played in a browser (ADR-006), so the picture area is one plain
@@ -2469,6 +2510,7 @@
                 src={playerSrc}
                 {devPlay}
                 emptyLine={emptyPictureLine}
+                blockedLine={pressPlayLine}
                 clock={authorityClock}
                 rtt={() => estimate.rtt}
                 send={sendCommand}
@@ -3085,7 +3127,16 @@
 
   /* T179: the app-owned embed is the picture, so it fills the area the player
      would have filled: the same flex share, no border of its own, black behind
-     the video while YouTube's frame loads. */
+     the video while YouTube's frame loads. T187: the shell is what the press line
+     is laid over, and the line is a strip along the top so the embed's own
+     centred play button is not covered. */
+  .embed-shell {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
   .embed-picture {
     flex: 1 1 auto;
     width: 100%;
@@ -3093,6 +3144,40 @@
     border: 0;
     border-radius: 8px;
     background: #000;
+  }
+
+  /* T187 / R54: T145's line, in the YouTube picture. A strip, not a full cover:
+     the person can press here or on the player's own button. */
+  .press-play {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.25rem 1rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 8px 8px 0 0;
+    background: rgba(0, 0, 0, 0.85);
+    color: #f2f2f5;
+    font-size: 1rem;
+    text-align: center;
+  }
+
+  .press-play p {
+    margin: 0;
+  }
+
+  .press-play button {
+    padding: 0.35rem 0.8rem;
+    border: 1px solid #4a4b57;
+    border-radius: 6px;
+    background: #2b2c36;
+    color: inherit;
+    font-size: 1rem;
+    cursor: pointer;
   }
 
   .sentence.error {

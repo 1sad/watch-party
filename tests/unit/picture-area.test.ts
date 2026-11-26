@@ -17,7 +17,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { BROWSER_SITE_SENTENCE, pictureFor } from '../../src/ui/picture-area.ts'
+import { BROWSER_SITE_SENTENCE, PRESS_PLAY_BUTTON, pictureFor, pressPlaySentence } from '../../src/ui/picture-area.ts'
 import { siteViewAddress, isYouTubeEmbedAddress } from '../../src/shared/youtube.ts'
 import type { Media } from '../../src/shared/protocol.ts'
 
@@ -89,4 +89,19 @@ test('a room on nothing yet keeps the player\'s own empty line, in either role',
   // draws that line (App.svelte's `emptyPictureLine`), so the branch is the player.
   assert.deepEqual(pictureFor({ page: null, media: null, host: false }), { kind: 'player' })
   assert.deepEqual(pictureFor({ page: null, media: null, host: true }), { kind: 'player' })
+})
+
+test('the refused-play line names who refused, once, for both pictures', () => {
+  // Ticket 187 / T145: the file room's line (ticket 182) is now composed once and
+  // carried by the browser guest's YouTube picture too. In a plain browser nothing
+  // about the refusal is Windows - the browser's own autoplay rule is - so the
+  // sentence says what is true where it is read (ticket 182's `NOT TESTED`).
+  assert.equal(pressPlaySentence(true), 'Windows did not let the film start on its own.')
+  assert.equal(pressPlaySentence(false), 'The browser did not let the film start on its own.')
+  for (const line of [pressPlaySentence(true), pressPlaySentence(false)]) {
+    // Rules for working here 10: sentences stay ASCII.
+    assert.ok(/^[\x20-\x7e]+$/.test(line), `not ASCII: ${line}`)
+  }
+  // One button, one meaning: the press that answers the browser's rule.
+  assert.equal(PRESS_PLAY_BUTTON, 'Click to join playback')
 })

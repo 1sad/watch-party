@@ -20,6 +20,7 @@ import assert from 'node:assert/strict'
 
 import {
   EMBED_PLAYER_ID,
+  PRESS_AFTER_MS,
   createEmbedSite,
   embedFrameOf,
   type EmbedPlayerApi,
@@ -38,6 +39,12 @@ interface FakePlayer {
   duration: number
   rate: number
   state: number
+  /**
+   * T187: a browser whose autoplay rule refuses `playVideo()` - the call is made,
+   * the player stays exactly where it was and fires no state change (ticket 179
+   * measured Chrome doing this in a fresh throwaway profile).
+   */
+  refuse: boolean
   api: EmbedPlayerApi
   /** The API's own state change, as YouTube fires it after `playVideo()`/`pauseVideo()`. */
   setState(state: number): void
@@ -52,6 +59,7 @@ function fakePlayer(state = 5, t = 12.5, duration = 300): FakePlayer {
     duration,
     rate: 1,
     state,
+    refuse: false,
     api: null as unknown as EmbedPlayerApi,
     setState(next: number) {
       player.state = next
@@ -63,6 +71,7 @@ function fakePlayer(state = 5, t = 12.5, duration = 300): FakePlayer {
   player.api = {
     play() {
       player.calls.push('play')
+      if (player.refuse) return
       player.setState(1)
     },
     pause() {
@@ -301,4 +310,114 @@ test('the ladder\'s rate is one API write and no applied line, and a lost seek i
   player.duration = 300
   site.poll()
   assert.ok(player.calls.includes('seek 30'), player.calls.join(','))
+})
+
+test('a play the browser refused leaves the picture asking for one press, and keeps asking', () => {
+  // Ticket 179's measurement, in the shape a unit case can hold: a fresh profile
+  // has had no gesture in this document, `playVideo()` is called and the player
+  // never leaves `2`. The room is playing, so its own ladder asks again on every
+  // report; that repetition is what must not restart the wait (T187).
+  const player = fakePlayer(2, 42)
+  player.refuse = true
+  const { site, messages, at } = page(player)
+  site.poll()
+  // Nothing has been asked for yet: a room that has not pressed play has no line.
+  assert.equal(site.needsPress(), false)
+
+  const play = { kind: 'playerCommand', href: address, id: EMBED_PLAYER_ID, action: 'play', reason: 'play' }
+  site.apply(play)
+  assert.deepEqual(player.calls, ['play'])
+  // A player that is starting is not a player that was refused: the line waits.
+  assert.equal(site.needsPress(), false)
+
+  at.ms += PRESS_AFTER_MS - 1
+  assert.equal(site.needsPress(), false)
+  at.ms += 1
+  assert.equal(site.needsPress(), true)
+
+  // The room asks again (its report cadence while the guest stays paused); the
+  // wait is the first ask's, so the answer cannot be pushed back for ever.
+  const before = messages.length
+  site.apply(play)
+  assert.equal(player.calls.filter((call) => call === 'play').length, 2)
+  assert.equal(site.needsPress(), true)
+  // Nothing was played, so nothing is said to the room as a person's play: the
+  // only messages are the applied lines the bridge always writes (T06).
+  assert.equal(
+    messages.slice(before).filter((one) => one.event === 'play').length,
+    0,
+    JSON.stringify(messages.slice(before)),
+  )
+  // The line is a state of the picture, not a report: the beat still posts the
+  // API's own numbers, and the room's ladder decides the position as before.
+  at.ms += 500
+  site.poll()
+  const report = messages.filter((one) => one.kind === 'playerReport').pop()
+  assert.ok(report !== undefined)
+  const candidate = (report.candidates as Array<Record<string, unknown>>)[0] as Record<string, unknown>
+  assert.equal(candidate.paused, true)
+  assert.equal(candidate.playing, false)
+})
+
+test('a player that starts just after the room\'s play never asks for a press', () => {
+  // The same room, a browser that answers: the embed's play starts the player, so
+  // there is no line even long after `PRESS_AFTER_MS` has passed.
+  const player = fakePlayer(2, 42)
+  const { site, at } = page(player)
+  site.poll()
+  site.apply({ kind: 'playerCommand', href: address, id: EMBED_PLAYER_ID, action: 'play', reason: 'play' })
+  at.ms += PRESS_AFTER_MS * 4
+  assert.equal(site.needsPress(), false)
+  site.poll()
+  assert.equal(site.needsPress(), false)
+})
+
+test('the person\'s press starts the player and is this page\'s own write, not the room\'s', () => {
+  // T187: the line's button. `join()` is a play inside the person's gesture - the
+  // only kind a browser's autoplay rule answers - and the room already knows it is
+  // playing, so the event this page causes must be tagged `caused` (T15, §6.6) and
+  // must not reach the room as a person's play. It is not a command either: a
+  // browser guest is not a controller.
+  const player = fakePlayer(2, 42)
+  player.refuse = true
+  const { site, messages, at } = page(player)
+  site.poll()
+  site.apply({ kind: 'playerCommand', href: address, id: EMBED_PLAYER_ID, action: 'play', reason: 'play' })
+  at.ms += PRESS_AFTER_MS
+  assert.equal(site.needsPress(), true)
+
+  // The person presses: the browser answers this one, so the player starts where
+  // the room's ladder has already put it (no seek is invented here).
+  player.refuse = false
+  const before = messages.length
+  site.join()
+  assert.equal(player.state, 1)
+  assert.equal(player.t, 42)
+  const play = messageOf(messages.slice(before), 'playerEvent', 'play')
+  assert.equal(play.caused, true)
+  assert.equal(play.t, 42)
+  // The picture's line goes the moment the player is playing.
+  assert.equal(site.needsPress(), false)
+})
+
+test('a paused room takes the line away, and a press the browser still refuses leaves it up', () => {
+  const player = fakePlayer(2, 42)
+  player.refuse = true
+  const { site, at } = page(player)
+  site.poll()
+  site.apply({ kind: 'playerCommand', href: address, id: EMBED_PLAYER_ID, action: 'play', reason: 'play' })
+  at.ms += PRESS_AFTER_MS
+  assert.equal(site.needsPress(), true)
+
+  // A press that is still refused: the wait is re-armed from the press, so the
+  // line returns rather than the page claiming it started.
+  site.join()
+  assert.equal(site.needsPress(), false)
+  at.ms += PRESS_AFTER_MS
+  assert.equal(site.needsPress(), true)
+
+  // The room pauses: there is nothing to press play for.
+  site.apply({ kind: 'playerCommand', href: address, id: EMBED_PLAYER_ID, action: 'pause', reason: 'pause' })
+  at.ms += PRESS_AFTER_MS * 2
+  assert.equal(site.needsPress(), false)
 })

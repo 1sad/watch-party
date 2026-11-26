@@ -28,6 +28,16 @@
  * `shared/site-player.ts` and `shared/timing.ts`, never here.
  *
  * Read from disk by `tests/unit/embed-site.test.ts`.
+ *
+ * T187 / R54: the browser's autoplay rule is the guest's own. A fresh profile has
+ * had no gesture in this document, so YouTube's `playVideo()` is refused and the
+ * picture sits at the room's position behind a silent centred play button (the
+ * owner saw it, 2026-11-26; ticket 179 measured the refusal). The room keeps
+ * asking - a paused follower of a playing room is asked to play on every report -
+ * and the API answers none of them, so this module remembers the first unanswered
+ * ask and `needsPress()` reports it once the wait is over. The picture area then
+ * says so in one line and offers the press; `join()` is that press, which the
+ * browser answers because it happens inside the person's gesture.
  */
 
 /**
@@ -70,6 +80,18 @@ export const EMBED_PLAYER_ID = 1000000
  * (500 ms, T157); a report itself is no faster than the numbers below.
  */
 export const EMBED_POLL_MS = 500
+
+/**
+ * T187 / R54: how long a play this page asked for may go unanswered before the
+ * picture says to press once. A player that starts on its own is playing well
+ * inside this - the API fires its `1` a beat or two after `playVideo()` - while a
+ * browser's autoplay rule leaves the player where it was for ever (ticket 179
+ * measured Chrome refusing `playVideo()` in a throwaway profile). The player stays
+ * paused either way, so time is the only thing that separates "starting" from
+ * "refused"; this is one beat and a half of `EMBED_POLL_MS`, which is how soon the
+ * page could have asked its next question anyway.
+ */
+export const PRESS_AFTER_MS = 1500
 
 /** A non-negative whole number, or 0: a viewport a frame cannot state is no area. */
 function viewport(value: unknown): number {
@@ -118,6 +140,21 @@ export interface EmbedSite {
   poll(): void
   /** One `playerCommand` payload from the room (the app view's `siteCommand`). */
   apply(payload: unknown): void
+  /**
+   * T187 / R54: the room is playing and this player would not start - the browser
+   * refused the play, because nothing in this document has been pressed yet. The
+   * picture area then says so in one line, instead of leaving a silent centred
+   * play button (ticket 179's `NOT DONE`, the owner's own report).
+   */
+  needsPress(): boolean
+  /**
+   * T187: the person's press in the picture. A play asked for inside their
+   * gesture, so the browser's rule answers it, at the position the room's ladder
+   * has already put the picture in. Not a command: a browser guest is not a
+   * controller, and `Player.svelte`'s `joinPlayback` is the same local move on the
+   * room's file.
+   */
+  join(): void
 }
 
 /** This document's own name, so a report can be told from a reload's (T07's token). */
@@ -174,6 +211,13 @@ export function createEmbedSite(options: EmbedSiteOptions): EmbedSite {
   let lastShape: string | null = null
   /** A position the room asked for before the player had a duration (T146, ADR-050). */
   let lostSeek: number | null = null
+  /**
+   * T187: the instant this page first asked the player to play and it has not
+   * started since, or `null`. The room asks again on every report, so the first
+   * ask is kept rather than the latest - otherwise a refused play would reset its
+   * own wait for ever.
+   */
+  let askedAt: number | null = null
   /** The beat of a scheduled start (§6.4), so a later command can cancel it. */
   let hold: ReturnType<typeof setTimeout> | undefined
   /** event kind -> the instants of this page's own writes, spent by the event they cause. */
@@ -389,6 +433,23 @@ export function createEmbedSite(options: EmbedSiteOptions): EmbedSite {
   }
 
   /**
+   * T187: one play asked for. The first ask of an unanswered stretch is the one
+   * that starts the wait (`needsPress`); every later ask is the room's report
+   * cadence, not new information, and must not restart it. `arm('play')` before
+   * the write is the same provenance the element bridge keeps (T15): the API's own
+   * `1` that follows is this page's, and §6.6 drops it.
+   */
+  function askPlay(api: EmbedPlayerApi): void {
+    if (askedAt === null) askedAt = clock()
+    arm('play')
+    try {
+      api.play()
+    } catch {
+      // A refused play leaves the player where it was; the wait below says so.
+    }
+  }
+
+  /**
    * T157: one `playerCommand` for the app's player. The room asks for exactly what
    * it asks any site - play, pause, seek, or the ladder's rate - and only the hands
    * differ: `play`, `pause`, `seek`, `setRate`.
@@ -435,6 +496,9 @@ export function createEmbedSite(options: EmbedSiteOptions): EmbedSite {
       } catch {
         // A player that will not stop is reported by the room's next look.
       }
+      // T187: a paused room has nothing to press play for; the temporary stop
+      // before a scheduled beat keeps the ask it is about to answer.
+      if (action === 'pause') askedAt = null
     }
 
     if (typeof command.target === 'number') writeSeek(api, target)
@@ -446,20 +510,10 @@ export function createEmbedSite(options: EmbedSiteOptions): EmbedSite {
     } else if (scheduled) {
       hold = setTimeout(() => {
         hold = undefined
-        arm('play')
-        try {
-          api.play()
-        } catch {
-          // The room's next state asks again; the room is not moved by this.
-        }
+        askPlay(api)
       }, lead)
     } else {
-      arm('play')
-      try {
-        api.play()
-      } catch {
-        // As above: a refused play leaves the player where it was.
-      }
+      askPlay(api)
     }
 
     // T06's one line per applied command, in the same shape an element's is.
@@ -524,5 +578,35 @@ export function createEmbedSite(options: EmbedSiteOptions): EmbedSite {
     if (now - lastSentAt >= (busy ? PLAYING_REPORT_MS : REPORT_MS)) send(candidate, now)
   }
 
-  return { poll, apply }
+  /**
+   * T187 / R54: is the picture waiting for the person's one press? True when this
+   * page asked the player to play, the player has still not started, and the wait
+   * `PRESS_AFTER_MS` has passed since the first ask. A player that does start - on
+   * its own, or because the person pressed YouTube's own button in the embed -
+   * ends the wait however it started, so the line never outlives the refusal.
+   */
+  function needsPress(): boolean {
+    if (askedAt === null) return false
+    const look = options.frame()
+    const nowState = look === null ? null : apiState(look.api)
+    if (nowState === 1 || nowState === 3) {
+      askedAt = null
+      return false
+    }
+    return clock() - askedAt >= PRESS_AFTER_MS
+  }
+
+  /**
+   * T187: the person's press in the picture - a local start, not a command (see
+   * `EmbedSite.join`). The wait is re-armed from this press, so a press the
+   * browser still refuses leaves the line up rather than claiming success.
+   */
+  function join(): void {
+    const look = options.frame()
+    if (look === null) return
+    askedAt = clock()
+    askPlay(look.api)
+  }
+
+  return { poll, apply, needsPress, join }
 }

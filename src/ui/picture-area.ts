@@ -65,6 +65,24 @@ export const BROWSER_SITE_SENTENCE =
   'Watch this room in the Watch Party app - a browser cannot play the website it is on.'
 
 /**
+ * T145's one line, and its button (tickets 182 and 187): the picture says why a
+ * play did not start, instead of a silent centred play button. It is written here
+ * once because two pictures now show it - the file room's player and a browser
+ * guest's YouTube embed (`shared/embed-site.ts`'s `needsPress`) - and because the
+ * subject is the autoplay rule that refused: Windows' in the app's window (T145's
+ * original words, unchanged) and the browser's own in a plain browser, where
+ * nothing about the refusal is Windows (ticket 182's `NOT TESTED`).
+ */
+export function pressPlaySentence(host: boolean): string {
+  return host
+    ? 'Windows did not let the film start on its own.'
+    : 'The browser did not let the film start on its own.'
+}
+
+/** The button beside that line: the press the browser's rule will answer. */
+export const PRESS_PLAY_BUTTON = 'Click to join playback'
+
+/**
  * The rule, in one place. A file wins: `setMedia` clears the page when it takes a
  * file (§4.2), and a room that somehow carried both is read as the file, which is
  * what the picture really is (`pageSide`'s rule in `ui/room-view.ts`).
