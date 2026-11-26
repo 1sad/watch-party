@@ -14,13 +14,16 @@
 //   node scripts/cdp.mjs click <target-id|index> <x> <y> [--double] [--port 9222]
 //   node scripts/cdp.mjs type <target-id|index> <text> [--at <x> <y>] [--port 9222]
 //   node scripts/cdp.mjs key <target-id|index> <key> [--port 9222]
+//   node scripts/cdp.mjs visible <target-id|index> [--port 9222]
+//   node scripts/cdp.mjs reveal <target-id|index> [--port 9222]
 //
 // stdout carries the answer and nothing else: JSON for `targets`, the
 // expression's value for `eval`, the file's path for `shot`, one line naming
 // the target, the point and the focused element for `click`, the same plus the
 // characters entered and the field's new length for `type`, the key and the
-// focused element for `key`. Every complaint is one line on stderr and a
-// non-zero exit, so a check never hangs on a window that is not there.
+// focused element for `key`, the page's visibility for `visible`, the before
+// and after visibility for `reveal`. Every complaint is one line on stderr and
+// a non-zero exit, so a check never hangs on a window that is not there.
 //
 // `click` is the only way here to make a *trusted* press: it goes through
 // `Input.dispatchMouseEvent`, so the page sees a real gesture and a handler it
@@ -48,6 +51,17 @@
 // not be. It knows `Space`, `Enter`, `Escape`, the four arrows and any single
 // character, and refuses any other name rather than guessing at one. It names
 // the key and the page's `document.activeElement`, the shape `click` prints.
+//
+// `visible` reads the page's own `document.visibilityState`, the signal a
+// browser uses to refuse playback on a page it cannot see, and prints it. The
+// same page reports `hidden` when its window is minimised or fully covered and
+// `visible` once it is the window on top (T194).
+//
+// `reveal` makes that page visible again with nothing outside this file: it
+// minimises the browser window and restores it over the DevTools `Browser`
+// domain - the one move that brings a covered window forward where
+// `Page.bringToFront` and `SetWindowPos(HWND_TOP)` do not (T187) - then reads
+// the state back, so the command itself prints what it achieved (T194).
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
@@ -60,6 +74,8 @@ const ANSWER_TIMEOUT_MS = 10_000
 const FRAME_BUDGET_MS = 500
 /** The host's own bound on that read, so a page that answers nothing costs 3 s, not 10 s. */
 const FRAME_ANSWER_TIMEOUT_MS = 3_000
+/** How long a restored window may take to report itself visible again. */
+const REVEAL_SETTLE_MS = 250
 
 const USAGE = [
   'usage:',
@@ -69,6 +85,8 @@ const USAGE = [
   '  node scripts/cdp.mjs click <target-id|index> <x> <y> [--double] [--port 9222]',
   '  node scripts/cdp.mjs type <target-id|index> <text> [--at <x> <y>] [--port 9222]',
   '  node scripts/cdp.mjs key <target-id|index> <key> [--port 9222]',
+  '  node scripts/cdp.mjs visible <target-id|index> [--port 9222]',
+  '  node scripts/cdp.mjs reveal <target-id|index> [--port 9222]',
 ].join('\n')
 
 /** A problem worth one line on stderr. `usage` separates a typo from a failure. */
@@ -155,6 +173,31 @@ async function pageTargets(port) {
     .map((target) => ({ id: target.id, title: target.title, url: target.url, webSocketDebuggerUrl: target.webSocketDebuggerUrl }))
 }
 
+/**
+ * The browser's own WebSocket, from `/json/version`: a page's socket answers
+ * `Page` and `Runtime`, but a window is the browser's, so `Browser` commands go
+ * here. Called only after `pageTargets` proved the endpoint is up.
+ */
+async function browserSocketUrl(port) {
+  const url = `http://127.0.0.1:${port}/json/version`
+  let response
+  try {
+    response = await fetch(url, { signal: AbortSignal.timeout(ANSWER_TIMEOUT_MS) })
+  } catch {
+    throw new CliError(`no DevTools endpoint on 127.0.0.1:${port}`)
+  }
+
+  if (!response.ok) {
+    throw new CliError(`no DevTools endpoint on 127.0.0.1:${port} - it answered HTTP ${response.status}`)
+  }
+
+  const info = await response.json()
+  if (!info.webSocketDebuggerUrl) {
+    throw new CliError(`no browser socket on 127.0.0.1:${port}`)
+  }
+  return info.webSocketDebuggerUrl
+}
+
 /** A target by its id, or by its position in the `targets` list. */
 function pickTarget(targets, key) {
   if (targets.length === 0) {
@@ -235,6 +278,34 @@ function send(webSocketUrl, method, params = {}) {
 
 function print(value) {
   process.stdout.write(`${JSON.stringify(value)}\n`)
+}
+
+const sleep = (ms) => new Promise((ready) => setTimeout(ready, ms))
+
+/** The page's `document.visibilityState`, the signal a browser gates playback on. */
+async function readVisibility(webSocketUrl) {
+  const result = await send(webSocketUrl, 'Runtime.evaluate', {
+    expression: 'document.visibilityState',
+    returnByValue: true,
+  })
+  if (result.exceptionDetails) {
+    const thrown = result.exceptionDetails.exception?.description ?? result.exceptionDetails.text
+    throw new CliError(`reading the page's visibility threw: ${thrown.split('\n')[0]}`)
+  }
+  return typeof result.result?.value === 'string' ? result.result.value : null
+}
+
+/**
+ * Puts a page's window back on top, whatever is covering it, by minimising and
+ * restoring it over the `Browser` domain. `Page.bringToFront` and a Win32
+ * `SetWindowPos(HWND_TOP)` leave Chrome's own visibility state alone; a real
+ * minimise/restore is the one move that changes it (T187).
+ */
+async function revealWindow(port, target) {
+  const browser = await browserSocketUrl(port)
+  const { windowId } = await send(browser, 'Browser.getWindowForTarget', { targetId: target.id })
+  await send(browser, 'Browser.setWindowBounds', { windowId, bounds: { windowState: 'minimized' } })
+  await send(browser, 'Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } })
 }
 
 /**
@@ -431,7 +502,7 @@ function keySteps(definition) {
 
 async function run(command, rest, port, double, at) {
   // Checked before the endpoint is dialled: a typo is not a missing window.
-  if (command !== 'targets' && command !== 'eval' && command !== 'shot' && command !== 'click' && command !== 'type' && command !== 'key') {
+  if (command !== 'targets' && command !== 'eval' && command !== 'shot' && command !== 'click' && command !== 'type' && command !== 'key' && command !== 'visible' && command !== 'reveal') {
     throw new CliError(`"${command ?? ''}" is not a subcommand.\n${USAGE}`, true)
   }
 
@@ -474,12 +545,43 @@ async function run(command, rest, port, double, at) {
     }
 
     const target = pickTarget(targets, key)
+    const state = await readVisibility(target.webSocketDebuggerUrl)
     const { data } = await send(target.webSocketDebuggerUrl, 'Page.captureScreenshot', { format: 'png' })
     const file = resolve(fileParts.join(' '))
     mkdirSync(dirname(file), { recursive: true })
     writeFileSync(file, Buffer.from(data, 'base64'))
-    // The path as one plain line: it goes straight into the next command.
+    // The path as one plain line on stdout: it goes straight into the next
+    // command. The page's visibility rides stderr, so a photograph of a hidden
+    // page reads as hidden rather than as a refused capture (T194).
     process.stdout.write(`${file}\n`)
+    process.stderr.write(`shot ${key} on ${target.title || target.id}: visibility ${state}\n`)
+    return
+  }
+
+  if (command === 'visible') {
+    const [key, ...extra] = rest
+    if (key === undefined || extra.length > 0) {
+      throw new CliError('visible needs a target', true)
+    }
+
+    const target = pickTarget(targets, key)
+    const state = await readVisibility(target.webSocketDebuggerUrl)
+    process.stdout.write(`visible ${key} on ${target.title || target.id}: visibility ${state}\n`)
+    return
+  }
+
+  if (command === 'reveal') {
+    const [key, ...extra] = rest
+    if (key === undefined || extra.length > 0) {
+      throw new CliError('reveal needs a target', true)
+    }
+
+    const target = pickTarget(targets, key)
+    const before = await readVisibility(target.webSocketDebuggerUrl)
+    await revealWindow(port, target)
+    await sleep(REVEAL_SETTLE_MS)
+    const after = await readVisibility(target.webSocketDebuggerUrl)
+    process.stdout.write(`revealed ${key} on ${target.title || target.id}: visibility ${before} -> ${after}\n`)
     return
   }
 
