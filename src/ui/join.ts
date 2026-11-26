@@ -1,11 +1,14 @@
 /**
  * What a person pastes into the join box, and where it points (T3b item 1).
  *
- * The start screen shows two forms of the same link, so both are accepted
- * (`spec.md` §5, R26):
+ * The box accepts two shapes of the same link (`spec.md` §5, R26):
  *
- *   watchparty://join?h=<host>&p=<port>&c=<code>   the Copy button's form
- *   http://<host>:<port>/join?c=<code>             the raw fallback
+ *   watchparty://join?h=<host>&p=<port>&c=<code>   the app's own form
+ *   http://<host>:<port>/join?c=<code>             the one invitation on screen
+ *
+ * T185 / ADR-056 prints only the plain address now, but the app's own form is
+ * still accepted - and the composer still builds it - so a link sent before the
+ * change keeps working.
  *
  * Pure, like the timing maths: no DOM, no socket, so `node --test` can check it.
  * Nothing here decides whether the room exists — that is the other sidecar's

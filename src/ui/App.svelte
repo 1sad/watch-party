@@ -19,11 +19,8 @@
   import { parseJoinLink, readJoinLink, UNREADABLE_LINK, UNREACHABLE_ROOM } from './join.ts'
   import { ROOM_CODE_META, servedRoomCode } from './served-code.ts'
   import { BOOT_SENTENCE_ID } from './boot-sentence.ts'
-  import {
-    copyTextToClipboard,
-    readTextFromClipboard,
-    type InviteForm,
-  } from './clipboard.ts'
+  import { copyTextToClipboard, readTextFromClipboard } from './clipboard.ts'
+  import { invitationAddress, type InviteSurface } from './invite-address.ts'
   import { memberIdentity, rememberMemberName, rememberSeat } from './identity.ts'
   import { normalizeName } from '../shared/names.ts'
   import {
@@ -136,7 +133,12 @@
   }
 
   let payload = $state<StartPayload | null>(null)
-  /** T177 / R51: the two invitations the owner offers, one composer, one shape. */
+  /**
+   * T185 / R51 as amended, ADR-056: the sidecar's one composed invitation. Only
+   * its plain `raw` address is printed; `primary` (the `watchparty://` form) is
+   * still built so nothing that reads a join link loses it, but it is no longer
+   * on any screen.
+   */
   const invite = $derived(payload?.invite ?? null)
   /**
    * T64: this window joined from a link (or the box), so the room it shows is
@@ -146,11 +148,12 @@
   let fromLink = $state(false)
   let unreachable = $state(false)
   /**
-   * T177 / R51: which invitation's Copy actually copied, and what a refused copy
-   * says. `copied` is a form, never a plain boolean: two buttons share this page
-   * and only the one that wrote may show "Copied".
+   * T185 / R51 as amended, ADR-056: the one Invite button writes, and only a
+   * write that resolved may put "Copied" on it. A refused copy says so in
+   * words instead (`clipboard.ts`); nothing here can claim a copy that did not
+   * happen. Two screens draw the button, but only one is on show at a time.
    */
-  let copied = $state<InviteForm | null>(null)
+  let copied = $state(false)
   let copyNotice = $state<string | null>(null)
   let timer: ReturnType<typeof setTimeout> | undefined
 
@@ -972,6 +975,34 @@
   }
 
   const host = hostWebview()
+
+  /**
+   * T185 / R51 as amended, ADR-056: which of the three screens is offering the
+   * invitation. A browser guest has no window host; an app guest is a window
+   * that joined a room that is not its own; the owner's own room is the front
+   * door, and its watching screen prints the same address.
+   */
+  const inviteSurface = $derived<InviteSurface>(
+    inOwnRoom ? 'front-door' : host === null ? 'browser-guest' : 'app-guest',
+  )
+
+  /**
+   * T185 / ADR-056: the room's one invitation, in the shape its screen shows.
+   * The front door prints the sidecar's own composed address; a guest prints the
+   * address it is connected by (an app window) or the origin of the page it was
+   * served (a browser) - never its own sidecar's port, which a friend could
+   * reach but which would lead to the guest's empty room. The rule, and why
+   * each screen learns the address where it does, is `ui/invite-address.ts`.
+   */
+  const inviteLink = $derived(
+    invitationAddress({
+      surface: inviteSurface,
+      code: roomCode ?? payload?.roomCode ?? null,
+      ownAddress: invite?.raw ?? null,
+      roomOrigin: ownerOrigin,
+      pageOrigin: location.origin,
+    }),
+  )
 
   /**
    * T178 / R54, ADR-054: what the picture area holds, chosen in one place. A room
@@ -2104,20 +2135,19 @@
   }
 
   /**
-   * T177 / R51: one Copy for one invitation. The clipboard module owns the
-   * decision - no `navigator.clipboard` on a plain `http://` page, or a write
-   * the browser refuses, is a refusal - and only a resolved write sets the
-   * copied state. A refusal names the address on screen instead of claiming a
-   * copy that did not happen.
+   * T185 / R51 as amended, ADR-056: the one Invite press. The clipboard module
+   * owns the decision - no `navigator.clipboard` on a plain `http://` page, or a
+   * write the browser refuses, is a refusal - and only a resolved write sets the
+   * copied state, which the button shows for a moment and then drops. A refusal
+   * names the address on screen instead of claiming a copy that did not happen.
    */
-  async function copy(form: InviteForm, text: string): Promise<void> {
-    const result = await copyTextToClipboard(form, text)
+  async function copy(text: string): Promise<void> {
+    const result = await copyTextToClipboard(text)
     copied = result.copied
     copyNotice = result.notice
-    if (result.copied !== null) {
-      const formCopied = result.copied
+    if (result.copied) {
       setTimeout(() => {
-        if (copied === formCopied) copied = null
+        copied = false
       }, 1500)
     }
   }
@@ -2296,43 +2326,30 @@
           The room is already open, so share the invite link below whenever you like -
           <strong>Start a room</strong> only enters it.
         </p>
-        <p class="room">Room code <strong data-invite-code>{roomCode ?? payload.roomCode}</strong></p>
+        <!-- T185 / R51 as amended, ADR-056: one invitation, in the room code's
+             own shape and beside it, with one Invite button that copies it. -->
+        <div class="room-row">
+          <p class="room">Room code <strong data-invite-code>{roomCode ?? payload.roomCode}</strong></p>
+          {#if inviteLink !== null}
+            <span class="invite-link" data-invite-link title={inviteLink}>{inviteLink}</span>
+            <button
+              type="button"
+              class="invite-button"
+              data-invite-copy
+              onclick={() => void copy(inviteLink)}
+            >
+              {copied ? 'Copied' : 'Invite'}
+            </button>
+          {/if}
+        </div>
+        {#if copyNotice !== null}
+          <p class="copy-notice" role="status">{copyNotice}</p>
+        {/if}
 
       {#if payload.status === 'pending'}
         <p class="sentence">Asking your router to open a port…</p>
       {:else if payload.result !== null}
         <p class="sentence">{payload.result.sentence}</p>
-
-        {#if invite !== null}
-          <!-- T177 / R51: both invitations are first-class. The app link is for
-               someone who has Watch Party; the plain address is for anyone with
-               a browser (ADR-054), and it is no longer a disclosure hidden
-               inside the link. Each has its own Copy, and a Copy that could not
-               copy says so instead of showing a copied state. -->
-          <section class="invitations">
-            <div class="invite-choice">
-              <p class="label">For the Watch Party app</p>
-              <p class="link" data-invite-link>{invite.primary}</p>
-              <button type="button" data-invite-copy onclick={() => void copy('app', invite.primary)}>
-                {copied === 'app' ? 'Copied' : 'Copy app link'}
-              </button>
-            </div>
-            <div class="invite-choice">
-              <p class="label">For any browser</p>
-              <p class="link raw" data-invite-raw>{invite.raw}</p>
-              <button type="button" data-invite-copy-browser onclick={() => void copy('browser', invite.raw)}>
-                {copied === 'browser' ? 'Copied' : 'Copy browser address'}
-              </button>
-              {#if invite.lanRaw !== null && invite.lanRaw !== invite.raw}
-                <p class="label fallback">On this network, in a browser:</p>
-                <p class="link raw">{invite.lanRaw}</p>
-              {/if}
-            </div>
-            {#if copyNotice !== null}
-              <p class="copy-notice" role="status">{copyNotice}</p>
-            {/if}
-          </section>
-        {/if}
 
         {#if payload.result.kind !== 'ok'}
           <!-- T67, spec §14's last row: no public link exists, so the two
@@ -2366,8 +2383,27 @@
       {/if}
       </section>
     {:else}
+      <!-- T185 / ADR-056: a window that joined someone else's room and has not
+           been let in yet still holds the room's invitation - it joined by that
+           address, so it may pass it on, like every other screen. -->
       <h2>You joined a room</h2>
-      <p class="sentence">Someone else started this one, so the link above is not yours to share.</p>
+      <p class="sentence">The room has not answered yet.</p>
+      {#if inviteLink !== null}
+        <div class="room-row">
+          <span class="invite-link" data-invite-link title={inviteLink}>{inviteLink}</span>
+          <button
+            type="button"
+            class="invite-button"
+            data-invite-copy
+            onclick={() => void copy(inviteLink)}
+          >
+            {copied ? 'Copied' : 'Invite'}
+          </button>
+        </div>
+        {#if copyNotice !== null}
+          <p class="copy-notice" role="status">{copyNotice}</p>
+        {/if}
+      {/if}
     {/if}
 
     <section class="join">
@@ -2446,17 +2482,27 @@
         </div>
       {/if}
 
-      <!-- T97 / ADR-047, T177 / R51: the invite bar is the chat column's top row,
-           not a second panel. The room's code, then both invitations as equals -
-           the app link and the plain address, each saying who it is for and each
-           with its own Copy. The plain address is no longer a disclosure. A
-           guest's bar has no link to offer, so it names the code and says the
-           link is the host's. -->
+      <!-- T97 / ADR-047, T185 / R51 as amended, ADR-056: the invite bar is the
+           chat column's top row, not a second panel. The room's code, and beside
+           it the room's one invitation in the room code's own shape, with one
+           Invite button. Every bar carries it - the owner's, an app guest's and
+           a browser guest's - because a guest already holds the address and the
+           code (ADR-056). -->
       <section class="invite-bar" data-invite>
         <div class="invite-row">
           <span class="invite-code">Room <strong data-invite-code>{roomCode ?? payload.roomCode}</strong></span>
 
-          {#if invite === null && inOwnRoom}
+          {#if inviteLink !== null}
+            <span class="invite-link" data-invite-link title={inviteLink}>{inviteLink}</span>
+            <button
+              type="button"
+              class="invite-copy"
+              data-invite-copy
+              onclick={() => void copy(inviteLink)}
+            >
+              {copied ? 'Copied' : 'Invite'}
+            </button>
+          {:else if invite === null && inOwnRoom}
             {#if payload.status === 'pending'}
               <span class="invite-note">Asking your router to open a port…</span>
             {:else if payload.result !== null}
@@ -2465,46 +2511,17 @@
                 <button type="button" class="invite-more" onclick={() => void retry()}>Try again</button>
               {/if}
             {/if}
-          {:else if invite === null}
-            <span class="invite-note" data-invite-note>The invite link is the host's to share.</span>
           {/if}
         </div>
 
-        {#if invite !== null}
-          <div class="invite-choice">
-            <span class="invite-for">For the app</span>
-            <span class="invite-link" data-invite-link title={invite.primary}>{invite.primary}</span>
-            <button type="button" class="invite-copy" data-invite-copy onclick={() => void copy('app', invite.primary)}>
-              {copied === 'app' ? 'Copied' : 'Copy'}
-            </button>
-          </div>
-          <div class="invite-choice">
-            <span class="invite-for">For a browser</span>
-            <span class="invite-link" data-invite-raw title={invite.raw}>{invite.raw}</span>
-            <button
-              type="button"
-              class="invite-copy"
-              data-invite-copy-browser
-              onclick={() => void copy('browser', invite.raw)}
-            >
-              {copied === 'browser' ? 'Copied' : 'Copy'}
-            </button>
-          </div>
-          {#if invite.lanRaw !== null && invite.lanRaw !== invite.raw}
-            <div class="invite-choice">
-              <span class="invite-for">Browser, this network</span>
-              <span class="invite-link" title={invite.lanRaw}>{invite.lanRaw}</span>
-            </div>
+        {#if invite !== null && payload.result !== null && payload.result.kind !== 'ok'}
+          <p class="invite-reason">{payload.result.sentence}</p>
+          {#if payload.status === 'ready'}
+            <button type="button" class="secondary" onclick={() => void retry()}>Try again</button>
           {/if}
-          {#if payload.result !== null && payload.result.kind !== 'ok'}
-            <p class="invite-reason">{payload.result.sentence}</p>
-            {#if payload.status === 'ready'}
-              <button type="button" class="secondary" onclick={() => void retry()}>Try again</button>
-            {/if}
-          {/if}
-          {#if copyNotice !== null}
-            <p class="invite-reason" role="status">{copyNotice}</p>
-          {/if}
+        {/if}
+        {#if copyNotice !== null}
+          <p class="invite-reason" role="status">{copyNotice}</p>
         {/if}
 
         {#if connectionLost}
@@ -2715,10 +2732,10 @@
     min-height: 0;
   }
 
-  /* T97 / ADR-047: the invite bar is the chat column's top row - the code, then
-     T177 / R51's two invitations, each on its own line with a Copy. Short lines
-     and ellipsis keep them to the 380 px column; the full link stays in the DOM
-     and in `title`. */
+  /* T97 / ADR-047, T185 / ADR-056: the invite bar is the chat column's top row -
+     the room's code and its one invitation on one line, with one Invite button.
+     Short lines and ellipsis keep them to the 380 px column; the full address
+     stays in the DOM and in `title`. */
   .invite-bar {
     grid-area: invite;
     min-width: 0;
@@ -2736,20 +2753,20 @@
     min-width: 0;
   }
 
-  /* T177 / R51: the bar's two invitations as equals - a label saying who each
-     is for, the address, and its own Copy. */
-  .invite-bar .invite-choice {
+  /* T185 / R51 as amended, ADR-056: the code and its one invitation sit on one
+     row, the invitation in the code's own compact shape - a monospaced chip -
+     with one Invite button beside it. Short text and ellipsis keep both inside
+     the 380 px column; the full address stays in the DOM and in `title`. */
+  .room-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 0.4rem;
-    min-width: 0;
-    margin-top: 0.3rem;
+    gap: 0.5rem 0.75rem;
+    margin: 0 0 1rem;
   }
 
-  .invite-for {
-    flex: 0 0 auto;
-    color: #9a9aab;
-    white-space: nowrap;
+  .room-row .room {
+    margin: 0;
   }
 
   .invite-code {
@@ -2765,15 +2782,22 @@
   }
 
   .invite-link {
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     min-width: 0;
+    max-width: 100%;
     overflow: hidden;
+    padding: 0.15rem 0.45rem;
+    border: 1px solid #2c2d36;
+    border-radius: 6px;
+    background: #15161c;
     font-family: Consolas, monospace;
+    font-size: 0.8rem;
     white-space: nowrap;
     text-overflow: ellipsis;
     color: #7fd0a5;
   }
 
+  .invite-button,
   .invite-copy,
   .invite-more {
     flex: 0 0 auto;
@@ -3096,22 +3120,10 @@
     background: #1a1b22;
   }
 
-  /* T177 / R51: the front door's two invitations sit side by side and stack when
-     the window is too narrow for both. */
-  .invitations {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 0.75rem 1rem;
-    margin-top: 0.75rem;
-  }
-
-  .invite-choice {
-    min-width: 0;
-  }
-
+  /* T185 / R51 as amended, ADR-056: a refused copy's sentence, under the row it
+     belongs to - the front door's, or the bar's. */
   .copy-notice {
-    grid-column: 1 / -1;
-    margin: 0;
+    margin: 0 0 0.75rem;
     line-height: 1.4;
     color: #ffb3a7;
   }
