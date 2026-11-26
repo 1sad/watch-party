@@ -219,9 +219,10 @@ reproduce in this app's own two views** on 2026-11-22 (ticket 23): there a trust
 granted` while `document.fullscreenEnabled` reads `true` and no permissions policy is sent, because this window owns
 fullscreen itself (ADR-028). See "The probe page the repository owns" below.
 
-A press also proves nothing while its document is hidden: `cdp.mjs click` waits on the page's next animation frame, so a
-hidden view swallows the press and the call times out after 10 s (`Runtime.evaluate got no answer`) instead of failing.
-Check `document.visibilityState` before believing a refusal (ticket 23).
+A press still lands while its document is hidden, but `cdp.mjs click` cannot wait for a frame there: it reads
+`document.activeElement` after the page's next animation frame, a hidden view produces none, so the line says
+`pressed; the page is hidden, ...` and the call exits 0 (ticket 190). The press is what the exit code means - check
+`document.visibilityState` alongside it when the handler's own effect is the thing you are proving (ticket 23).
 
 Anything a person would read off the screen, ask the page for instead. That is what makes a check cheap and what makes
 it possible for the lead to check a worker's claim without repeating the mouse work.
