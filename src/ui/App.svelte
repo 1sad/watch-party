@@ -16,7 +16,7 @@
     type SetMediaFrame,
     type WireMember,
   } from '../shared/protocol.ts'
-  import { parseJoinLink, UNREADABLE_LINK, UNREACHABLE_ROOM } from './join.ts'
+  import { parseJoinLink, readJoinLink, UNREADABLE_LINK, UNREACHABLE_ROOM } from './join.ts'
   import { ROOM_CODE_META, servedRoomCode } from './served-code.ts'
   import { BOOT_SENTENCE_ID } from './boot-sentence.ts'
   import {
@@ -1740,9 +1740,33 @@
 
   function submitJoin(event: SubmitEvent): void {
     event.preventDefault()
-    const target = parseJoinLink(joinText)
-    if (target === null) {
-      sentence = UNREADABLE_LINK
+    // T183 / R57: the box reads either shape through one parser, so the plain
+    // address joins the same way the app form does. A shape it cannot read is
+    // the box's one unreadable-link sentence, unchanged (ticket 177's wording).
+    const reading = readJoinLink(joinText)
+    if (reading.kind === 'refused') {
+      sentence = reading.sentence
+      return
+    }
+    const target = reading.target
+    // T183 / R57, the ticket's first trap: an address that names this window's
+    // **own** room is an entry, not a second connection. The room is live from
+    // the sidecar's boot and this page already holds the owner's seat, so
+    // dialling it again would close that seat - which §14 reads as the owner
+    // leaving, and the room would end under the person who asked to enter it.
+    // Both facts the address carries are checked: the room's own port (an
+    // address on any other port is another copy's room, and goes to `connect`
+    // below - or says nothing answered) and the code (ADR-044: a wrong one is
+    // refused in the room's own words, the same sentence its `bad_room` frame
+    // would have produced).
+    if (inOwnRoom && selfId !== null && payload !== null && target.port === payload.localPort) {
+      if (target.code === payload.roomCode) {
+        endedNotice = false
+        sentence = null
+        enterRoom()
+        return
+      }
+      sentence = ERROR_SENTENCES.bad_room
       return
     }
     enteredRoom = true

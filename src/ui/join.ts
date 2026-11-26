@@ -58,3 +58,25 @@ export function parseJoinLink(raw: string): JoinTarget | null {
 
   return { host, port, code, socketUrl: `ws://${host}:${port}/` }
 }
+
+/** What the box does with what was pasted: the room to dial, or the one sentence. */
+export type JoinReading =
+  | { kind: 'target'; target: JoinTarget }
+  | { kind: 'refused'; sentence: string }
+
+/**
+ * T183 / R57: one reading for both shapes of the same three facts. The plain
+ * `http://<address>:<port>/join?c=<code>` address and the app's own
+ * `watchparty://join?h=&p=&c=` form produce the same `JoinTarget`, so they lead
+ * to the same `connect()` - the plain address is a second *shape*, not a second
+ * route (ADR-054). A malformed address, one carrying no code, and a foreign
+ * scheme are all `refused`, in the box's one unreadable-link sentence
+ * (`UNREADABLE_LINK`, unchanged since T3b); whether anything answers on that
+ * host and port is the socket's answer, not this parser's (`UNREACHABLE_ROOM`).
+ */
+export function readJoinLink(raw: string): JoinReading {
+  const target = parseJoinLink(raw)
+  return target === null
+    ? { kind: 'refused', sentence: UNREADABLE_LINK }
+    : { kind: 'target', target }
+}

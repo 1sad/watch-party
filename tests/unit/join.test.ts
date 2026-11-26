@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { parseJoinLink } from '../../src/ui/join.ts'
+import { buildInviteLinks } from '../../src/server/invite.ts'
+import { parseJoinLink, readJoinLink } from '../../src/ui/join.ts'
 
 // T3b: the join box accepts either link form (item 1) and refuses anything else
 // with one sentence. `bad_room` is not decided here — that is the room's answer.
@@ -64,4 +65,53 @@ test('a DNS name and an http URL with a path both parse', () => {
     parseJoinLink('watchparty://join?h=watch.example.net&p=80&c=ABC234')?.socketUrl,
     'ws://watch.example.net:80/',
   )
+})
+
+// T183 / R57, ADR-054: one room, two shapes of the same three facts. The
+// composer's own two outputs are read back through the box's own reader, so this
+// is the address the invite bar really prints and the link it really copies -
+// not a hand-written pair that could agree with itself and not with the app.
+test("one room's plain address and its app form parse to the same host, port and code, and lead to the same join", () => {
+  const links = buildInviteLinks({
+    kind: 'cgnat',
+    externalIp: '10.0.33.122',
+    mappedPort: 52341,
+    lanIp: '192.168.10.44',
+    localPort: 52341,
+    code: 'ABC234',
+  })
+  assert.ok(links)
+
+  const app = readJoinLink(links.primary)
+  const plain = readJoinLink(links.raw)
+  if (app.kind !== 'target' || plain.kind !== 'target') {
+    assert.fail(`both forms must be a join target: app=${app.kind} plain=${plain.kind}`)
+  }
+
+  assert.equal(app.target.host, '192.168.10.44')
+  assert.equal(app.target.port, 52341)
+  assert.equal(app.target.code, 'ABC234')
+  // The join itself: one socket URL, so the two shapes cannot dial two rooms.
+  assert.equal(app.target.socketUrl, 'ws://192.168.10.44:52341/')
+  assert.deepEqual(plain.target, app.target)
+})
+
+// T183 / R57: a paste the box cannot read is refused in words, one shape at a
+// time. The sentence is quoted as a person reads it - not the constant - so a
+// later change to the wording has to come past this test.
+test('a malformed address, an address with no code and a foreign scheme are each refused in words', () => {
+  const refused: Array<[string, string]> = [
+    ['http://192.168.1.20:99999/join?c=ABC234', 'a malformed address: a port that cannot be dialled'],
+    ['http://192.168.1.20:51234/join', 'an address carrying no code'],
+    ['https://192.168.1.20:51234/join?c=ABC234', 'a foreign scheme: not the app form, not a plain address'],
+  ]
+
+  for (const [text, what] of refused) {
+    assert.deepEqual(
+      readJoinLink(text),
+      { kind: 'refused', sentence: 'That does not look like a Watch Party link.' },
+      `expected the refusal sentence for ${what}: ${text}`,
+    )
+    assert.equal(parseJoinLink(text), null, `expected no target for ${what}: ${text}`)
+  }
 })
