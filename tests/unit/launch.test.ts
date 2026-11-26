@@ -5,6 +5,7 @@ import { INVITE_SCHEME, isInviteLink, pageUrl } from '../../src/shared/launch.ts
 
 const PAGE = 'http://127.0.0.1:43117/'
 const INVITE = 'watchparty://join?h=192.168.1.20&p=43117&c=K3M9QR'
+const PLAIN = 'http://192.168.1.20:43117/join?c=K3M9QR'
 
 test('a launched invite link becomes one ?join= value on the page URL', () => {
   assert.equal(INVITE_SCHEME, 'watchparty:')
@@ -43,4 +44,36 @@ test('someone else\'s scheme and a later good link: the first invite wins', () =
     pageUrl(PAGE, ['--foo', INVITE, 'watchparty://join?h=10.0.0.2&p=1&c=ZZZZZZ']),
     `${PAGE}?join=${encodeURIComponent(INVITE)}`,
   )
+})
+
+test('the plain address is an invite too, and becomes the same ?join= value', () => {
+  assert.equal(isInviteLink(PLAIN), true)
+  assert.equal(
+    pageUrl(PAGE, [PLAIN]),
+    `${PAGE}?join=${encodeURIComponent(PLAIN)}`,
+  )
+  assert.equal(
+    pageUrl(PAGE, ['--foo', PLAIN, INVITE]),
+    `${PAGE}?join=${encodeURIComponent(PLAIN)}`,
+  )
+})
+
+test('the plain address is an invite only in the http /join ?c= shape (T193)', () => {
+  for (const yes of [
+    'http://192.168.1.20:43117/join?c=K3M9QR',
+    'http://sam-pc/join?c=K3M9QR',
+    'http://192.168.1.20:43117/join?c=K3M9QR&x=1',
+  ]) {
+    assert.equal(isInviteLink(yes), true, yes)
+  }
+  for (const no of [
+    'https://example.com/join?c=K3M9QR',
+    'ftp://192.168.1.20:43117/join?c=K3M9QR',
+    'http://192.168.1.20:43117/JOIN?c=K3M9QR',
+    'http://192.168.1.20:43117/join?C=K3M9QR',
+    'http://192.168.1.20:43117/join',
+    'http://192.168.1.20:43117/join?x=c=K3M9QR',
+  ]) {
+    assert.equal(isInviteLink(no), false, no)
+  }
 })

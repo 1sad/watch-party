@@ -13,11 +13,13 @@ const usage = `Usage: node scripts/run-host.mjs [--cdp-port <n>] [<invite link>]
   --cdp-port <n>   open the window's DevTools endpoint on 127.0.0.1:<n> (Debug
                    build only, loopback only); without the switch, no endpoint.
                    Two windows need two ports: 9222, then 9223.
-  <invite link>    one watchparty://join?... link, in quotes (T131). The window
-                   opens on that room's watching screen: the link is handed to
-                   the host as a command-line argument, which is the route a
-                   clicked link takes too (T2b, ADR-034). Without a link the
-                   window opens on the first screen.
+  <invite link>    one watchparty://join?... link or the plain
+                   http://<host>:<port>/join?c=<code> address, in quotes
+                   (T131, T193). The window opens on that room's watching
+                   screen: the link is handed to the host as a command-line
+                   argument, which is the route a clicked link takes too
+                   (T2b, ADR-034). Without a link the window opens on the
+                   first screen.
 `
 
 // `--cdp-port <n>` is what `npm run dev:debug` passes (T8c): the host then opens
@@ -57,11 +59,12 @@ function parseArgs(args) {
     if (parsed.invite !== null) refuse(`one invite link at a time; got "${parsed.invite}" and "${arg}".`)
 
     // The host's own rule (LaunchLink.Find, ADR-034): only an absolute
-    // watchparty: link is an invite, and anything else is "no invite" there
-    // without a word. A launcher that silently opened the first screen would
-    // read as a passing two-window check, so the launcher refuses here instead.
+    // watchparty: link or the plain http://…/join?c= address is an invite, and
+    // anything else is "no invite" there without a word. A launcher that
+    // silently opened the first screen would read as a passing two-window check,
+    // so the launcher refuses here instead.
     if (!isInviteLink(arg)) {
-      refuse(`"${arg}" is not a watchparty:// link, so the host would ignore it. Quote the whole link.`)
+      refuse(`"${arg}" is not a watchparty:// link or a plain http://…/join?c= address, so the host would ignore it. Quote the whole link.`)
     }
 
     parsed.invite = arg
@@ -72,7 +75,9 @@ function parseArgs(args) {
 
 function isInviteLink(text) {
   try {
-    return new URL(text).protocol === 'watchparty:'
+    const url = new URL(text)
+    return url.protocol === 'watchparty:'
+      || (url.protocol === 'http:' && url.pathname === '/join' && url.search.startsWith('?c='))
   } catch {
     return false
   }
