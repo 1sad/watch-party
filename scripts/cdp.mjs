@@ -27,6 +27,12 @@
 // reaches may call `requestFullscreen()`. An `eval`led call is refused with
 // `TypeError: not granted` (T08, T19).
 //
+// `click`'s exit code means the press was sent, not that the page answered
+// afterwards: the focus it prints is read after a frame, and a page the browser
+// reports as hidden - a window behind another, a minimised one - never produces
+// one. That read is therefore bounded and, when no frame comes, the line says
+// the press landed and the element was not read (T190).
+//
 // `type` enters text the way a person's typing or paste does: it goes through
 // `Input.insertText`, so the page's own `input` handler sees it and a bound
 // field updates. `Runtime.evaluate` writing `element.value` is not the same
@@ -47,6 +53,13 @@ import { dirname, resolve } from 'node:path'
 
 const DEFAULT_PORT = 9222
 const ANSWER_TIMEOUT_MS = 10_000
+/**
+ * How long the page may take to produce the frame `click` reads focus after.
+ * A visible page paints one every 16 ms or so; a hidden one paints none at all.
+ */
+const FRAME_BUDGET_MS = 500
+/** The host's own bound on that read, so a page that answers nothing costs 3 s, not 10 s. */
+const FRAME_ANSWER_TIMEOUT_MS = 3_000
 
 const USAGE = [
   'usage:',
@@ -164,7 +177,7 @@ function pickTarget(targets, key) {
  * refused; never open-ended. One socket because a press and its release belong
  * to the same gesture: a second connection would be a second session.
  */
-function exchange(webSocketUrl, commands) {
+function exchange(webSocketUrl, commands, timeoutMs = ANSWER_TIMEOUT_MS) {
   return new Promise((settle, reject) => {
     const socket = new WebSocket(webSocketUrl)
     const results = []
@@ -188,8 +201,8 @@ function exchange(webSocketUrl, commands) {
       clearTimeout(timer)
       timer = setTimeout(() => {
         close()
-        reject(new CliError(`${commands[step].method} got no answer within ${ANSWER_TIMEOUT_MS / 1000} s`))
-      }, ANSWER_TIMEOUT_MS)
+        reject(new CliError(`${commands[step].method} got no answer within ${timeoutMs / 1000} s`))
+      }, timeoutMs)
       socket.send(JSON.stringify({ id: step + 1, method: commands[step].method, params: commands[step].params ?? {} }))
     }
 
@@ -224,14 +237,33 @@ function print(value) {
   process.stdout.write(`${JSON.stringify(value)}\n`)
 }
 
-/** What the page focused once the press was handled: a tag and an id, or null. */
+/**
+ * What the page focused once the press was handled: its tag and id, whether a
+ * frame was waited for, and whether the page calls itself hidden. The wait is
+ * bounded because a hidden page produces no animation frame at all (T190): it
+ * then answers at once, read synchronously, with `waited: false`.
+ */
 const ACTIVE_ELEMENT_AFTER_CLICK = `new Promise((settle) => {
-  requestAnimationFrame(() => {
+  const read = (waited) => {
     const element = document.activeElement
-    if (!element) return settle(null)
-    settle(element.tagName + (element.id ? '#' + element.id : ''))
-  })
+    const label = element ? element.tagName + (element.id ? '#' + element.id : '') : null
+    settle({ element: label, waited, hidden: document.visibilityState === 'hidden' })
+  }
+  if (document.visibilityState === 'hidden') return read(false)
+  let answered = false
+  const answer = (waited) => {
+    if (answered) return
+    answered = true
+    read(waited)
+  }
+  requestAnimationFrame(() => answer(true))
+  setTimeout(() => answer(false), ${FRAME_BUDGET_MS})
 })`
+
+const READ_ACTIVE_ELEMENT_STEP = {
+  method: 'Runtime.evaluate',
+  params: { expression: ACTIVE_ELEMENT_AFTER_CLICK, returnByValue: true, awaitPromise: true },
+}
 
 /** A real mouse gesture at a point: hover, then press and release, once per click. */
 function clickSteps(x, y, double) {
@@ -240,7 +272,33 @@ function clickSteps(x, y, double) {
     { method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount } },
     { method: 'Input.dispatchMouseEvent', params: { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount } },
   ])
-  return [move, ...gestures, { method: 'Runtime.evaluate', params: { expression: ACTIVE_ELEMENT_AFTER_CLICK, returnByValue: true, awaitPromise: true } }]
+  return [move, ...gestures]
+}
+
+/**
+ * The page's point of focus once the press was handled, and how it was read:
+ * `waited` says a frame was waited for, `hidden` says the page reported itself
+ * hidden and answered without one. A page that answers nothing is not a
+ * failure here - the press has already landed (T190) - so it answers
+ * `waited: false` and the caller says the element was not read.
+ */
+async function readFocusAfterPress(webSocketUrl) {
+  let results
+  try {
+    results = await exchange(webSocketUrl, [READ_ACTIVE_ELEMENT_STEP], FRAME_ANSWER_TIMEOUT_MS)
+  } catch (error) {
+    if (!(error instanceof CliError)) throw error
+    return { element: null, waited: false, hidden: false }
+  }
+
+  const [focused] = results
+  if (focused.exceptionDetails) {
+    const thrown = focused.exceptionDetails.exception?.description ?? focused.exceptionDetails.text
+    throw new CliError(`reading the focused element threw: ${thrown.split('\n')[0]}`)
+  }
+
+  const answer = focused.result?.value
+  return { element: answer?.element ?? null, waited: answer?.waited === true, hidden: answer?.hidden === true }
 }
 
 /**
@@ -439,18 +497,21 @@ async function run(command, rest, port, double, at) {
     }
 
     const target = pickTarget(targets, key)
-    const results = await exchange(target.webSocketDebuggerUrl, clickSteps(pointX, pointY, double))
-    const focused = results[results.length - 1]
+    // Two exchanges, and the exit code turns on the first: the press is what
+    // this command sends, the focus is only its report (T190). The press and
+    // its release still ride one socket, as one gesture.
+    await exchange(target.webSocketDebuggerUrl, clickSteps(pointX, pointY, double))
+    const focused = await readFocusAfterPress(target.webSocketDebuggerUrl)
 
-    if (focused.exceptionDetails) {
-      const thrown = focused.exceptionDetails.exception?.description ?? focused.exceptionDetails.text
-      throw new CliError(`reading the focused element threw: ${thrown.split('\n')[0]}`)
-    }
-
-    const element = focused.result?.value === undefined ? null : focused.result.value
+    const element = focused.element === null ? 'null' : focused.element
+    const said = focused.waited
+      ? `activeElement ${element}`
+      : focused.hidden
+        ? `pressed; the page is hidden, so activeElement ${element} was read without waiting for a frame`
+        : 'pressed; no frame came, so activeElement was not read'
     const gesture = double ? 'double-click' : 'click'
     process.stdout.write(
-      `${gesture} ${key} at (${pointX}, ${pointY}) on ${target.title || target.id}: activeElement ${element ?? 'null'}\n`,
+      `${gesture} ${key} at (${pointX}, ${pointY}) on ${target.title || target.id}: ${said}\n`,
     )
     return
   }
@@ -466,8 +527,8 @@ async function run(command, rest, port, double, at) {
 
     const target = pickTarget(targets, key)
     const results = await exchange(target.webSocketDebuggerUrl, typeSteps(text, at))
-    // After a press the list is [move, press, release, activeElement, field,
-    // insert, field]; without one it is [field, insert, field].
+    // After a press the list is [move, press, release, field, insert, field];
+    // without one it is [field, insert, field].
     const before = readField(results[results.length - 3], 'focused')
     const after = readField(results[results.length - 1], 'focused')
 
