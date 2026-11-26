@@ -1,88 +1,160 @@
-#!/bin/sh
-# The only guardrail (ADR-036): no remote, no CI, so the commit is where a
-# broken test or a broken type is caught. Keep this fast — a hook over ~20 s
-# gets --no-verify'd and then protects nothing.
-#
-# Two steps, in this order: `npm test` (the timing maths) and `npm run check`
-# (svelte-check over src/tests; wired here since T8a2 made the baseline green —
-# on the tree the hook was first added to it exited 1 with 127 errors). A step
-# that passes prints one line; a step that fails prints its whole output,
-# because that is the part someone has to read.
+#!/usr/bin/env node
+// The only guardrail (ADR-036): no remote, no CI, so the commit is where a
+// broken test or a broken type is caught. Keep this fast - a hook over ~20 s
+// gets --no-verify'd and then protects nothing.
+//
+// WHY A NODE BODY (T189). This hook used to be a `#!/bin/sh` script. On this
+// machine git starts hooks itself, but `sh.exe` could not start under the
+// agent's confined shell: `sh.exe: couldn't create signal pipe, Win32 error 5`
+// on every commit, and nine commits on 2026-11-26 were made with --no-verify
+// after running these steps by hand. sh.exe is an MSYS binary that needs a
+// named pipe before it runs a line; node is a native Windows binary and git
+// starts a shebang hook by executing the interpreter directly, so this body
+// has no sh in its path. Measured 2026-11-26: git runs a `#!/usr/bin/env node`
+// hook natively (`git hook run pre-commit`, exit 0).
+//
+// Steps, in this order: `npm test` (the timing maths), `npm run check`
+// (svelte-check over src/tests; wired here since T8a2 made the baseline green -
+// on the tree the hook was first added to it exited 1 with 127 errors), then
+// the secret scan over the staged files. A step that passes prints one line; a
+// step that fails prints its whole output, because that is the part someone
+// has to read.
+//
+// Each child's output is captured through a file, not a pipe: a confined shell
+// on this machine can refuse a program that opens a pipe for its output, and
+// the step that fails has to keep its output either way.
 
-set -u
+// This repo's package.json says `"type": "module"`, and this file has no
+// extension, so node runs the body as an ES module: imports, not require.
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 
-refuse() {
-	printf '\n'
-	printf 'pre-commit: REFUSED - %s\n' "$1"
-	printf 'pre-commit: nothing was committed. Fix it and commit again.\n'
-	printf 'pre-commit: --no-verify would skip this, and it exists, but it\n'
-	printf 'pre-commit: turns off the only check this repository has\n'
-	printf 'pre-commit: (ADR-036). If the check itself is wrong, fix the\n'
-	printf 'pre-commit: check; do not step around it.\n'
-	exit 1
+const out = (line) => process.stdout.write(line + '\n');
+
+function refuse(why) {
+	out('');
+	out('pre-commit: REFUSED - ' + why);
+	out('pre-commit: nothing was committed. Fix it and commit again.');
+	out('pre-commit: --no-verify would skip this, and it exists, but it');
+	out('pre-commit: turns off the only check this repository has');
+	out('pre-commit: (ADR-036). If the check itself is wrong, fix the');
+	out('pre-commit: check; do not step around it.');
+	process.exit(1);
 }
 
-# node --test's spec reporter prints the count as "ℹ pass 73"; three fields,
-# the middle one "pass". Nothing else in its output has that shape.
-#
-# A hung test cannot hold this hook: each test carries a wall-clock bound
-# (package.json, --test-timeout) and --test-force-exit makes the runner leave
-# even when a leaked handle would keep it alive. The output already names the
-# test; only the refused line is told apart, so a timeout reads as a timeout.
-test_out=$(npm test 2>&1) || {
-	printf 'pre-commit: npm test - failed\n'
-	printf '%s\n' "$test_out"
-	if printf '%s\n' "$test_out" | grep -q 'test timed out after'; then
-		refuse 'npm test timed out - a test overran its bound'
-	fi
-	refuse 'npm test failed'
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'wp-precommit-'));
+
+// One command, its combined output, and its exit status. The output goes to a
+// file so a sandbox that refuses a captured pipe cannot turn a passing step
+// into a refusal. `shell` is only on for npm, which is a .cmd script on
+// Windows; the shell there is cmd.exe, which is native.
+function run(command, args, useShell) {
+	const file = path.join(scratch, 'step-' + Math.random().toString(36).slice(2) + '.log');
+	const fd = fs.openSync(file, 'w');
+	let result;
+	try {
+		result = spawnSync(command, args, {
+			shell: Boolean(useShell),
+			stdio: ['ignore', fd, fd]
+		});
+	} finally {
+		fs.closeSync(fd);
+	}
+	let text = '';
+	try {
+		text = fs.readFileSync(file, 'utf8');
+	} catch {
+		text = '';
+	}
+	if (result.error) {
+		text += (text && !text.endsWith('\n') ? '\n' : '') + String(result.error);
+	}
+	return {
+		status: typeof result.status === 'number' ? result.status : 1,
+		output: text.replace(/\r\n/g, '\n').replace(/\s+$/, '')
+	};
 }
-passed=$(printf '%s\n' "$test_out" | awk '$2 == "pass" && NF == 3 { n = $3 } END { print n }')
-printf 'pre-commit: npm test - %s passed\n' "${passed:--}"
 
-# svelte-check ends with "svelte-check found 0 errors and 2 warnings in 1 file",
-# coloured even when piped, so the escape byte is stripped before matching.
-# Exit 0 from the checker already means zero errors; the count is read out so
-# the line says so rather than asserting it.
-check_out=$(npm run check 2>&1) || {
-	printf 'pre-commit: npm run check - failed\n'
-	printf '%s\n' "$check_out"
-	refuse 'npm run check failed'
+const DEFAULT_SCANNER = 'C:/dev/Code/repo-guard/scan_artifacts.py';
+
+try {
+	// node --test's spec reporter prints the count as "pass 73" on its own
+	// line; the only line with exactly three fields whose middle one is
+	// "pass". Nothing else in its output has that shape. The last such line
+	// wins, as the sum line comes last.
+	//
+	// A hung test cannot hold this hook: each test carries a wall-clock bound
+	// (package.json, --test-timeout) and --test-force-exit makes the runner
+	// leave even when a leaked handle would keep it alive. The output already
+	// names the test; only the refused line is told apart, so a timeout reads
+	// as a timeout.
+	const test = run('npm test', [], true);
+	if (test.status !== 0) {
+		out('pre-commit: npm test - failed');
+		if (test.output !== '') out(test.output);
+		if (test.output.includes('test timed out after')) {
+			refuse('npm test timed out - a test overran its bound');
+		}
+		refuse('npm test failed');
+	}
+	let passed = '';
+	for (const line of test.output.split('\n')) {
+		const fields = line.trim().split(/\s+/);
+		if (fields.length === 3 && fields[1] === 'pass') passed = fields[2];
+	}
+	out('pre-commit: npm test - ' + (passed || '-') + ' passed');
+
+	// svelte-check ends with "svelte-check found 0 errors and 2 warnings in 1 file",
+	// coloured even when piped, so the escape byte is stripped before matching.
+	// Exit 0 from the checker already means zero errors; the count is read out
+	// so the line says so rather than asserting it.
+	const check = run('npm run check', [], true);
+	if (check.status !== 0) {
+		out('pre-commit: npm run check - failed');
+		if (check.output !== '') out(check.output);
+		refuse('npm run check failed');
+	}
+	let errors = '';
+	const plain = check.output.replace(/\x1b/g, '');
+	for (const match of plain.matchAll(/svelte-check found +([0-9]+) error/g)) {
+		errors = match[1];
+	}
+	out('pre-commit: npm run check - ' + (errors || '0') + ' errors');
+
+	// The third step, and the only one that looks for secrets: a token pasted
+	// into a doc, a key block, a `C:\Users\<name>` path in a log. `npm test`
+	// and svelte-check cannot see any of those. The scanner is not part of
+	// this repository; it lives in a local toolkit. When it is not where this
+	// hook expects it, the scan is SKIPPED with a line and the commit proceeds
+	// - a moved folder must not become a repo nobody can commit to.
+	const scanner = process.env.REPO_GUARD_SCANNER || DEFAULT_SCANNER;
+	if (!fs.existsSync(scanner)) {
+		out('pre-commit: secret scan - SKIPPED (scanner not found at ' + scanner + ')');
+	} else {
+		// One scanner run for the whole commit. The file list is an argv array,
+		// so a path with a space stays one argument, and a deleted file (gone
+		// from disk) is left out.
+		const staged = run('git', ['diff', '--cached', '--name-only', '--diff-filter=ACMR']);
+		const files = staged.output
+			.split('\n')
+			.map((name) => name.replace(/\s+$/, ''))
+			.filter((name) => name !== '' && fs.existsSync(name));
+		if (files.length === 0) {
+			out('pre-commit: secret scan - nothing to read');
+		} else {
+			const scan = run('python', [scanner, ...files]);
+			if (scan.status !== 0) {
+				out('pre-commit: secret scan - refused (exit ' + scan.status + ')');
+				if (scan.output !== '') out(scan.output);
+				refuse('the secret scan found something in this commit');
+			}
+			out('pre-commit: secret scan - clean (' + files.length + ' files)');
+		}
+	}
+} finally {
+	fs.rmSync(scratch, { recursive: true, force: true });
 }
-errors=$(printf '%s\n' "$check_out" | tr -d '\033' | sed -n 's/.*svelte-check found \{1,\}\([0-9]\{1,\}\) error.*/\1/p' | tail -n 1)
-printf 'pre-commit: npm run check - %s errors\n' "${errors:-0}"
 
-# The third step, and the only one that looks for secrets: a token pasted into
-# a doc, a key block, a `C:\Users\<name>` path in a log. `npm test` and
-# svelte-check cannot see any of those. The scanner is not part of this
-# repository; it lives in a local toolkit. When it is not where this hook
-# expects it, the scan is SKIPPED with a line and the commit proceeds — a moved
-# folder must not become a repo nobody can commit to.
-scanner="${REPO_GUARD_SCANNER:-C:/dev/Code/repo-guard/scan_artifacts.py}"
-if [ ! -f "$scanner" ]; then
-	printf 'pre-commit: secret scan - SKIPPED (scanner not found at %s)\n' "$scanner"
-else
-	# One scanner run for the whole commit. The list is built into positional
-	# parameters rather than word-split, so a path with a space stays one
-	# argument. A deleted file is gone from disk, so it is skipped.
-	set --
-	while IFS= read -r f; do
-		[ -n "$f" ] && [ -f "$f" ] && set -- "$@" "$f"
-	done <<EOF
-$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null)
-EOF
-	if [ $# -eq 0 ]; then
-		printf 'pre-commit: secret scan - nothing to read\n'
-	else
-		scan_out=$(python "$scanner" "$@" 2>&1)
-		scan_status=$?
-		if [ $scan_status -ne 0 ]; then
-			printf 'pre-commit: secret scan - refused (exit %s)\n' "$scan_status"
-			printf '%s\n' "$scan_out"
-			refuse 'the secret scan found something in this commit'
-		fi
-		printf 'pre-commit: secret scan - clean (%s files)\n' "$#"
-	fi
-fi
-
-exit 0
+process.exit(0);
