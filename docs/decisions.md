@@ -1861,9 +1861,12 @@ items with a live check in M5, not assumptions.
 > **Decided 2026-11-28 (the owner, for M5):** Chrome is installed **by hand from a downloaded folder** - the zip from the
 > GitHub release, unzipped, `chrome://extensions`, Developer mode on, **Load unpacked** - and it is **not** to go to the
 > Chrome Web Store. The Developer-mode banner and the warning Chrome shows on install are accepted, and the M5 plan owes a
-> one-page install guide with a picture of each step. Whether the same route is offered on Firefox - which needs either the
-> one-off signing submission above or Developer Edition with `xpinstall.signatures.required` off - is the M5 plan's
-> question, not this record's: the owner has decided Chrome's route, not Firefox's.
+> one-page install guide with a picture of each step. **Firefox takes the signed route the same owner's call of
+> 2026-11-28 accepts:** each version is submitted to Mozilla as an **unlisted (self-distributed) add-on** - free, nothing
+> in any public list, automated validation usually in minutes - and the signed `.xpi` is attached to the GitHub release, so
+> a friend saves it and opens it and ordinary Firefox installs it for good. Unsigned files are refused by stable Firefox;
+> `xpinstall.signatures.required` works only on Developer Edition, Nightly and ESR, so it is not the route. The one
+> account this costs is the owner's signing account, never a friend's (ADR-023 concerns the people using the app).
 ## ADR-058 - The relay is a visible choice, and capture is not a fallback
 
 **Decision.** The relay is a setting the **host** owns, shown as a **visible toggle in the window's own chrome**, in space
