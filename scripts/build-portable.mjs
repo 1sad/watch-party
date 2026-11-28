@@ -21,6 +21,7 @@ import { dirname, join, resolve } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
+import { SOURCE_DIRS, assertPayloadCarriesSidecarImports } from './portable-sources.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -361,14 +362,19 @@ async function main() {
   say('[3/5] packing the payload')
   await rm(payloadDir, { recursive: true, force: true })
   await rm(publishDir, { recursive: true, force: true })
-  await mkdir(join(payloadDir, 'src'), { recursive: true })
   await mkdir(join(payloadDir, 'data'), { recursive: true })
 
   await cp(node.path, join(payloadDir, 'node.exe'))
   // The sidecar runs these sources as they are (Node's type stripping), so the
   // payload carries them unchanged; `player-bridge.js` is served from here too.
-  await cp(join(root, 'src', 'server'), join(payloadDir, 'src', 'server'), { recursive: true })
-  await cp(join(root, 'src', 'shared'), join(payloadDir, 'src', 'shared'), { recursive: true })
+  // `src/` travels whole (T202): `src/server/app.ts` imports
+  // `../ui/boot-sentence.ts` (T177/R56), and the hand-written pair of folders this
+  // replaced left it out, so 0.5.0's copies died with ERR_MODULE_NOT_FOUND before
+  // logging a PORT. The guard below keeps the payload and the import graph equal.
+  for (const dir of SOURCE_DIRS) await cp(join(root, dir), join(payloadDir, dir), { recursive: true })
+  const packedSources = (await listFiles(join(payloadDir, 'src'))).map((file) => `src/${file}`)
+  assertPayloadCarriesSidecarImports(root, packedSources)
+  say(`[3/5] sources: ${packedSources.length} file(s) under src/, every import of src/server and src/shared carried`)
   await cp(join(root, 'dist'), join(payloadDir, 'dist'), { recursive: true })
   await cp(join(root, 'data', 'ad-hosts.txt'), join(payloadDir, 'data', 'ad-hosts.txt'))
   await cp(join(root, 'package.json'), join(payloadDir, 'package.json'))
