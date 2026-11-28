@@ -1420,10 +1420,13 @@ inside. It is a row of the chat column, not a second panel and not a modal, and 
 guest's bar has no link to offer (the invite payload is the host's): it shows the room code and one line saying the
 link is the host's to share.
 
-> **Amended 2026-11-26 (ADR-054, R51):** the bar carries **two invitations, not one plus a fallback** - the
-> `watchparty://` link and the plain `http://<address>:<port>/join?c=<code>` address - each labelled with who it is for
-> and each with its own Copy, because a browser cannot open the first and the person this serves has installed nothing.
-> A guest's bar is unchanged: the host shares the invitation, not the guest.
+> **Amended 2026-11-26 (ADR-054, R51), then again the same day (ADR-056):** the bar's invitation is **one plain
+> address**, `http://<address>:<port>/join?c=<code>`, read as a chip beside the room code and copied by one **Invite**
+> button that says on itself that it copied (and says so in words when the browser refuses), on the front door **and on
+> every guest's bar** (tickets 185 and 192). The two forms this amendment first allowed - the `watchparty://` link and the
+> plain address, each labelled, each with its own Copy - are withdrawn by ADR-056, and so is the sentence above that gives
+> a guest's bar no invitation to offer: a guest's own address bar already holds the same address and the same code, so the
+> invitation is not a secret the owner keeps.
 
 **Room end.** A guest whose room ends returns to the first screen with one line saying so; the dead room's code and
 link are cleared, and the window's **entered** flag is reset, so the first screen is that machine's own front door
@@ -1749,8 +1752,10 @@ such a guest can **watch** is decided by what the room can serve from the host's
 cooperates: the room's file, played by the guest's own `<video>` from `/media/<id>?c=<code>`, and the room's YouTube
 video, played by the app-owned embed page (ADR-051) carried inside the page and driven through YouTube's own API. An
 ordinary website is **not** offered to a browser guest: the picture says so in one plain sentence naming the app, and
-never "waiting for the host". The invitation therefore offers **two forms side by side** - the `watchparty://` link for
-the app, the plain address for any browser (R51) - and a reloaded browser page learns the room's code from the page the
+never "waiting for the host". The invitation therefore offers **one plain address on every screen**, in the room code's
+shape with one Invite button beside it (**Amended 2026-11-26 by ADR-056**, which withdrew the `watchparty://` link from
+every screen and gave every guest the same invitation; R51 as amended, tickets 185 and 192) - and a reloaded browser page
+learns the room's code from the page the
 sidecar serves, because `/discovery` is loopback-only and the `wp_key` cookie is HttpOnly.
 
 **Why.** A `watchparty://` link is nothing to a browser, and the raw address already exists in the invite composer, so

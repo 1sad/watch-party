@@ -30,11 +30,12 @@ no account, no sign-in, and nothing to configure. If the address cannot be learn
 app says so plainly at this point rather than at join time (§14). Pressing **Start a room** enters the room's watching
 screen; it creates nothing.
 
-The link uses a custom `watchparty://` scheme that the copy registers for itself every time it starts (ADR-042), so
-clicking it launches the app. Alongside
-it the app shows the raw address and code for the case where the click does nothing (a browser that refuses the
-scheme, a headless machine, someone on an OS where registration failed) — the app accepts both, and the raw form is
-the fallback rather than the instruction.
+The invitation is the room's own plain address, `http://<address>:<port>/join?c=<code>`, in the room code's compact
+shape with one **Invite** button beside it that copies it (R51, ADR-056). It is the same invitation on every screen -
+the owner's front door, the owner's bar, every guest's bar - and it is one link for everybody: a friend with the app
+pastes it into the app (R57), a friend without opens it in any browser and joins as a **browser guest** (ADR-054). The
+app still registers a `watchparty://` scheme every time it starts (ADR-042), which a person can write by hand, but no
+screen prints it.
 
 **Choose the page.** Whoever holds control pastes a page address — or simply browses inside the app: search, pick a
 title, pick an episode. The change is **staged for five seconds** (ADR-032): the initiator sees their new page at
@@ -65,13 +66,14 @@ button does the same thing, and nothing the site does can take the screen or hid
 rules are in ADR-029: a player is always a follower on load, a controller's skip becomes a room seek, and everyone
 else converges.
 
-**Two screens, and the window used.** The first screen is the room's front door: the room code, the invite link and
-Copy, the raw fallback, the router's state and its failure card when there is no public link, and the box to paste
-someone else's link into - and no picture, chat, address bar or picker (ADR-047). Pressing Start a room switches at
+**Two screens, and the window used.** The first screen is the room's front door: the room code with the room's plain
+address in a chip beside it and one Invite button, the router's state and its failure card when there is no public link,
+and the box to paste someone else's invite into - and no picture, chat, address bar or picker (ADR-047). Pressing Start a room switches at
 once to the watching screen. There the picture takes whatever is left and the chat is a **380 px column on its
 right** - member count, message list, input, with the align/offset controls beside it - with the address bar as the
 page's own top row above the picture and the column (its Paste button inside the field, **Open a file** beside it), the
-invite bar (room code, link, Copy) as the column's first row under it, and the player's own controls (play, scrub,
+invite bar (the room code, the plain address in a chip, one Invite button) as the column's first row under it, and the
+player's own controls (play, scrub,
 volume) plus subtitle selection under the picture in file mode. Under **900 px** of window width (the page's own width,
 measured by the host) the chat column moves below the picture, never beside it, and the picture is
 bounded so the chat always has room. Nothing else: the product is the picture, the chat, and the controls.

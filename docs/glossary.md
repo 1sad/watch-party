@@ -142,9 +142,9 @@ alone, fed by the stream the owner's app is already playing. One person, on requ
 
 ## Layout of the window
 
-**First screen** - the room's front door. It shows the host's invite in full (the code, the link, the raw fallback,
-the same-network link, and the router's state including the failure card), then the box to paste someone else's
-invite into. It has no picture, chat, address bar or file picker. Pressing **Start a room** leaves it; a room is
+**First screen** - the room's front door. It shows the host's invite in full (the code, the room's plain address in a chip
+beside it with one **Invite** button, and the router's state including the failure card), then the box to paste someone
+else's invite into. It has no picture, chat, address bar or file picker. Pressing **Start a room** leaves it; a room is
 already live behind it (ADR-047).
 
 **Watching screen** - the room itself: the picture with the chat column beside it, and the player's own controls (play,
@@ -178,10 +178,16 @@ button inside the field, and **Open a file** beside it (R29, R40). It sits above
 makes the invite bar the column's first row under it. When the host docks the app view as the chat column - a website
 room - the same row is that 380 px column's top row, and the invite bar follows it (ADR-047).
 
-**Invite bar** — the chat column's first row: the room code, the invite link and one Copy button, with the raw address
-and code one click inside. Always reachable while watching, including in fullscreen. From R51 it carries **two forms**:
-the `watchparty://` link for the app and the plain `http://<address>:<port>/join?c=<code>` address for any browser
-(ADR-054).
+**Invite bar** — the chat column's first row: the room code with the room's **plain address** in a chip beside it, and
+one **Invite** button that copies that address and says on the button that it copied (and says so in words when the
+browser refuses). Always reachable while watching, including in fullscreen, and the same shape on the front door and in
+every guest's bar (R51, ADR-054, ADR-056).
+
+**Plain address** — the room's one invitation: `http://<address>:<port>/join?c=<code>`, the room's own address with its
+code, in the room code's compact shape. A friend with the app pastes it (R57); a friend without clicks it and lands in the
+room as a **browser guest**; whoever holds it may pass it on (R51, ADR-056). The older `watchparty://` link is only the
+scheme the app registers on the machine it runs on (ADR-042); no screen prints it any more, and the documents sometimes
+still say "the invite link" for this address.
 
 **Browser guest** — a member who is watching through an ordinary browser, not the app's window: they opened the plain
 address from the invite bar, they hold a seat through the same cookie an app guest does, and they have no window host,
@@ -292,10 +298,6 @@ Several anchors give a piecewise mapping; one is just an offset.
 
 **Event page** — Firefox's equivalent of Chrome's service worker: the extension's background script, unloaded when
 idle, with no fixed 30-second timer.
-
-**Invite link** — one link the owner posts once. It carries the room code and the owner's address, so nobody types
-either. Clicking it opens the app. The old trick of hiding the code in a third-party site's URL fragment is gone:
-the link no longer lands on someone else's page, so there is nothing to hide from.
 
 **Media library** — the folder (or folders) the app is allowed to serve, plus the cached metadata that makes them
 browsable. Not a media server: no users, no metadata scraping, no remote access.
