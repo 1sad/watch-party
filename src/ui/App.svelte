@@ -38,6 +38,7 @@
   import { EMBED_POLL_MS, createEmbedSite, embedFrameOf, type EmbedSite } from '../shared/embed-site.ts'
   import {
     closeOutcome,
+    commitLeftDocuments,
     pageSide,
     pageCommitFields,
     pageFollowStep,
@@ -842,7 +843,15 @@
       // flight from one of them. A window that previewed its own page is already
       // on it, so what it holds is the new page's — noting that would throw away
       // the election this commit is asking for.
-      if (!previewed) notePageLeft()
+      //
+      // T197: which documents are left is `ui/room-view.ts`'s rule, because a
+      // page-mode guest's own embed for the page just committed is still the
+      // picture - it has not navigated anywhere - and noting that document would
+      // refuse every report it will ever make (the guest goes quiet until it is
+      // reloaded).
+      if (!previewed) {
+        notePageLeft(commitLeftDocuments(playerFrames.values(), frame.page, location.origin, host !== null))
+      }
       playerFrames.clear()
       playerEvents = []
       elected = null
@@ -1920,8 +1929,8 @@
    * page's candidate (a document's identity is never reused). Grown rather than
    * replaced: a report that crosses two page changes is still refused.
    */
-  function notePageLeft(): void {
-    pageLeftDocs = new Set([...pageLeftDocs, ...documentsLeft(playerFrames.values())])
+  function notePageLeft(left: ReadonlySet<string> = documentsLeft(playerFrames.values())): void {
+    pageLeftDocs = new Set([...pageLeftDocs, ...left])
   }
 
   /**

@@ -17,7 +17,7 @@
  */
 
 import { canonicalPage } from '../shared/page.ts'
-import { isYouTubeEmbedAddress } from '../shared/youtube.ts'
+import { isYouTubeEmbedAddress, siteViewAddress } from '../shared/youtube.ts'
 import type { Media } from '../shared/protocol.ts'
 
 /** The two fields of a room snapshot that decide what the window shows (§4.1, §4.2). */
@@ -71,6 +71,42 @@ export function pageSide(room: RoomPageFields): PageSide {
  */
 export function pageCommitFields(room: RoomPageFields, page: string): RoomPageFields {
   return { ...room, page, media: null }
+}
+
+/**
+ * T197: the documents a `pageCommitted` really leaves behind.
+ *
+ * T18's rule is that a report from a document the window is no longer showing is
+ * not a candidate: at a commit every document the window holds is taken to belong
+ * to the page the room has left, its token is remembered, and a report still in
+ * flight from it is refused (§10.1, `shared/player.ts`'s `mergeReports`). That is
+ * true of the app's window, whose site view the window host navigates, and of a
+ * window that is leaving the page - but it is not true of a **page-mode guest
+ * whose own picture is the app-owned embed for the page the room has just
+ * committed** (ADR-054): nothing navigates, the document it is looking at is
+ * still the picture, and remembering that document refuses every report it will
+ * ever make. The guest then holds the room's page and stops following it until
+ * the page is reloaded (ticket 197, `evidence/181-report.md` §3).
+ *
+ * So, with no window host, the documents of the site-view address the room is
+ * now on stay and every other document is left. With a window host the site view
+ * is the host's and it navigates at every commit, so every held document is left,
+ * exactly as before.
+ */
+export function commitLeftDocuments(
+  reports: Iterable<{ source: string; doc: string }>,
+  page: string,
+  origin: string,
+  host: boolean,
+): ReadonlySet<string> {
+  const staying = host ? null : siteViewAddress(page, origin)
+  const left = new Set<string>()
+  for (const report of reports) {
+    if (report.doc.length === 0) continue
+    if (staying !== null && report.source === staying) continue
+    left.add(report.doc)
+  }
+  return left
 }
 
 /** What a closed socket means: the two facts the page holds at that instant (§14, §6). */

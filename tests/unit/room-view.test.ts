@@ -14,6 +14,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  commitLeftDocuments,
   pageSide,
   pageCommitFields,
   pageFollowOutcome,
@@ -433,4 +434,51 @@ test("the ignored embed leaves the put-back's bound exactly as it was", () => {
   const step = pageFollowStep(fields, record)
   assert.equal(step.kind, 'ignore')
   assert.equal(step.record, record)
+})
+
+
+/**
+ * T197 / R54, ADR-054: a page change must not silence a browser guest.
+ *
+ * A browser guest's picture for a YouTube room is the app-owned embed in its own
+ * picture area, and a commit for the page it is already showing navigates
+ * nothing: the document it is looking at is still the picture. T18 remembers the
+ * documents of the page the room has left and refuses every report naming one
+ * (`shared/player.ts`'s `mergeReports`), so taking that document for left stops
+ * the guest's reports for good - it holds the room's page and stops following it
+ * until the page is reloaded (ticket 197, `evidence/181-report.md` §3: both
+ * browser guests went quiet at the second, same-page commit, and a reload put
+ * them right).
+ *
+ * The app's window is the other half of the rule: its site view is the window
+ * host's, and the host navigates it at every commit, so everything held at that
+ * instant really is left.
+ */
+test("a guest keeps the embed document of the page the room has committed", () => {
+  const origin = 'http://127.0.0.1:51234'
+  const page = 'https://www.youtube.com/watch?v=aqz-KE-bpKQ'
+  const embed = `${origin}/embed/youtube.html?id=aqz-KE-bpKQ`
+  assert.deepEqual([...commitLeftDocuments([{ source: embed, doc: 'embed-doc' }], page, origin, false)], [])
+})
+
+test('a guest leaves every other document it holds, however recently reported', () => {
+  const origin = 'http://127.0.0.1:51234'
+  const page = 'https://www.youtube.com/watch?v=aqz-KE-bpKQ'
+  const held = [
+    // The previous YouTube page's embed, and the video's own cross-origin frame.
+    { source: `${origin}/embed/youtube.html?id=zzzzzzzzzzz`, doc: 'old-embed' },
+    { source: 'https://www.youtube.com/embed/aqz-KE-bpKQ?enablejsapi=1', doc: 'player-frame' },
+    // A bridge too old to name its document is not remembered at all.
+    { source: 'https://example.com/', doc: '' },
+  ]
+  assert.deepEqual([...commitLeftDocuments(held, page, origin, false)].sort(), ['old-embed', 'player-frame'])
+})
+
+test('the app window leaves the embed it holds, because the host navigates it at every commit', () => {
+  const origin = 'http://127.0.0.1:51234'
+  const page = 'https://www.youtube.com/watch?v=aqz-KE-bpKQ'
+  const embed = `${origin}/embed/youtube.html?id=aqz-KE-bpKQ`
+  assert.deepEqual([...commitLeftDocuments([{ source: embed, doc: 'embed-doc' }], page, origin, true)], [
+    'embed-doc',
+  ])
 })
