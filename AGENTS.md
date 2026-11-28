@@ -13,10 +13,11 @@ and Open a file at every moment, and the room following a page's own navigation.
 its YouTube video inside the page, and the page's own narrow layout below 900 px - and its two-browser gate **passed on
 2026-11-28** (two real browsers and the owner's Android phone in one room; the two faults it found are fixed), so phase
 7 is closed;
-**M3 "the room obeys"** follows it. 51 and 52 are `blocked` on the M3 plan (the phase record the owner keeps on their
-machine).
-**0.4.0 is the shipped build** — its portable files are attached
-to the `v0.4.0` tag in GitHub Releases; nothing is on a store or a server. The only status line kept current is the phase record on the owner's machine (`.scratch/<phase>/spec.md`) → `## Status`;
+**M5 "Add-on" is next, by the owner's call of 2026-11-28** (the Chrome/Firefox extension from GitHub, no store, ADR-057);
+**M3 "the room obeys"** (ready gate, buffering, reconnects, cinema mode - 7-9 tickets) follows it. 51 and 52 are `blocked` on
+the M3 plan (the phase record the owner keeps on their machine).
+**0.5.0 is the shipped build** — its portable files are attached
+to the `v0.5.0` tag in GitHub Releases; nothing is on a store or a server. The only status line kept current is the phase record on the owner's machine (`.scratch/<phase>/spec.md`) → `## Status`;
 read it before believing any claim about what works. **The working record -
 specs, tickets, session notes, costs - is kept on the owner's machine and is not in this public repo**, so a fresh
 clone has the code and `docs/` only.

@@ -3,12 +3,14 @@
 Five friends, one film, wherever each of them happens to be. One person starts a small Windows program, shares a
 link, and everyone else is in the same room on the same streaming page, in step, with chat.
 
-Status: **the layout phase (M2b) closed 2026-11-24, and 0.3.0 is released** - one executable per flavour that opens a
+Status: **phases 1-7 are closed, and 0.5.0 is released** - one executable per flavour that opens a
 window and runs a room from a folder on a machine with nothing installed, now with two screens (a front door, then
 watching), the picture filling the window with the chat as a narrow column beside it, the address bar with Paste and
-Open a file always at hand, and the room following whoever changes the page. What is proved, and what is not, is in the
+Open a file always at hand, and the room following whoever changes the page. A friend with no app at all can join from a
+browser with the same plain link, take a seat of their own, chat, and watch the room's file or YouTube video inside the
+page. What is proved, and what is not, is in the
 phase record the owner keeps on their machine; it is deliberately not part of this repository. The built files are
-attached to [release v0.3.0](https://github.com/1sad/watch-party/releases/tag/v0.3.0). This repository is public: code
+attached to [release v0.5.0](https://github.com/1sad/watch-party/releases/tag/v0.5.0). This repository is public: code
 and documents are published, while the working record (specs, tickets, session notes and costs) stays on the owner's
 machine.
 
