@@ -5,6 +5,7 @@ import {
   CORRECTION_DEADBAND_SECONDS,
   CORRECTION_SPACING_MS,
   MIN_SCHEDULED_START_MS,
+  NUDGE_SETTLE_SECONDS,
   SEEK_AHEAD_SECONDS,
   SEEK_BEHIND_SECONDS,
   SLOW_DOWN_RATE,
@@ -13,6 +14,7 @@ import {
   clampToMedia,
   decideCorrection,
   nudgeRateAt,
+  nudgeSettled,
   reportFrom,
   scheduledStartAt,
   targetFor,
@@ -281,4 +283,30 @@ test('nudgeRateAt refuses a hold it cannot honour', () => {
   assert.equal(nudgeRateAt({ rate: 1, untilAuthorityMs: NOW + 1000 }, NOW), 1, '1.0 is not a nudge')
   assert.equal(nudgeRateAt({ rate: SLOW_DOWN_RATE, untilAuthorityMs: Number.NaN }, NOW), 1, 'a bound that cannot expire')
   assert.equal(nudgeRateAt({ rate: SLOW_DOWN_RATE, untilAuthorityMs: Infinity }, NOW), 1)
+})
+
+// T198: a held nudge ends *inside* ADR-039's deadband, not on its edge. The gate
+// run (`evidence/181-report.md` §5) measured a phone parked at 0.255-0.277 s -
+// the far side of the edge - where every later nudge ended on its first watch
+// tick and `strikes` climbed to 10. The numbers below are the gaps the live run
+// of 2026-11-28 actually read on that phone.
+
+test('T198: a held nudge ends inside the deadband, not on its edge', () => {
+  assert.equal(NUDGE_SETTLE_SECONDS, CORRECTION_DEADBAND_SECONDS / 2, 'one derivation: half the deadband')
+  assert.ok(NUDGE_SETTLE_SECONDS < CORRECTION_DEADBAND_SECONDS, 'strictly inside ADR-039s band')
+
+  assert.equal(nudgeSettled(0), true, 'on the room')
+  assert.equal(nudgeSettled(-NUDGE_SETTLE_SECONDS), true, 'the settle edge behind still ends the hold')
+  assert.equal(nudgeSettled(NUDGE_SETTLE_SECONDS), true, 'and the same edge ahead')
+
+  assert.equal(nudgeSettled(-0.13), false, 'just outside the settle margin, still closing')
+  for (const gap of [-0.245, -0.26, -0.277, 0.255]) {
+    assert.equal(nudgeSettled(gap), false, `gap ${gap} is the parked phone the gate measured`)
+  }
+
+  // The deadband itself is untouched: a corrected client still counts as good,
+  // and one that has not been corrected yet is still corrected (ADR-039).
+  assert.equal(CORRECTION_DEADBAND_SECONDS, 0.25)
+  assert.equal(decideCorrection(input({ drift: -0.26 })).action, 'nudge')
+  assert.equal(decideCorrection(input({ drift: -0.125 })).action, 'none')
 })

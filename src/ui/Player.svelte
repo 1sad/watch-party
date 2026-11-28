@@ -1,13 +1,13 @@
 <script lang="ts">
   import type { CommandFrame, Media, NudgeFrame, Playback, ReportFrame } from '../shared/protocol.ts'
   import {
-    CORRECTION_DEADBAND_SECONDS,
     NUDGE_WATCH_MS,
     REPORT_INTERVAL_MS,
     SEEK_SKIP_SECONDS,
     clampToMedia,
     expected,
     nudgeRateAt,
+    nudgeSettled,
     type NudgeHold,
   } from '../shared/timing.ts'
   import { createEchoSet } from '../shared/echo.ts'
@@ -232,7 +232,10 @@
         return
       }
       if (video === null) return
-      if (Math.abs(video.currentTime - expected(playback, clock())) <= CORRECTION_DEADBAND_SECONDS) {
+      // T198: inside the deadband by a margin, not on its edge (`nudgeSettled`).
+      // A hold that ends on the line parks this window where the authority reads
+      // it as bad again on the next report, and every later nudge ends at once.
+      if (nudgeSettled(video.currentTime - expected(playback, clock()))) {
         endNudge()
       }
     }, NUDGE_WATCH_MS)

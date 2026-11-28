@@ -872,8 +872,8 @@ test('a 1 s lead holds the rate past five seconds, until a reading closes it (T2
     `the rate held for five seconds: restored at ${restoredAt - start} ms, with the gap still open`,
   )
   assert.ok(
-    restoredAt <= start + 16_000,
-    `and it ended on a reading inside the deadband, not on the ${bound - start} ms bound: ${restoredAt - start} ms`,
+    restoredAt >= start + 17_500 && restoredAt <= start + 19_000,
+    `and it ended on a reading inside the settle margin (T198: half the deadband, so k = 18), not on the ${bound - start} ms bound: ${restoredAt - start} ms`,
   )
   assert.equal(nudge.current(), null, 'one end, one owner')
 })

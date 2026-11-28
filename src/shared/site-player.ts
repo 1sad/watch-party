@@ -17,11 +17,11 @@
 import type { CommandFrame, Playback, PlaybackReason, ReportFrame } from './protocol.ts'
 import type { PlayerCandidate, PlayerReason } from './player.ts'
 import {
-  CORRECTION_DEADBAND_SECONDS,
   SEEK_AHEAD_SECONDS,
   SEEK_SKIP_SECONDS,
   expected,
   nudgeRateAt,
+  nudgeSettled,
   type NudgeHold,
 } from './timing.ts'
 import { createEchoSet, type EchoKind } from './echo.ts'
@@ -464,7 +464,9 @@ export function createSiteNudge(): SiteNudge {
       playback !== null &&
       elected.source === target.source &&
       elected.id === target.id &&
-      Math.abs(elected.t - expected(playback, readingAt)) <= CORRECTION_DEADBAND_SECONDS
+      // T198: inside the deadband by a margin, not on its edge, so this holder
+      // and the file player cannot disagree about where a nudge is "closed".
+      nudgeSettled(elected.t - expected(playback, readingAt))
     ) {
       return end()
     }

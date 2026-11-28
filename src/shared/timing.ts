@@ -234,6 +234,36 @@ export const SPEED_UP_RATE = 1.05
  */
 export const NUDGE_WATCH_MS = 200
 
+/**
+ * Where a held nudge ends, in seconds: **inside** the deadband, not on its edge
+ * (T198). ADR-039's deadband is untouched - this is the margin a correction
+ * aims for once one has been decided, derived from the deadband so one edit
+ * moves both.
+ *
+ * Measured on 2026-11-28 (T198): an Android media clock loses 0.24-0.33 s to
+ * its start ramp on every scheduled start, so a phone lands on the line. A
+ * client 0.26 s behind is nudged; the nudge closes at 5 %; and with the stop
+ * test on the deadband itself the hold ends the instant the *client's* own
+ * reading is under 0.25 s - on the edge, where the next report is a coin flip
+ * whether the authority still reads it as bad. The gate run
+ * (`evidence/181-report.md` §5) parked a phone at 0.255-0.277 s with `strikes`
+ * climbing to 10 and a nudge every 5 s that closed nothing. Half the band
+ * leaves ~0.13 s of margin for both readings, so one correction settles a
+ * client instead of parking it on the line.
+ */
+export const NUDGE_SETTLE_SECONDS = CORRECTION_DEADBAND_SECONDS / 2
+
+/**
+ * True when a held nudge has done its job: the gap is inside the band by the
+ * margin above. Both holders - the file player (`Player.svelte`) and the site
+ * view (`site-player.ts`) - end their hold on this one answer, so the two cannot
+ * disagree about where "closed" is. A gap that is not a number is never
+ * settled: the hold's own bound is what restores that rate.
+ */
+export function nudgeSettled(gapSeconds: number): boolean {
+  return Math.abs(gapSeconds) <= NUDGE_SETTLE_SECONDS
+}
+
 export type CorrectionAction = 'none' | 'nudge' | 'seek' | 'snap'
 
 /**
