@@ -525,7 +525,7 @@ This one function is why late joiners and stalling clients recover without extra
 | Drift | Action |
 | --- | --- |
 | < 0.25 s | nothing (ADR-039) |
-| 0.25 - 1.5 s | `playbackRate = 0.95` (or 1.05) until back under 0.25 s |
+| 0.25 - 1.5 s | `playbackRate = 0.95` (or 1.05) until back inside 0.125 s - half the band (ADR-039, amended 2026-11-28) |
 | 1.5 – 4 s | same nudge; a bit of visible lag is preferable to a jump |
 | > 4 s (or > 1.75 s *behind*) | hard seek to `expected` |
 | paused | snap directly |

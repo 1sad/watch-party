@@ -1090,8 +1090,8 @@ other constants and the wire format are untouched.
 > watch tick, since stopping "under 0.25 s" let a corrected client land at about 0.24 s and fall 5-30 ms back over it. With
 > the half-deadband stop the same phone sits at 0.09-0.13 s, the nudge fires two or three times instead of endlessly, the
 > picture runs 5 % fast for about 7 s and then holds 1x, and no desktop client is nudged at all. The decision above still
-> holds as written: a client inside the quarter second is left alone - the ladder simply aims inside it instead of at its
-> edge.
+> holds in every part except that stop point: a client inside the quarter second is left alone, and the ladder simply aims
+> inside it instead of at its edge.
 
 ---
 

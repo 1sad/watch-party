@@ -10,8 +10,9 @@ its space" (0.3.0)**: two screens, the picture filling the window with a 380 px 
 and Open a file at every moment, and the room following a page's own navigation. **M2c "the room behaves"**
 (`spec.md` §13) is done - its tickets are complete: the evening's faults are fixed, the chat is the room's log, and YouTube plays in the app's own player; **M2d "browser join"**
 (`spec.md` §13) is built - R51-R57: one plain invitation on every screen, a browser guest's own seat, the room's file and
-its YouTube video inside the page, and the page's own narrow layout below 900 px - and its two-browser gate is in the
-owner's hands as of 2026-11-26;
+its YouTube video inside the page, and the page's own narrow layout below 900 px - and its two-browser gate **passed on
+2026-11-28** (two real browsers and the owner's Android phone in one room; the two faults it found are fixed), so phase
+7 is closed;
 **M3 "the room obeys"** follows it. 51 and 52 are `blocked` on the M3 plan (the phase record the owner keeps on their
 machine).
 **0.4.0 is the shipped build** — its portable files are attached
