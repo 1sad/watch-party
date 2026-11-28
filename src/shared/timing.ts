@@ -312,8 +312,8 @@ export interface Correction {
  *
  * The nudge's `untilAuthorityMs` is the time the member needs to close the gap
  * at the extra 5 %: `|drift| / 0.05` seconds from now. It is a bound, not the
- * primary stop — the page restores to 1.0 when the gap is back under the
- * deadband first.
+ * primary stop — the page restores to 1.0 once the gap is inside the settle
+ * margin (`nudgeSettled`).
  */
 export function decideCorrection(input: CorrectionInput): Correction {
   const drift = Number.isFinite(input.drift) ? input.drift : 0

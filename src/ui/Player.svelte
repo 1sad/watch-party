@@ -180,7 +180,7 @@
   let nudgeTimer: ReturnType<typeof setTimeout> | undefined
   /**
    * Watches the two ways a nudge ends without a message: the gap closing
-   * (restore as soon as it is back under the deadband) and the bound passing (the deadline
+   * (restored once the gap is inside the settle margin, `nudgeSettled`) and the bound passing (the deadline
    * timer's job, repeated here because a sleeping window throttles timers and a
    * window must never come back at 0.95×).
    */

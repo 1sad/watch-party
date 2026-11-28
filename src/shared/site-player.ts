@@ -369,7 +369,7 @@ export interface SiteNudge {
   ): PlayerPageCommand[]
   /**
    * One watch tick. The restore comes out here when the bound has passed, and
-   * when the gap is back under §6.3's deadband — the two ways a nudge ends
+   * when the gap is inside the settle margin (`nudgeSettled`) — the two ways a nudge ends
    * without a message. A replacement element cannot be judged against another
    * element's hold, so it never shortens one; the deadline still ends it.
    *
