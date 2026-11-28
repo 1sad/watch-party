@@ -13,7 +13,7 @@
   import { createEchoSet } from '../shared/echo.ts'
   import { untrack } from 'svelte'
   import { DEV_ARM_MS, type DevPlay } from './dev-drift.ts'
-  import { PRESS_PLAY_BUTTON } from './picture-area.ts'
+  import { PRESS_PLAY_BUTTON, hiddenPicture } from './picture-area.ts'
 
   interface Props {
     /** The room's `playback`, from the last `welcome` or `state` (§4.1). */
@@ -462,6 +462,33 @@
     applyNudge(next)
   })
 
+  /**
+   * T199: what the picture says and does when its page's visibility changes. A
+   * picture behind a hidden page can stay unloaded for good (measured on a real
+   * Chrome guest: `readyState` 0, no request to the room, no error), so the line
+   * explains the dark picture and the show puts the element back on the room - a
+   * returning guest must not wait for a `state` frame the room has no reason to
+   * send. The rule itself is `ui/picture-area.ts`'s `hiddenPicture`, so a unit
+   * test holds it.
+   */
+  let waitingLine = $state<string | null>(null)
+
+  $effect(() => {
+    const onVisibility = (): void => {
+      const element = video
+      if (element === null) return
+      const decision = hiddenPicture({
+        hidden: document.visibilityState === 'hidden',
+        loaded: element.readyState >= 1,
+        roomPlaying: playback.playing,
+      })
+      waitingLine = decision.saying
+      if (decision.resume) forceAlign()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  })
+
   // T106: the remembered level belongs to the element, so it is written when the
   // element binds; after that `volumechange` is what the controls read.
   $effect(() => {
@@ -478,6 +505,8 @@
   function onLoadedMetadata(): void {
     // The duration shown is the room's (the `duration` above) — this element's
     // own measurement is not news and must not overwrite it (T9a3).
+    // T199: the file is in, so the hidden page's line has done its work.
+    waitingLine = null
     forceAlign()
   }
 
@@ -611,6 +640,14 @@
       ></video>
     {:else}
       <p class="empty">{emptyLine}</p>
+    {/if}
+
+    {#if waitingLine !== null}
+      <!-- T199: the page was hidden while the room's film was due, and a picture
+           behind a hidden page can stay unloaded (measured), so this is the one
+           sentence that explains the dark frame instead of silence. It goes the
+           moment the file's metadata arrives. -->
+      <p class="waiting" role="status" data-hidden-wait>{waitingLine}</p>
     {/if}
 
     {#if blocked}
@@ -788,6 +825,20 @@
   .autoplay p {
     margin: 0;
     font-size: 1.05rem;
+  }
+
+  /* T199: one line along the top of the picture, the shape the press strip keeps
+     (T187 in `App.svelte`) - the picture stays there to be seen, and the line is
+     read by whoever reaches the tab. */
+  .waiting {
+    position: absolute;
+    inset: 0 0 auto 0;
+    margin: 0;
+    padding: 0.45rem 0.75rem;
+    background: rgba(10, 10, 14, 0.82);
+    color: #e9e9ef;
+    font-size: 0.95rem;
+    text-align: center;
   }
 
   .controls {

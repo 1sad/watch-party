@@ -83,6 +83,52 @@ export function pressPlaySentence(host: boolean): string {
 export const PRESS_PLAY_BUTTON = 'Click to join playback'
 
 /**
+ * T199: one sentence for a picture that has not started because its page was
+ * hidden. Measured on a real Chrome guest (ticket 199): a picture whose page is
+ * hidden can stay unloaded for good - `readyState` 0, no request to the room's
+ * sidecar, no error raised, and neither an explicit `load()` nor a muted `play()`
+ * changes it - so the page cannot promise the film is being fetched behind a
+ * hidden tab. What it can do is say so instead of staying silent, and put itself
+ * back on the room the moment it is shown again.
+ */
+export const HIDDEN_PICTURE_SENTENCE =
+  'The film waits while this tab is hidden - it starts as soon as the tab is shown.'
+
+/** The three facts of a page whose visibility just changed, for `hiddenPicture`. */
+export interface HiddenPictureFields {
+  /** `document.visibilityState === 'hidden'`: the page is not being looked at. */
+  hidden: boolean
+  /** The picture's own `readyState >= 1`: the file's metadata is in. */
+  loaded: boolean
+  /** The room says the film is playing (§4.3). */
+  roomPlaying: boolean
+}
+
+/** What a page that has just changed visibility says, and whether it resumes. */
+export interface HiddenPicture {
+  /** One sentence for the picture, or `null` when there is nothing to explain. */
+  saying: string | null
+  /** Whether the page must put itself back on the room now that it is shown. */
+  resume: boolean
+}
+
+/**
+ * The rule, in one place. It is read when the page's visibility changes, not on
+ * every frame: a guest that is visible the whole time therefore never sees the
+ * sentence, and ticket 187's press-once line stays the only one it reads.
+ *
+ * The sentence outlives the show, because the load only begins then: it stays
+ * until the file's metadata is in, so a person reaching the tab sees why the
+ * picture is still dark. The resume runs on the show, for a picture that never
+ * loaded and for one that loaded but was left paused - the same
+ * `forceAlign()` (`Player.svelte`) both need.
+ */
+export function hiddenPicture(fields: HiddenPictureFields): HiddenPicture {
+  const saying = fields.roomPlaying && !fields.loaded ? HIDDEN_PICTURE_SENTENCE : null
+  return { saying, resume: !fields.hidden && fields.roomPlaying }
+}
+
+/**
  * The rule, in one place. A file wins: `setMedia` clears the page when it takes a
  * file (§4.2), and a room that somehow carried both is read as the file, which is
  * what the picture really is (`pageSide`'s rule in `ui/room-view.ts`).

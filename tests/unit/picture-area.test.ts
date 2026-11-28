@@ -17,7 +17,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { BROWSER_SITE_SENTENCE, PRESS_PLAY_BUTTON, pictureFor, pressPlaySentence } from '../../src/ui/picture-area.ts'
+import {
+  BROWSER_SITE_SENTENCE,
+  HIDDEN_PICTURE_SENTENCE,
+  PRESS_PLAY_BUTTON,
+  hiddenPicture,
+  pictureFor,
+  pressPlaySentence,
+} from '../../src/ui/picture-area.ts'
 import { siteViewAddress, isYouTubeEmbedAddress } from '../../src/shared/youtube.ts'
 import type { Media } from '../../src/shared/protocol.ts'
 
@@ -104,4 +111,38 @@ test('the refused-play line names who refused, once, for both pictures', () => {
   }
   // One button, one meaning: the press that answers the browser's rule.
   assert.equal(PRESS_PLAY_BUTTON, 'Click to join playback')
+})
+
+test('a page hidden while the film is due says so, and puts itself back on the room when shown', () => {
+  // Ticket 199, measured on a real Chrome guest: a <video> whose page is hidden
+  // does not load at all - `readyState` 0, no request to the room's sidecar, and
+  // neither an explicit `load()` nor a muted `play()` changes it. So the picture
+  // says why it is dark, and the show is what starts it.
+  assert.deepEqual(hiddenPicture({ hidden: true, loaded: false, roomPlaying: true }), {
+    saying: HIDDEN_PICTURE_SENTENCE,
+    resume: false,
+  })
+  // Shown again: the resume runs at once, and the line stays until the file's
+  // metadata is in - the load only begins when the page is visible.
+  assert.deepEqual(hiddenPicture({ hidden: false, loaded: false, roomPlaying: true }), {
+    saying: HIDDEN_PICTURE_SENTENCE,
+    resume: true,
+  })
+  // The file is in: nothing left to explain, and the picture was put back.
+  assert.deepEqual(hiddenPicture({ hidden: false, loaded: true, roomPlaying: true }), {
+    saying: null,
+    resume: true,
+  })
+  // A room that is paused explains nothing and needs no resume - the picture's
+  // own frame is what it holds.
+  assert.deepEqual(hiddenPicture({ hidden: true, loaded: false, roomPlaying: false }), {
+    saying: null,
+    resume: false,
+  })
+  // A guest that is visible the whole time is unchanged: the rule is read only
+  // when the page's visibility changes, so ticket 187's press-once line stays the
+  // only sentence it reads.
+  assert.equal(hiddenPicture({ hidden: false, loaded: true, roomPlaying: true }).saying, null)
+  // Rules for working here 10: the sentence stays ASCII.
+  assert.ok(/^[\x20-\x7e]+$/.test(HIDDEN_PICTURE_SENTENCE), `not ASCII: ${HIDDEN_PICTURE_SENTENCE}`)
 })
