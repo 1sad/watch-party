@@ -1084,6 +1084,15 @@ much mirrors differ.
 **Cost.** The room is looser by design: two windows a quarter second apart are in step. Nothing else moves; the ladder's
 other constants and the wire format are untouched.
 
+> **Amended 2026-11-28 (ticket 198):** the deadband stays 0.25 s, but the nudge now stops **at half of it** - 0.125 s,
+> derived from `CORRECTION_DEADBAND_SECONDS` rather than added as a second number - because the phase-7 gate found a phone
+> parked *on* the line: `drift=-0.255` ... `-0.277` with `strikes=10 action=nudge`, each nudge ending on its first 200 ms
+> watch tick, since stopping "under 0.25 s" let a corrected client land at about 0.24 s and fall 5-30 ms back over it. With
+> the half-deadband stop the same phone sits at 0.09-0.13 s, the nudge fires two or three times instead of endlessly, the
+> picture runs 5 % fast for about 7 s and then holds 1x, and no desktop client is nudged at all. The decision above still
+> holds as written: a client inside the quarter second is left alone - the ladder simply aims inside it instead of at its
+> edge.
+
 ---
 
 ## ADR-040 - The ad list is data from EasyList, under a share-alike licence
