@@ -1857,6 +1857,13 @@ Nightly with `xpinstall.signatures.required` off**, or a temporary load per sess
 promised, and the alternative is a one-off signing submission that puts nothing in a store. Chrome loads an **unpacked
 folder** from a GitHub zip in Developer mode; a `.crx` from outside the store is refused by consumer Chrome. Both are work
 items with a live check in M5, not assumptions.
+
+> **Decided 2026-11-28 (the owner, for M5):** Chrome is installed **by hand from a downloaded folder** - the zip from the
+> GitHub release, unzipped, `chrome://extensions`, Developer mode on, **Load unpacked** - and it is **not** to go to the
+> Chrome Web Store. The Developer-mode banner and the warning Chrome shows on install are accepted, and the M5 plan owes a
+> one-page install guide with a picture of each step. Whether the same route is offered on Firefox - which needs either the
+> one-off signing submission above or Developer Edition with `xpinstall.signatures.required` off - is the M5 plan's
+> question, not this record's: the owner has decided Chrome's route, not Firefox's.
 ## ADR-058 - The relay is a visible choice, and capture is not a fallback
 
 **Decision.** The relay is a setting the **host** owns, shown as a **visible toggle in the window's own chrome**, in space
